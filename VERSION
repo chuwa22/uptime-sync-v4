@@ -1,3 +1,10 @@
+4.0.6
+2026-11-05
+- Fix (monitor form): the Port field showed for DNS and PING monitors, which never use it. Found on Windows 7 / IE10.
+  - It now shows only for TCP PORT and HTTP/HTTPS.
+  - Its hint reads "required for TCP PORT, optional for HTTP(S)".
+  - A port typed before switching the type to DNS or PING is no longer saved: `monitors.normalize` clears it.
+
 4.0.5
 2026-11-05
 - Change (web colour): the dashboard said everything in grey and black, so a problem looked the same as a healthy box. This was clearest in IE on Windows 7. Each status tile is now coloured by its state: green ok, amber waiting or warning, red problem, grey off. Each tile gets a coloured left bar, a tinted background and a coloured value.

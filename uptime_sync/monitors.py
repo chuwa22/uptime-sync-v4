@@ -56,6 +56,10 @@ def normalize(raw):
         m['port'] = int(m['port']) if m['port'] not in (None, '') else None
     except (TypeError, ValueError):
         m['port'] = None
+    if m['type'] in ('DNS', 'PING'):
+        # Not used by these checks; a value left over from another type (the
+        # form only hides the field) would otherwise be saved and shown.
+        m['port'] = None
     for key, lo, hi, fallback in (('timeout', 1, 120, 10), ('retry_count', 1, 10, 3)):
         try:
             m[key] = min(hi, max(lo, int(m[key])))

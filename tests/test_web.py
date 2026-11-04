@@ -122,6 +122,14 @@ class WebTests(unittest.TestCase):
         for path in ('/api/status', '/monitors'):
             self.assertNotIn('SECRETTOKEN1', self.c.get(path).get_data(as_text=True), path)
 
+    def test_port_only_for_types_that_use_it(self):
+        html = _read('templates', 'monitor_form.html')
+        self.assertIn('<label data-for-types="TCP HTTP HTTPS">Port', html)
+        for t in ('DNS', 'PING'):
+            self.assertIsNone(monitors.normalize({'type': t, 'port': 8080})['port'], t)
+        self.assertEqual(monitors.normalize({'type': 'TCP PORT', 'port': '8080'})['port'], 8080)
+        self.assertEqual(monitors.normalize({'type': 'HTTPS', 'port': 8443})['port'], 8443)
+
     def test_tile_tones(self):
         from uptime_sync.web.views import tones
 

@@ -16,7 +16,7 @@
   <div class="cols">
     <label>Target <small class="muted">host name or IP, no http://</small>
       <input name="target" value="{{ m.target }}" required class="mono"></label>
-    <label>Port <small class="muted">TCP / HTTP(S) only</small>
+    <label data-for-types="TCP HTTP HTTPS">Port <small class="muted">required for TCP PORT, optional for HTTP(S)</small>
       <input name="port" type="number" min="1" max="65535" value="{{ m.port if m.port is not none else '' }}"></label>
   </div>
   <label data-for-types="HTTP HTTPS">Monitor URL <small class="muted">optional, e.g. https://example.com/health</small>
