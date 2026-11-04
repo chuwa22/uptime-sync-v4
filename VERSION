@@ -1,3 +1,7 @@
+4.0.3
+2026-11-04
+- New (install.bat): a Windows installer you can double-click. It asks for administrator rights itself (UAC, through PowerShell's Start-Process -Verb RunAs, which Windows 7's PowerShell 2.0 has) and finds the system Python 3.8 or newer (`py -3`, then `python`; the Microsoft Store stub is skipped). It runs install.py with that Python, passing options through, and pauses so the elevated window stays open on the result. The admin check uses `fltmc`, not `net session`, which fails on boxes with the Server service disabled. A `/elevated` marker stops it from asking again in a loop. The file is ASCII with CRLF line endings, enforced by .gitattributes and a unit test. It is shipped in the release zip.
+
 4.0.2
 2026-11-04
 - Change (always .venv): every agent process now runs on this folder's `.venv` interpreter. That covers the supervisor, engine and web UI, the CLI, and the pip run during an update. The packages from requirements.txt therefore live only in `.venv` and never mix with the system Python's.

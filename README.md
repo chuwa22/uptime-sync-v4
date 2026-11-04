@@ -15,7 +15,7 @@ system Python:
 
 | OS | Command | Autostart |
 |---|---|---|
-| Windows | `py -3 install.py` from an **elevated** prompt | Task Scheduler task `UptimeSync4` (at boot, plus every minute as a watchdog), runs as SYSTEM |
+| Windows | Double-click `install.bat` (it asks for administrator rights), or `py -3 install.py` from an **elevated** prompt | Task Scheduler task `UptimeSync4` (at boot, plus every minute as a watchdog), runs as SYSTEM |
 | Linux | `sudo python3 install.py` | systemd unit `uptime-sync.service`. Without sudo it creates a user unit instead |
 | macOS | `sudo python3 install.py` | LaunchDaemon `com.uptimesync.agent`. Without sudo it creates a LaunchAgent that runs only while you are logged in |
 
@@ -29,6 +29,10 @@ main.py restarts itself inside `.venv`. The system Python is used only to create
 upgrade that Python, run `python install.py --recreate`.
 It then registers autostart and starts the agent. Open `http://<box>:5000/` and
 create the admin account.
+
+`install.bat` finds the system Python (`py -3`, then `python`), checks it is 3.8 or
+newer, runs `install.py` with it and keeps the window open so you can read the result.
+Options are passed through: `install.bat --no-autostart`, `--recreate`, `--wheels C:\wheels`.
 
 For an offline install, run `install.py --wheels <folder of .whl files>`. On Windows 7,
 use Python 3.8.10, the last release that supports it.
