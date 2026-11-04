@@ -1,0 +1,21 @@
+# Site data -- never in git (tools/git-hooks/pre-commit enforces this too)
+data/
+logs/
+run/
+backups/
+update_staging/
+dist/
+*.env
+.env*
+!*.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv*/
+
+# OS / editors
+.DS_Store
+.vscode/
+*.code-workspace
+.claude/settings.local.json

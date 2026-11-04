@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% macro locked(key) %}{% if key in managed %}<small class="lock">Managed by data/.env ({{ managed[key] }})</small>{% endif %}{% endmacro %}
+{% block content %}
+<h1>Settings</h1>
+{% for e in errors %}<div class="flash warn">{{ e }}</div>{% endfor %}
+<form method="post" class="form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <section class="card">
+    <h2>Site</h2>
+    <div class="cols">
+      <label>Site name <input name="site_name" value="{{ s.site_name }}" maxlength="100"></label>
+      <label>Check every (s) <input name="check_interval" type="number" min="10" max="3600" value="{{ s.check_interval }}"></label>
+    </div>
+    <div class="cols">
+      <label>Parallel checks <input name="max_workers" type="number" min="1" max="50" value="{{ s.max_workers }}"></label>
+      <label>Log level
+        <select name="log_level">{% for l in ['DEBUG', 'INFO', 'WARNING', 'ERROR'] %}<option{{ ' selected' if l == s.log_level }}>{{ l }}</option>{% endfor %}</select></label>
+      <label>Keep logs (days) <input name="log_retention_days" type="number" min="1" max="365" value="{{ s.log_retention_days }}"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Reporting to uptime-monitor</h2>
+    <label class="check"><input type="checkbox" name="remote_enabled"{{ ' checked' if s.remote.enabled }}> Send heartbeats</label>
+    <label>Server URL <small class="muted">.../api/heartbeat.php</small> {{ locked('remote.url') }}
+      <input name="remote_url" class="mono" value="{{ '' if 'remote.url' in managed else s.remote.url }}"{{ ' disabled' if 'remote.url' in managed }}></label>
+    <div class="cols">
+      <label>API key {{ locked('remote.api_key') }}
+        <input name="api_key" class="mono" value="{{ '' if 'remote.api_key' in managed else s.remote.api_key }}"{{ ' disabled' if 'remote.api_key' in managed }} autocomplete="off"></label>
+      <label>HMAC secret {{ locked('remote.secret_key') }}
+        <input name="secret_key" type="password" class="mono" placeholder="{{ 'set - leave empty to keep' if has_secret else 'not set' }}"{{ ' disabled' if 'remote.secret_key' in managed }} autocomplete="new-password"></label>
+    </div>
+    <p class="note">Paste the same secret on this agent's card in uptime-monitor (key button). Until both sides have it, heartbeats are not verified.</p>
+    <div class="cols">
+      <label>Heartbeat every (s) <input name="heartbeat_interval" type="number" min="30" max="3600" value="{{ s.remote.heartbeat_interval }}"></label>
+      <label>Require signed replies
+        <select name="require_signed">
+          {% set rs = s.remote.require_signed_response %}
+          <option value="auto"{{ ' selected' if rs not in [true, false] }}>auto - once the server has signed one</option>
+          <option value="true"{{ ' selected' if rs is sameas true }}>always</option>
+          <option value="false"{{ ' selected' if rs is sameas false }}>never</option>
+        </select></label>
+      <label>Signing state <input value="{{ sign_state }}{{ ' since ' ~ sign_since if sign_since }}" disabled></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Updates and web</h2>
+    <label class="check"><input type="checkbox" name="update_enabled"{{ ' checked' if s.update.enabled }}> Install updates offered by uptime-monitor</label>
+    <p class="note">The server decides when (mode, window, Force Update). The zip comes from GitHub ({{ s.update.github_repo }}) and must match the SHA-256 in the server's signed reply.</p>
+    <div class="cols">
+      <label>Web listens on <input name="web_host" class="mono" value="{{ s.web.host }}"></label>
+      <label>Web port <input name="web_port" type="number" min="1" max="65535" value="{{ s.web.port }}"></label>
+    </div>
+  </section>
+  <div class="actions"><button class="primary">Save settings</button></div>
+</form>
+
+<form method="post" action="{{ url_for('new_secret') }}" class="actions">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <button data-confirm="Generate a new HMAC secret? Heartbeats fail until you paste it on the server too.">Generate new secret</button>
+</form>
+{% endblock %}

@@ -1,0 +1,9 @@
+# Pinned to the newest releases that still install on Python 3.8 (Windows 7
+# SP1 32-bit is the oldest supported box). All are pure Python or ship win32
+# cp38 wheels. Bump only after `pip install` succeeds on a 3.8 venv.
+requests==2.32.4
+urllib3==2.2.3
+certifi>=2024.2.2
+flask==2.3.3
+werkzeug==3.0.6
+waitress==3.0.0

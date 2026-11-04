@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="tiles" data-status-url="{{ url_for('api_status') }}">
+  <div class="tile">
+    <div class="label">Engine</div>
+    <div class="value" data-field="engine">{{ 'Running' if st.engine.running else 'Stopped' }}</div>
+    <div class="sub muted" data-field="engine_sub">last cycle {{ st.engine.updated_at or '-' }}</div>
+  </div>
+  <div class="tile">
+    <div class="label">Monitors</div>
+    <div class="value" data-field="counts">-</div>
+    <div class="sub muted">up / total enabled</div>
+  </div>
+  <div class="tile">
+    <div class="label">Heartbeat</div>
+    <div class="value" data-field="heartbeat">{{ 'On' if st.heartbeat.enabled else 'Off' }}</div>
+    <div class="sub muted" data-field="heartbeat_sub"></div>
+  </div>
+  <div class="tile">
+    <div class="label">Reply signing</div>
+    <div class="value" data-field="signing">{{ st.signing.state }}</div>
+    <div class="sub muted" data-field="signing_sub">{{ st.signing.since }}</div>
+  </div>
+</div>
+
+{% if st.update.pending and is_admin %}
+<div class="banner">
+  <span>Version <b>{{ st.update.pending }}</b> is ready to install.</span>
+  <form method="post" action="{{ url_for('update_install') }}" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button class="primary" data-confirm="Install version {{ st.update.pending }} now? The agent restarts.">Install</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card flush">
+  <table class="grid">
+    <thead><tr><th>Status</th><th>Name</th><th>Type</th><th>Target</th><th class="num">Response</th><th class="num">Uptime</th><th>Checked</th></tr></thead>
+    <tbody data-rows>
+    {% for m in st.monitors %}
+      <tr data-id="{{ m.id }}">
+        <td><span class="pill {{ m.state }}">{{ m.state }}</span></td>
+        <td>{{ m.name }}</td><td>{{ m.type }}</td><td class="mono">{{ m.target }}</td>
+        <td class="num">{{ m.ms if m.ms is not none else '-' }}{% if m.ms is not none %} ms{% endif %}</td>
+        <td class="num">{{ m.uptime if m.uptime is not none else '-' }}{% if m.uptime is not none %}%{% endif %}</td>
+        <td class="muted">{{ m.checked_at[11:19] if m.checked_at else '-' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="empty">No monitors yet.{% if is_admin %} <a href="{{ url_for('monitor_new') }}">Add one</a>.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if is_admin %}
+<form method="post" action="{{ url_for('service_restart') }}" class="actions">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <button data-confirm="Restart the engine and the web UI?">Restart service</button>
+</form>
+{% endif %}
+{% endblock %}

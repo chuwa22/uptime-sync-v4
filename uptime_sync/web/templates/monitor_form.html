@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Add monitor' if is_new else 'Edit ' ~ m.name }}{% endblock %}
+{% block content %}
+<h1>{{ 'Add monitor' if is_new else 'Edit monitor' }}</h1>
+{% for e in errors %}<div class="flash warn">{{ e }}</div>{% endfor %}
+<form method="post" action="{{ url_for('monitor_save') }}" class="card form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <input type="hidden" name="id" value="{{ '' if is_new else m.id }}">
+  <div class="cols">
+    <label>Name <input name="name" value="{{ m.name }}" required maxlength="100"></label>
+    <label>Type
+      <select name="type" data-type-select>
+        {% for t in types %}<option value="{{ t }}"{{ ' selected' if t == m.type }}>{{ t }}</option>{% endfor %}
+      </select></label>
+  </div>
+  <div class="cols">
+    <label>Target <small class="muted">host name or IP, no http://</small>
+      <input name="target" value="{{ m.target }}" required class="mono"></label>
+    <label>Port <small class="muted">TCP / HTTP(S) only</small>
+      <input name="port" type="number" min="1" max="65535" value="{{ m.port if m.port is not none else '' }}"></label>
+  </div>
+  <label data-for-types="HTTP HTTPS">Monitor URL <small class="muted">optional, e.g. https://example.com/health</small>
+    <input name="monitor_url" value="{{ m.monitor_url }}" class="mono"></label>
+  <label>Push URL <small class="muted">Uptime Kuma push monitor, https only. ${NAME} reads NAME from data/.env</small>
+    <input name="push_url" value="{{ m.push_url }}" required class="mono"></label>
+  <div class="cols" data-for-types="DNS">
+    <label>DNS probe
+      <select name="dns_method">
+        {% for v, t in [('auto', 'auto - DNS query, ping if no answer'), ('query', 'query - DNS query only'), ('ping', 'ping - ICMP only')] %}
+        <option value="{{ v }}"{{ ' selected' if v == m.dns_method }}>{{ t }}</option>{% endfor %}
+      </select></label>
+    <label>Query name <small class="muted">default google.com</small>
+      <input name="dns_query_name" value="{{ m.dns_query_name }}" class="mono"></label>
+  </div>
+  <div class="cols">
+    <label>Timeout (s) <input name="timeout" type="number" min="1" max="120" value="{{ m.timeout }}"></label>
+    <label>Attempts <input name="retry_count" type="number" min="1" max="10" value="{{ m.retry_count }}"></label>
+  </div>
+  <label data-for-types="HTTP HTTPS">Request headers <small class="muted">one "Name: value" per line</small>
+    <textarea name="headers" rows="3" class="mono">{% for k, v in m.headers.items() %}{{ k }}: {{ v }}
+{% endfor %}</textarea></label>
+  <div class="checks">
+    <label class="check"><input type="checkbox" name="enabled"{{ ' checked' if m.enabled }}> Enabled</label>
+    <label class="check" data-for-types="HTTPS"><input type="checkbox" name="ssl_verify"{{ ' checked' if m.ssl_verify }}> Verify TLS certificate</label>
+  </div>
+  <div class="actions">
+    <button class="primary">Save</button>
+    <a class="button" href="{{ url_for('monitors_list') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,143 @@
+"""Process helpers that work the same on Windows, Linux and macOS.
+
+Never call os.kill(pid, 0) on Windows to test a PID: there it is
+TerminateProcess and kills the target.
+"""
+
+import os
+import subprocess
+import sys
+
+IS_WINDOWS = sys.platform.startswith('win')
+
+
+def pid_alive(pid):
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if IS_WINDOWS:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 5  # access denied -> it exists
+        try:
+            code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def read_pid(path):
+    try:
+        with open(path, 'r') as f:
+            return int(f.read().strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def write_pid(path, pid=None):
+    tmp = path + '.tmp'
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(tmp, 'w') as f:
+        f.write(str(pid or os.getpid()))
+    os.replace(tmp, path)
+
+
+def background_python():
+    """The interpreter for a process with no console window: pythonw.exe
+    next to python.exe on Windows, the current interpreter elsewhere."""
+    exe = sys.executable
+    if IS_WINDOWS and os.path.basename(exe).lower() == 'python.exe':
+        candidate = os.path.join(os.path.dirname(exe), 'pythonw.exe')
+        if os.path.isfile(candidate):
+            return candidate
+    return exe
+
+
+def child_popen_kwargs():
+    """Popen kwargs for a supervised child: no window, no inherited stdio."""
+    kw = {'stdin': subprocess.DEVNULL, 'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL,
+          'close_fds': True}
+    if IS_WINDOWS:
+        kw['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000) | \
+            getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0x200)
+    return kw
+
+
+def detached_popen_kwargs():
+    """Popen kwargs for a process that must outlive its parent."""
+    kw = {'stdin': subprocess.DEVNULL, 'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL,
+          'close_fds': True}
+    if IS_WINDOWS:
+        kw['creationflags'] = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    else:
+        kw['start_new_session'] = True
+    return kw
+
+
+class InstanceLock:
+    """Exclusive, non-blocking lock on a file; released when the process
+    dies, however it dies. The OS lock is the truth, not the file's content."""
+
+    def __init__(self, path):
+        self.path = path
+        self._f = None
+
+    def acquire(self):
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        f = open(self.path, 'a+')
+        try:
+            if IS_WINDOWS:
+                import msvcrt
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            f.close()
+            return False
+        self._f = f
+        return True
+
+    def release(self):
+        if not self._f:
+            return
+        try:
+            if IS_WINDOWS:
+                import msvcrt
+                self._f.seek(0)
+                msvcrt.locking(self._f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self._f.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        self._f.close()
+        self._f = None
+
+    def held_by_other(self):
+        """True if another process holds the lock right now."""
+        if self._f:
+            return False
+        if self.acquire():
+            self.release()
+            return False
+        return True

@@ -1,0 +1,25 @@
+{
+  "site_name": "",
+  "check_interval": 60,
+  "max_workers": 10,
+  "retry_delay": 1,
+  "log_level": "INFO",
+  "log_retention_days": 14,
+  "web": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 5000
+  },
+  "remote": {
+    "enabled": false,
+    "url": "",
+    "api_key": "",
+    "secret_key": "",
+    "heartbeat_interval": 60,
+    "require_signed_response": "auto"
+  },
+  "update": {
+    "enabled": true,
+    "github_repo": "chuwa22/uptime-sync-v4"
+  }
+}

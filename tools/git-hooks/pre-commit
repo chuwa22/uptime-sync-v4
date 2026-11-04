@@ -1,0 +1,92 @@
+#!/bin/sh
+# Uptime Sync 4 pre-commit guard: refuse commits that would put site data or
+# credentials in git. Enabled per clone with:
+#     git config core.hooksPath tools/git-hooks
+#
+# Two checks on what is STAGED (not the working tree):
+#   1. Paths that must never be committed, whatever .gitignore says
+#      (`git add -f` and already-tracked files bypass .gitignore). Same list
+#      as FORBIDDEN in tools/build-release.py: data/, logs/, run/, backups/,
+#      settings/monitors/users/history/local/sessions/response_signing/
+#      update_state .json anywhere (3.x folders copied in for an import
+#      test), secret.key, .env files, *.db; plus *.log dumps copied from
+#      customer boxes and *.pem / *.pfx / *.p12.
+#      Templates ending in .example are allowed.
+#   2. Added lines that look like a credential: an Uptime Kuma push token,
+#      an AuthManager password hash, a private key, a GitHub or Telegram
+#      token, or a long password/secret/token/api_key literal. Templates are
+#      scanned too -- filling one in place is how a real key gets committed.
+#
+# Matches are reported as file:line + rule; the matched value is never
+# printed. A false positive can be committed with `git commit --no-verify`
+# -- look at the diff first.
+
+fail=0
+
+paths=$(git diff --cached --name-only --diff-filter=ACMR)
+# Split on newlines only: a file name may contain spaces.
+old_ifs=$IFS
+IFS='
+'
+for p in $paths; do
+    case "$p" in
+        *.example) continue ;;
+    esac
+    case "$p" in
+        data/*|*/data/*|logs/*|logs\ */*|run/*|backups/*|update_staging/*|*.log|*.db|\
+        local.json|*/local.json|monitors.json|*/monitors.json|\
+        users.json|*/users.json|sessions.json|*/sessions.json|\
+        settings.json|*/settings.json|history.json|*/history.json|\
+        response_signing.json|*/response_signing.json|\
+        update_state.json|*/update_state.json|\
+        secret.key|*/secret.key|.env|.env.*|*/.env|*/.env.*|*.env|\
+        *.pem|*.pfx|*.p12)
+            echo "[BLOCKED] $p -- site data or credentials must stay out of git"
+            fail=1
+            ;;
+    esac
+done
+IFS=$old_ifs
+
+git diff --cached -U0 --diff-filter=ACMR | awk '
+    /^\+\+\+ / {
+        file = substr($0, 7); next
+    }
+    /^@@ / {
+        # @@ -a,b +c,d @@  ->  next added line is number c
+        split($0, h, " "); split(substr(h[3], 2), n, ","); line = n[1] + 0; next
+    }
+    /^\+/ {
+        text = substr($0, 2); low = tolower(text); rule = ""
+        if (text ~ /\/api\/push\/[A-Za-z0-9]{8,}/)
+            rule = "Uptime Kuma push token"
+        else if (low ~ /[0-9a-f]{32}\$([0-9]+\$)?[0-9a-f]{64}/)
+            rule = "password hash"
+        else if (text ~ /-----BEGIN [A-Z ]*PRIVATE KEY-----/)
+            rule = "private key"
+        else if (text ~ /(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}/ || text ~ /github_pat_[A-Za-z0-9_]{40}/)
+            rule = "GitHub token"
+        else if (text ~ /[0-9]{8,10}:[A-Za-z0-9_-]{35}/)
+            rule = "Telegram bot token"
+        else if ((low ~ /(password|passwd|secret|token|api_?key)[a-z_]*["\047]?[[:space:]]*(=>|=|:)[[:space:]]*["\047][^"\047[:space:]]{20,}["\047]/ \
+                  || text ~ /^[[:space:]]*(export[[:space:]]+)?[A-Z_]*(PASS|SECRET|TOKEN|KEY)[A-Z_]*=[^[:space:]$]{20,}/) \
+                 && low !~ /(your_|example|xxxx|\.\.\.|changeme|placeholder|<[a-z_-]+>)/ \
+                 && text !~ /(=>|=|:)[[:space:]]*["\047][A-Z][A-Z0-9_]*["\047]/ \
+                 && text !~ /=[[:space:]]*[A-Za-z_][A-Za-z0-9_.]*\(/)
+            # (last two clauses: the value is an env var NAME, e.g. 'UPTIME_SYNC_SECRET_KEY',
+            #  or a function call, e.g. SECRET_KEY=auth.app_secret_key())
+            rule = "long password/secret/token literal"
+        if (rule != "") { printf "[BLOCKED] %s:%d -- %s\n", file, line, rule; found = 1 }
+        line++
+    }
+    END { exit found ? 1 : 0 }
+' || fail=1
+
+if [ "$fail" -ne 0 ]; then
+    echo ""
+    echo "Commit refused by tools/git-hooks/pre-commit: site data and credentials must not reach git."
+    echo "Unstage with 'git restore --staged <file>'. If this is a false positive, check the"
+    echo "diff, then commit with 'git commit --no-verify'."
+    exit 1
+fi
+exit 0

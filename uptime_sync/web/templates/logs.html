@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Logs{% endblock %}
+{% block content %}
+<div class="head">
+  <h1>Logs</h1>
+  <form method="get" class="filters">
+    <select name="level" data-autosubmit>
+      {% for l in levels %}<option value="{{ l }}"{{ ' selected' if l == level }}>{{ l }}+</option>{% endfor %}
+    </select>
+    <select name="proc" data-autosubmit>
+      <option value="">All processes</option>
+      {% for p in procs %}<option value="{{ p }}"{{ ' selected' if p == proc }}>{{ p }}</option>{% endfor %}
+    </select>
+    <input type="search" name="q" value="{{ q }}" placeholder="Search text" maxlength="200">
+    <button type="submit">Filter</button>
+  </form>
+</div>
+<div class="card flush">
+  <table class="logtable">
+    <thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Message</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr class="{{ 'l-err' if r.level in ('ERROR', 'CRITICAL') else 'l-warn' if r.level == 'WARNING' else '' }}">
+        <td class="nowrap">{{ r.time }}</td><td>{{ r.level }}</td>
+        <td class="nowrap">{{ r.proc }}/{{ r.logger }}</td><td><pre class="msg">{{ r.msg }}</pre></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">No log lines match.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="muted small">
+  Newest first, {{ rows | length }} shown.
+  {% if paged %}<a href="{{ url_for('logs', level=level, proc=proc or None, q=q or None) }}">Newest</a>{% endif %}
+  {% if older %}<a href="{{ older }}">Older &rarr;</a>{% endif %}
+  &middot; logs.db: {{ stats.rows }} rows, {{ (stats.bytes / 1048576) | round(1) }} MB
+</p>
+{% if files %}
+<h2>Text logs</h2>
+<p class="muted small">Written only when the database could not be used, or by a process that crashed before logging started.</p>
+<ul class="plain">
+  {% for f, size, mtime in files %}<li><a href="{{ url_for('log_file', name=f) }}">{{ f }}</a> <span class="muted small">({{ (size / 1024) | round(1) }} KB)</span></li>{% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

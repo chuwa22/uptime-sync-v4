@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Setup{% endblock %}
+{% block main_class %}narrow{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Welcome to Uptime Sync</h1>
+  <p class="muted">Create the administrator account. The user name is <b>admin</b>.</p>
+  {% if error %}<div class="flash warn">{{ error }}</div>{% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>Password <small class="muted">(at least {{ min_len }} characters)</small>
+      <input type="password" name="password" minlength="{{ min_len }}" required autofocus autocomplete="new-password"></label>
+    <label>Confirm password
+      <input type="password" name="confirm" minlength="{{ min_len }}" required autocomplete="new-password"></label>
+    <button class="primary">Create admin</button>
+  </form>
+</div>
+{% endblock %}

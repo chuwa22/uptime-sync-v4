@@ -1,0 +1,101 @@
+"""First-time setup. Run with the system Python (3.8 or newer):
+
+    Windows (elevated prompt):  py -3 install.py      or  python install.py
+    Linux / macOS:              python3 install.py    (sudo for a boot-time service)
+
+It creates .venv/ inside this folder, installs requirements.txt into it,
+then runs `.venv/.../python main.py install`, which registers autostart and
+starts the agent. Safe to run again: an existing working .venv is reused.
+
+Options:
+    --wheels DIR      install from wheel files in DIR, no internet needed
+    --no-autostart    set up the venv only; start with `main.py run`
+    --recreate        delete .venv and build it again
+"""
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+VENV = os.path.join(ROOT, '.venv')
+IS_WINDOWS = os.name == 'nt'
+
+
+def venv_python():
+    if IS_WINDOWS:
+        return os.path.join(VENV, 'Scripts', 'python.exe')
+    return os.path.join(VENV, 'bin', 'python')
+
+
+def works(python):
+    try:
+        out = subprocess.run([python, '-c', 'import sys, ssl, sqlite3; print(sys.version_info[:2])'],
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return out.returncode == 0
+
+
+def step(msg):
+    print('[INFO] ' + msg)
+    sys.stdout.flush()
+
+
+def main():
+    p = argparse.ArgumentParser(description='Set up Uptime Sync 4 in this folder.')
+    p.add_argument('--wheels', help='folder of wheel files for an offline install')
+    p.add_argument('--no-autostart', action='store_true')
+    p.add_argument('--recreate', action='store_true')
+    a = p.parse_args()
+
+    if sys.version_info < (3, 8):
+        print('[ERROR] Python 3.8 or newer is required (this is %s).' % sys.version.split()[0])
+        return 1
+    if os.path.abspath(sys.prefix) == os.path.abspath(VENV):
+        print('[ERROR] Run install.py with the system Python, not the one inside .venv.')
+        return 1
+
+    py = venv_python()
+    if a.recreate and os.path.isdir(VENV):
+        step('Removing the old .venv')
+        shutil.rmtree(VENV)
+    if os.path.isdir(VENV) and not works(py):
+        step('.venv is broken - rebuilding it')
+        shutil.rmtree(VENV)
+    if not os.path.isdir(VENV):
+        step('Creating .venv with Python %s (%s)' % (sys.version.split()[0], sys.executable))
+        try:
+            import venv
+            # Copies, not symlinks, on Windows: the venv keeps working if the
+            # system Python is moved or upgraded in place.
+            venv.EnvBuilder(with_pip=True, symlinks=not IS_WINDOWS, clear=True).create(VENV)
+        except Exception as e:
+            print('[ERROR] Could not create the venv: %s' % e)
+            if sys.platform.startswith('linux'):
+                print('[INFO] On Debian/Ubuntu: sudo apt install python3-venv')
+            return 1
+    if not works(py):
+        print('[ERROR] %s does not run.' % py)
+        return 1
+
+    step('Installing requirements')
+    cmd = [py, '-m', 'pip', 'install', '--disable-pip-version-check', '-r',
+           os.path.join(ROOT, 'requirements.txt')]
+    if a.wheels:
+        cmd += ['--no-index', '--find-links', os.path.abspath(a.wheels)]
+    if subprocess.call(cmd) != 0:
+        print('[ERROR] pip install failed (see above).')
+        return 1
+
+    args = [py, os.path.join(ROOT, 'main.py'), 'install']
+    if a.no_autostart:
+        args.append('--no-autostart')
+    step('Running: main.py install')
+    return subprocess.call(args, cwd=ROOT)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -1,0 +1,129 @@
+"""data/monitors.json: {"monitors": [ {...}, ... ]}.
+
+A monitor:
+    id, name, type (DNS | PING | TCP PORT | HTTP | HTTPS), target,
+    port, monitor_url, push_url, enabled, timeout, retry_count,
+    headers {}, ssl_verify, dns_method (auto|query|ping), dns_query_name
+"""
+
+import copy
+import re
+import threading
+import uuid
+from urllib.parse import urlparse
+
+from . import paths, settings
+from .checks import DNS_METHODS, is_valid_dns_query_name
+from .util import atomic_write_json, read_json
+
+TYPES = ('DNS', 'PING', 'TCP PORT', 'HTTP', 'HTTPS')
+
+DEFAULTS = {
+    'id': '',
+    'name': '',
+    'type': 'PING',
+    'target': '',
+    'port': None,
+    'monitor_url': '',
+    'push_url': '',
+    'enabled': True,
+    'timeout': 10,
+    'retry_count': 3,
+    'headers': {},
+    'ssl_verify': True,
+    'dns_method': 'auto',
+    'dns_query_name': '',
+}
+
+_HOST_RE = re.compile(r'^[A-Za-z0-9_.:\-\[\]]{1,253}$')
+_lock = threading.Lock()
+
+
+def normalize(raw):
+    """A monitor dict with every field present and sane types."""
+    m = copy.deepcopy(DEFAULTS)
+    for key in DEFAULTS:
+        if key in raw and raw[key] is not None:
+            m[key] = raw[key]
+    m['type'] = str(m['type'] or 'PING').strip().upper()
+    m['name'] = str(m['name']).strip()
+    m['target'] = str(m['target']).strip()
+    m['push_url'] = str(m['push_url'] or '').strip()
+    m['monitor_url'] = str(m['monitor_url'] or '').strip()
+    m['enabled'] = bool(m['enabled'])
+    m['ssl_verify'] = bool(m['ssl_verify'])
+    try:
+        m['port'] = int(m['port']) if m['port'] not in (None, '') else None
+    except (TypeError, ValueError):
+        m['port'] = None
+    for key, lo, hi, fallback in (('timeout', 1, 120, 10), ('retry_count', 1, 10, 3)):
+        try:
+            m[key] = min(hi, max(lo, int(m[key])))
+        except (TypeError, ValueError):
+            m[key] = fallback
+    if not isinstance(m['headers'], dict):
+        m['headers'] = {}
+    m['headers'] = {str(k): str(v) for k, v in m['headers'].items()}
+    m['dns_method'] = str(m['dns_method'] or 'auto').lower()
+    if m['dns_method'] not in DNS_METHODS:
+        m['dns_method'] = 'auto'
+    m['dns_query_name'] = str(m['dns_query_name'] or '').strip()
+    if not m['id']:
+        m['id'] = uuid.uuid4().hex[:12]
+    return m
+
+
+def validate(m):
+    """List of problems (empty = valid). Expects a normalize()d monitor."""
+    errors = []
+    if not m['name']:
+        errors.append('Name is required.')
+    if m['type'] not in TYPES:
+        errors.append('Type must be one of: ' + ', '.join(TYPES) + '.')
+    if not m['target'] or not _HOST_RE.match(m['target']):
+        errors.append('Target must be a host name or IP address (no scheme, no path).')
+    if m['type'] == 'TCP PORT' and not (m['port'] and 0 < m['port'] < 65536):
+        errors.append('TCP PORT monitors need a port between 1 and 65535.')
+    if m['port'] is not None and not (0 < m['port'] < 65536):
+        errors.append('Port must be between 1 and 65535.')
+    if m['monitor_url']:
+        u = urlparse(settings.expand_refs(m['monitor_url']))
+        if u.scheme not in ('http', 'https') or not u.hostname:
+            errors.append('Monitor URL must be an http(s) URL.')
+    if m['type'] == 'DNS' and m['dns_query_name'] and not is_valid_dns_query_name(m['dns_query_name']):
+        errors.append('DNS query name is not a valid host name.')
+    if m['push_url']:
+        missing = settings.undefined_refs(m['push_url'])
+        if missing:
+            errors.append('Push URL uses ${%s}, which data/.env does not define.' % missing[0])
+        u = urlparse(settings.expand_refs(m['push_url']))
+        if u.scheme != 'https' or not u.hostname:
+            errors.append('Push URL must be an https:// URL (the token in it would travel in clear text).')
+    else:
+        errors.append('Push URL is required.')
+    return errors
+
+
+def load():
+    data = read_json(paths.MONITORS_FILE, {'monitors': []})
+    if isinstance(data, list):
+        data = {'monitors': data}
+    items = data.get('monitors') if isinstance(data, dict) else None
+    return [normalize(m) for m in (items or []) if isinstance(m, dict)]
+
+
+def save(monitors):
+    with _lock:
+        atomic_write_json(paths.MONITORS_FILE, {'monitors': [normalize(m) for m in monitors]},
+                          private=True)
+
+
+def runtime_view(m, env=None):
+    """The monitor as the checker uses it: ${NAME} references expanded.
+    Never send this to the web UI -- it carries the real push token."""
+    env = settings.env_values() if env is None else env
+    r = copy.deepcopy(m)
+    r['push_url'] = settings.expand_refs(r['push_url'], env)
+    r['monitor_url'] = settings.expand_refs(r['monitor_url'], env)
+    r['headers'] = {k: settings.expand_refs(v, env) for k, v in r['headers'].items()}
+    return r
