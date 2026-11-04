@@ -1,6 +1,7 @@
 from tests import _env  # noqa: F401  (must be first)
 
 import json
+import os
 import re
 import unittest
 
@@ -54,6 +55,7 @@ class WebTests(unittest.TestCase):
             self.assertEqual(r.status_code, 200, path)
             self.assertIn("script-src 'self'", r.headers['Content-Security-Policy'])
             self.assertEqual(r.headers['Cache-Control'], 'no-store')
+            self.assertEqual(r.headers['X-UA-Compatible'], 'IE=edge')
         html = self.c.get('/settings').get_data(as_text=True)
         self.assertNotIn(' style=', html)
         self.assertNotIn('<script>', html)
@@ -119,6 +121,72 @@ class WebTests(unittest.TestCase):
                                            'push_url': 'https://k/api/push/' + 'SECRETTOKEN1'})])
         for path in ('/api/status', '/monitors'):
             self.assertNotIn('SECRETTOKEN1', self.c.get(path).get_data(as_text=True), path)
+
+
+
+WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uptime_sync', 'web')
+
+
+def _read(*rel):
+    with open(os.path.join(WEB, *rel), encoding='utf-8') as f:
+        return f.read()
+
+
+def _supports_split(css):
+    """(css outside @supports blocks, css inside them)."""
+    outside, inside, i = [], [], 0
+    while True:
+        j = css.find('@supports', i)
+        if j < 0:
+            outside.append(css[i:])
+            return ''.join(outside), ''.join(inside)
+        outside.append(css[i:j])
+        k, depth = css.index('{', j), 0
+        for n in range(k, len(css)):
+            depth += {'{': 1, '}': -1}.get(css[n], 0)
+            if depth == 0:
+                break
+        inside.append(css[k:n + 1])
+        i = n + 1
+
+
+class OldBrowserTests(unittest.TestCase):
+    """Windows 7 boxes open the UI in IE8-IE11 (see the header of app.css)."""
+
+    def setUp(self):
+        self.css = re.sub(r'/\*.*?\*/', '', _read('static', 'app.css'), flags=re.S)
+
+    def test_every_var_has_a_literal_fallback(self):
+        for body in re.findall(r'\{([^{}]*)\}', self.css):
+            decls = [d.strip() for d in body.split(';') if d.strip()]
+            for prev, decl in zip([''] + decls, decls):
+                if 'var(' not in decl or decl.startswith('--'):
+                    continue
+                prop = decl.split(':', 1)[0].strip()
+                self.assertTrue(prev.split(':', 1)[0].strip() == prop and 'var(' not in prev,
+                                'no IE fallback before: %s' % decl)
+
+    def test_flex_grid_gap_only_inside_supports(self):
+        outside, inside = _supports_split(self.css)
+        self.assertIn('display: grid', inside)
+        for pattern in (r'display:\s*(flex|grid)', r'(^|[;{\s])gap:', r'grid-template'):
+            self.assertIsNone(re.search(pattern, outside), pattern)
+
+    def test_templates_use_no_html5_sectioning_tags(self):
+        for name in os.listdir(os.path.join(WEB, 'templates')):
+            html = _read('templates', name)
+            for tag in ('main', 'header', 'nav', 'footer', 'section', 'article', 'aside'):
+                self.assertNotIn('<%s' % tag, html, '%s uses <%s> (IE8 cannot style it)' % (name, tag))
+
+    def test_base_template_asks_ie_for_its_best_mode(self):
+        self.assertIn('<meta http-equiv="X-UA-Compatible" content="IE=edge">', _read('templates', 'base.html'))
+
+    def test_app_js_is_es3(self):
+        js = re.sub(r'/\*.*?\*/|//[^\n]*', '', _read('static', 'app.js'), flags=re.S)
+        for token in ('=>', 'const ', 'let ', '`', 'fetch(', '.forEach(', 'classList', '.closest(',
+                      '.matches(', '.filter(', '.map(', 'Object.assign', 'replaceChildren',
+                      '.innerHTML'):
+            self.assertNotIn(token, js, token)
 
 
 if __name__ == '__main__':

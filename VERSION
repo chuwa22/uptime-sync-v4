@@ -1,3 +1,13 @@
+4.0.4
+2026-11-04
+- Fix (old browsers): the web UI now works in Internet Explorer 8 to 11, the browsers Windows 7 ships with. On a real Windows 7 32-bit box (IE10) the page looked broken.
+  - Every response sends `X-UA-Compatible: IE=edge`. Without it, IE treats localhost and LAN addresses as intranet sites and renders them as IE7.
+  - CSS: each `var(--x)` now has a plain colour just before it, which IE uses. Flex, grid and gap moved into `@supports (display: grid)`, which IE skips. IE gets a float/inline-block layout instead.
+  - app.js rewritten in ES3: XMLHttpRequest instead of fetch, per-element handlers with an attachEvent fallback, no classList, closest, forEach or textContent-only code. The dashboard rows are rebuilt node by node, because IE9 and older cannot set innerHTML on a tbody. The script moved to the end of body and is no longer `defer`.
+  - Templates use `div` with a `role` instead of main/header/nav/footer/section. IE8 cannot style HTML5 elements, and IE9-11 do not know `main`.
+  - Modern browsers render as before: checked in Chrome, light and dark, and with the `@supports` block removed to preview what IE gets.
+  - New OldBrowserTests guard these rules: var fallbacks, flex/grid only inside @supports, no HTML5 sectioning tags, the X-UA meta, and no ES5+ tokens in app.js. They fail against the 4.0.3 files.
+
 4.0.3
 2026-11-04
 - New (install.bat): a Windows installer you can double-click. It asks for administrator rights itself (UAC, through PowerShell's Start-Process -Verb RunAs, which Windows 7's PowerShell 2.0 has) and finds the system Python 3.8 or newer (`py -3`, then `python`; the Microsoft Store stub is skipped). It runs install.py with that Python, passing options through, and pauses so the elevated window stays open on the result. The admin check uses `fltmc`, not `net session`, which fails on boxes with the Server service disabled. A `/elevated` marker stops it from asking again in a loop. The file is ASCII with CRLF line endings, enforced by .gitattributes and a unit test. It is shipped in the release zip.

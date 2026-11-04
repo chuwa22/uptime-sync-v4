@@ -1,3 +1,14 @@
+/* Uptime Sync web UI.
+ *
+ * Old browsers are a target: Windows 7 boxes ship IE8 to IE11, and the admin
+ * opens this page on the box itself over RDP. So:
+ *   - every declaration that uses var(--x) is preceded by the same
+ *     declaration with the light-theme value (IE ignores the var() line);
+ *   - layout outside @supports uses only floats, inline-block and margins;
+ *   - flex, grid and gap live in the @supports block at the end, which IE
+ *     skips entirely.
+ * tests/test_web.py checks both rules.
+ */
 :root {
   --bg: #f4f6f9; --card: #ffffff; --text: #1b2330; --muted: #6b7686; --line: #e2e7ee;
   --accent: #2f6fe4; --accent-text: #ffffff; --up: #1f9d55; --down: #d64545; --warn: #c98a12;
@@ -12,98 +23,143 @@
 }
 * { box-sizing: border-box; }
 html { font-size: 15px; }
-body { margin: 0; background: var(--bg); color: var(--text);
+body { margin: 0; background: #f4f6f9; background: var(--bg); color: #1b2330; color: var(--text);
   font-family: -apple-system, "Segoe UI", Roboto, Tahoma, sans-serif; line-height: 1.45; }
-a { color: var(--accent); text-decoration: none; }
+a { color: #2f6fe4; color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 h1 { font-size: 1.45rem; margin: 0 0 .9rem; }
 h2 { font-size: 1.05rem; margin: 0 0 .8rem; }
-.muted { color: var(--muted); }
+.muted { color: #6b7686; color: var(--muted); }
 .small { font-size: .85rem; }
 .mono { font-family: Consolas, "SF Mono", Menlo, monospace; font-size: .92em; }
 
-.topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: .7rem 1.4rem; background: var(--card); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.brand { font-weight: 650; color: var(--text); display: flex; align-items: center; gap: .5rem; }
-.brand .dot { width: .7rem; height: .7rem; border-radius: 50%; background: var(--up); display: inline-block; }
-.topbar nav { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
-.topbar nav a { color: var(--muted); padding: .35rem .65rem; border-radius: 6px; }
-.topbar nav a.active, .topbar nav a:hover { color: var(--text); background: var(--bg); text-decoration: none; }
+.topbar { padding: .7rem 1.4rem; background: #ffffff; background: var(--card);
+  border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line); overflow: hidden; }
+.brand { float: left; padding: .35rem 0; font-weight: 650; color: #1b2330; color: var(--text); }
+.brand .dot { width: .7rem; height: .7rem; border-radius: 50%; background: #1f9d55; background: var(--up);
+  display: inline-block; margin-right: .5rem; }
+.topbar .nav { float: right; }
+.topbar .nav a { display: inline-block; margin-left: .2rem; color: #6b7686; color: var(--muted);
+  padding: .35rem .65rem; border-radius: 6px; }
+.topbar .nav a.active, .topbar .nav a:hover { color: #1b2330; color: var(--text);
+  background: #f4f6f9; background: var(--bg); text-decoration: none; }
 
-.page { max-width: 1180px; margin: 1.4rem auto; padding: 0 1.2rem; }
-.narrow { max-width: 440px; margin: 3rem auto; padding: 0 1.2rem; }
-.foot { text-align: center; color: var(--muted); font-size: .8rem; padding: 1.5rem 0; }
+.page { display: block; max-width: 1180px; margin: 1.4rem auto; padding: 0 1.2rem; }
+.narrow { display: block; max-width: 440px; margin: 3rem auto; padding: 0 1.2rem; }
+.foot { text-align: center; color: #6b7686; color: var(--muted); font-size: .8rem; padding: 1.5rem 0; }
 
-.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 1.2rem 1.3rem; box-shadow: var(--shadow); margin-bottom: 1rem; }
+.card { background: #ffffff; background: var(--card); border: 1px solid #e2e7ee; border: 1px solid var(--line);
+  border-radius: 10px; border-radius: var(--radius); padding: 1.2rem 1.3rem;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .06); box-shadow: var(--shadow); margin-bottom: 1rem; }
 .card.flush { padding: 0; overflow-x: auto; }
-.head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .9rem; }
-.head h1 { margin: 0; }
+.head { overflow: hidden; margin-bottom: .9rem; }
+.head h1 { float: left; margin: 0 1rem 0 0; }
+.head > a, .head > form { float: right; }
 
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .9rem; margin-bottom: 1rem; }
-.tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem 1.1rem; }
-.tile .label { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.tiles { margin-bottom: 1rem; }
+.tile { display: inline-block; vertical-align: top; width: 24%; min-width: 200px; margin: 0 .5% .9rem 0;
+  background: #ffffff; background: var(--card); border: 1px solid #e2e7ee; border: 1px solid var(--line);
+  border-radius: 10px; border-radius: var(--radius); padding: .9rem 1.1rem; }
+.tile .label { color: #6b7686; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
 .tile .value { font-size: 1.35rem; font-weight: 650; margin: .15rem 0; }
 .tile .sub { font-size: .82rem; min-height: 1.1em; }
 
-.banner { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  background: var(--card); border: 1px solid var(--accent); border-radius: var(--radius); padding: .7rem 1rem; margin-bottom: 1rem; }
+.banner { overflow: hidden; background: #ffffff; background: var(--card);
+  border: 1px solid #2f6fe4; border: 1px solid var(--accent);
+  border-radius: 10px; border-radius: var(--radius); padding: .7rem 1rem; margin-bottom: 1rem; }
+.banner > span { float: left; padding: .45rem 0; }
+.banner > form { float: right; }
 
 table.grid { width: 100%; border-collapse: collapse; }
-table.grid th, table.grid td { padding: .6rem .9rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
-table.grid th { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+table.grid th, table.grid td { padding: .6rem .9rem; border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line);
+  text-align: left; vertical-align: middle; }
+table.grid th { font-size: .78rem; color: #6b7686; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .04em; font-weight: 600; }
 table.grid tr:last-child td { border-bottom: 0; }
 table.grid .num { text-align: right; white-space: nowrap; }
-td.empty { text-align: center; color: var(--muted); padding: 2rem; }
+td.empty { text-align: center; color: #6b7686; color: var(--muted); padding: 2rem; }
 .row-actions { white-space: nowrap; text-align: right; }
 
 .pill { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .78rem; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .03em; color: #fff; background: var(--paused); }
-.pill.up { background: var(--up); }
-.pill.down { background: var(--down); }
-.pill.unknown { background: var(--warn); }
+  text-transform: uppercase; letter-spacing: .03em; color: #fff; background: #8a94a3; background: var(--paused); }
+.pill.up { background: #1f9d55; background: var(--up); }
+.pill.down { background: #d64545; background: var(--down); }
+.pill.unknown { background: #c98a12; background: var(--warn); }
 
-.flash { padding: .65rem .9rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid var(--line); background: var(--card); }
-.flash.ok { border-color: var(--up); }
-.flash.warn { border-color: var(--down); }
+.flash { padding: .65rem .9rem; border-radius: 8px; margin-bottom: 1rem;
+  border: 1px solid #e2e7ee; border: 1px solid var(--line); background: #ffffff; background: var(--card); }
+.flash.ok { border-color: #1f9d55; border-color: var(--up); }
+.flash.warn { border-color: #d64545; border-color: var(--down); }
 
 form.inline { display: inline; margin: 0; }
 label { display: block; margin-bottom: .85rem; font-weight: 550; font-size: .92rem; }
 label small { font-weight: 400; }
 input, select, textarea { display: block; width: 100%; margin-top: .3rem; padding: .5rem .6rem; font: inherit;
-  color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 7px; }
-input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  color: #1b2330; color: var(--text); background: #ffffff; background: var(--field);
+  border: 1px solid #e2e7ee; border: 1px solid var(--line); border-radius: 7px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid #2f6fe4; outline: 2px solid var(--accent); outline-offset: -1px; }
 input:disabled { opacity: .6; }
-label.check { display: flex; align-items: center; gap: .5rem; font-weight: 500; }
-label.check input { width: auto; margin: 0; }
-.checks { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 1rem; }
-.note { color: var(--muted); font-size: .85rem; margin: -.3rem 0 .9rem; }
-.lock { color: var(--warn); font-weight: 500; margin-left: .3rem; }
-.actions { display: flex; gap: .6rem; align-items: center; margin: .5rem 0 1rem; }
+label.check { font-weight: 500; }
+label.check input { display: inline; width: auto; margin: 0 .5rem 0 0; vertical-align: middle; }
+.checks label { display: inline-block; margin-right: 1.5rem; }
+.cols { overflow: hidden; }
+.cols > label { display: inline-block; vertical-align: top; width: 48%; margin-right: 1.5%; }
+.note { color: #6b7686; color: var(--muted); font-size: .85rem; margin: -.3rem 0 .9rem; }
+.lock { color: #c98a12; color: var(--warn); font-weight: 500; margin-left: .3rem; }
+.actions { margin: .5rem 0 1rem; }
+.actions > * { margin-right: .6rem; vertical-align: middle; }
 .hidden { display: none !important; }
 
 button, .button { display: inline-block; font: inherit; font-size: .92rem; padding: .45rem .95rem; border-radius: 7px;
-  border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
-button:hover, .button:hover { border-color: var(--accent); text-decoration: none; }
-button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  border: 1px solid #e2e7ee; border: 1px solid var(--line); background: #ffffff; background: var(--card);
+  color: #1b2330; color: var(--text); cursor: pointer; }
+button:hover, .button:hover { border-color: #2f6fe4; border-color: var(--accent); text-decoration: none; }
+button.primary, .button.primary { background: #2f6fe4; background: var(--accent);
+  border-color: #2f6fe4; border-color: var(--accent); color: #ffffff; color: var(--accent-text); }
 button.small { padding: .2rem .55rem; font-size: .8rem; }
-button.danger { color: var(--down); }
-button.link { border: 0; background: none; color: var(--muted); padding: .35rem .65rem; }
-button.link:hover { color: var(--text); }
+button.danger { color: #d64545; color: var(--down); }
+button.link { border: 0; background: none; color: #6b7686; color: var(--muted); padding: .35rem .65rem; }
+button.link:hover { color: #1b2330; color: var(--text); }
 
-pre.log { margin: 0; padding: 1rem; font-size: .8rem; max-height: 70vh; overflow: auto; background: var(--code);
-  border-radius: var(--radius); white-space: pre-wrap; word-break: break-all; }
-.l-err { color: var(--down); }
-.l-warn { color: var(--warn); }
+pre.log { margin: 0; padding: 1rem; font-size: .8rem; max-height: 70vh; overflow: auto;
+  background: #f0f3f7; background: var(--code); border-radius: 10px; border-radius: var(--radius);
+  white-space: pre-wrap; word-wrap: break-word; word-break: break-all; }
+.l-err { color: #d64545; color: var(--down); }
+.l-warn { color: #c98a12; color: var(--warn); }
 input.secret { font-size: 1rem; margin: 1rem 0; }
 
 /* Logs center */
-form.filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: 0; }
-form.filters select, form.filters input, form.filters button { width: auto; margin: 0; }
-form.filters input[type=search] { width: 14rem; max-width: 100%; }
+form.filters { margin: 0; }
+form.filters select, form.filters input, form.filters button { display: inline-block; width: auto;
+  margin: 0 .5rem 0 0; vertical-align: middle; }
+form.filters input.search { width: 14rem; max-width: 100%; }
 table.logtable { width: 100%; border-collapse: collapse; font-size: .8rem; }
-table.logtable th, table.logtable td { text-align: left; vertical-align: top; padding: .3rem .6rem; border-bottom: 1px solid var(--line); }
-table.logtable pre.msg { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+table.logtable th, table.logtable td { text-align: left; vertical-align: top; padding: .3rem .6rem;
+  border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line); }
+table.logtable pre.msg { margin: 0; white-space: pre-wrap; word-wrap: break-word; font: inherit; }
 .nowrap { white-space: nowrap; }
 ul.plain { list-style: none; padding: 0; }
+
+/* Modern layout. IE (every version) does not know @supports and skips it. */
+@supports (display: grid) {
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; padding: 0; }
+  .topbar .nav { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+  .topbar .nav a { margin-left: 0; }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+  .head h1 { margin: 0; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .9rem; }
+  .tile { width: auto; min-width: 0; margin: 0; }
+  .banner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .banner > span { padding: 0; }
+  label.check { display: flex; align-items: center; gap: .5rem; }
+  label.check input { margin: 0; }
+  .checks { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .checks label { margin-right: 0; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 1rem; }
+  .cols > label { width: auto; margin-right: 0; }
+  .actions { display: flex; gap: .6rem; align-items: center; }
+  .actions > * { margin-right: 0; }
+  form.filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  form.filters select, form.filters input, form.filters button { margin: 0; }
+}

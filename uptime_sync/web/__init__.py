@@ -60,6 +60,9 @@ def create_app():
         resp.headers['X-Frame-Options'] = 'DENY'
         resp.headers['X-Content-Type-Options'] = 'nosniff'
         resp.headers['Referrer-Policy'] = 'same-origin'
+        # IE puts localhost and LAN addresses in the intranet zone and renders
+        # them as IE7 unless told otherwise (Windows 7 ships IE8-IE11).
+        resp.headers['X-UA-Compatible'] = 'IE=edge'
         if request.path.startswith('/static/') and request.args.get('v'):
             resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
         elif not request.path.startswith('/static/'):

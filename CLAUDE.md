@@ -114,6 +114,16 @@ README.md covers usage. This file covers the rules for changing the code.
     handlers.
   - Behaviour lives in `static/app.js` through `data-*` attributes.
   - The CSP is `script-src 'self'`.
+  - **Old browsers (4.0.4).** Windows 7 boxes open the UI in IE8-IE11 on the
+    box itself. Every response sends `X-UA-Compatible: IE=edge`: without it IE
+    renders localhost/LAN pages as IE7. In `app.css`, a `var(--x)` declaration
+    follows the same property with the light-theme value, and flex, grid and
+    gap live only inside `@supports (display: grid)`. The fallback outside uses
+    floats, inline-block and margins. `app.js` is ES3: no fetch, arrow functions,
+    const/let, classList, closest/matches, forEach/filter or innerHTML. It binds
+    handlers per element (attachEvent fallback). Templates use `div` + `role`,
+    not main/header/nav/footer/section. Pages must work with JS off.
+    `OldBrowserTests` in tests/test_web.py checks all of this.
   - Every POST carries the `csrf` form field.
   - Admin-only routes use `@auth.admin_required`.
   - A viewer never sees a push token. Use `mask_push_url`.
