@@ -39,7 +39,9 @@ def verify_reply(header, request_signature, body, secret_key):
     expected = hmac.new(secret_key.encode('utf-8'),
                         request_signature.encode('utf-8') + b'.' + body,
                         hashlib.sha256).hexdigest()
-    return 'valid' if hmac.compare_digest(got, expected) else 'invalid'
+    # bytes, not str: compare_digest raises TypeError on a non-ASCII str, and
+    # the header is whatever the network sent.
+    return 'valid' if hmac.compare_digest(got.encode('latin-1', 'replace'), expected.encode('ascii')) else 'invalid'
 
 
 def mode(remote):

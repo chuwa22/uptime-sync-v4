@@ -4,6 +4,41 @@
   - It now shows only for TCP PORT and HTTP/HTTPS.
   - Its hint reads "required for TCP PORT, optional for HTTP(S)".
   - A port typed before switching the type to DNS or PING is no longer saved: `monitors.normalize` clears it.
+- Feature (web examples): every monitor and settings field has a placeholder and a hint with an example (IE8/9 have no placeholder, so the hint repeats it). The placeholder follows the chosen type: PING 192.168.1.1, DNS 1.1.1.1, TCP 192.168.1.10 port 3389, HTTPS example.com. The monitor form ends with a small table of five example monitors and what each tells you.
+- Fix (full review, web):
+  - `/setup` works only from the box itself (127.0.0.1). Before an admin exists, anyone on the LAN could create it.
+  - Login `?next=` can no longer send you to another site.
+  - Sign out ends the session everywhere, so a copied cookie stops working.
+  - A bad CSRF value gives 400, not a 500 error.
+  - Usernames are case-insensitive at login (3.x imports such as "Admin").
+  - The monitor form rejects a non-number port, timeout or attempt count, header names that are not valid, and header values with Thai text or line breaks. Before, these were saved and every check then failed.
+  - An HTTP(S) monitor may leave Target empty when Monitor URL is set.
+  - The web host must be an IP address or localhost.
+  - Duplicate monitor ids from 3.x (`monitor_3` twice) are made unique on load.
+  - The push URL is cleaned: Kuma shows it with `?status=up&msg=OK&ping=`, and sending those twice made Kuma read the monitor as DOWN.
+  - Heartbeat errors show red on the dashboard.
+- Fix (full review, update):
+  - A swap that failed half-way could leave a mix of old and new code, and the restore raised on the files already moved. Now every move is recorded as it happens, and the undo puts both halves back.
+  - After the swap, the new code is test-imported with the venv python. A release that cannot start is put back at once, instead of crash-looping until the rollback counter trips.
+  - A rollback that cannot run (no backup) no longer stops and starts all children forever. It is marked RollbackFailed once and reported to the server as Failed.
+  - Versions must be exactly x.y.z before they are used in a URL or path.
+  - The update lock is always released, even when recording a refusal fails.
+- Fix (full review, engine and supervisor):
+  - A server restart request started a second, untracked web process (both on port 5000 on Windows). Repeated requests within 60 s now restart only the engine, with backoff.
+  - A check that overran its cycle was started again next to itself. Running checks are now tracked and skipped.
+  - Stop is seen within a second during a check cycle, and the stop grace is 20 s (above a ping's worst attempt), so a stop no longer ends in a kill that loses history.
+  - Timings use the monotonic clock, so a w32time step cannot stretch a sleep or fake a timeout.
+  - IPv6 ping replies on Windows ("Reply from ::1: time<1ms" has no TTL) count as up.
+  - The HTTP check no longer logs the monitor URL, which can carry an expanded data/.env secret. A Thai header value now counts as down instead of crashing the check.
+  - A reply signature with non-ASCII bytes is "invalid" instead of raising.
+  - `main.py restart` waits for the old supervisor process to exit before starting it again, because Task Scheduler (IgnoreNew) and launchd dropped the start.
+  - `main.py run` waits up to 2 s for the lock, so a `status` probe at the same moment no longer makes it exit.
+  - "Not starting: stopped" is logged at debug, not every minute.
+- Security (Windows): the install folder is now locked like data\: SYSTEM and Administrators full control, Users read and execute. Before, a folder under C:\ let every local user edit the code that runs as SYSTEM every minute.
+- Fix (install):
+  - `install.bat` with any option (`--wheels C:\wheels`, `--recreate`) ran the wrong file, because SHIFT also moves %0.
+  - `install.py --recreate` refuses while the agent is running instead of half-deleting a .venv that is in use.
+  - Error text from schtasks and icacls is decoded in the console code page (cp874 on Thai Windows).
 
 4.0.5
 2026-11-05

@@ -14,7 +14,7 @@ import time
 from . import __version__, paths, perms, procs, settings
 from .util import read_json, remove_quietly, touch
 
-STOP_WAIT_SECONDS = 40
+STOP_WAIT_SECONDS = 60
 
 
 def _say(msg=''):
@@ -113,6 +113,11 @@ def cmd_stop(a):
     deadline = time.time() + STOP_WAIT_SECONDS
     while time.time() < deadline:
         if not _running()[1]:
+            # The lock goes first; the process lingers ~1 s (log flush,
+            # interpreter exit). A `restart` that starts the task inside that
+            # window is dropped by Task Scheduler (IgnoreNew) / launchd.
+            while pid and procs.pid_alive(pid) and time.time() < deadline:
+                time.sleep(0.2)
             remove_quietly(paths.SHUTDOWN_FLAG)
             _say('[OK] Stopped. It stays stopped (also across reboots) until `main.py start`.')
             return 0
@@ -306,7 +311,10 @@ def build_parser():
         return sp
 
     sp = add('run', cmd_run, 'run the supervisor in the foreground (what autostart runs)')
-    sp.add_argument('--wait-lock', type=float, default=0, help=argparse.SUPPRESS)
+    # 2 s by default: a `status` probe holds the lock for a moment, and a
+    # supervisor that met it would exit 0 -- which systemd/launchd treat as a
+    # deliberate stop and never restart.
+    sp.add_argument('--wait-lock', type=float, default=2, help=argparse.SUPPRESS)
     sp = add('engine', cmd_engine, argparse.SUPPRESS)
     sp.add_argument('--supervised', action='store_true')
     sp.add_argument('--parent', type=int, default=0)

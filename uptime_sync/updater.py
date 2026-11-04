@@ -23,6 +23,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import time
 import zipfile
 from urllib.parse import urljoin, urlparse
@@ -31,7 +32,7 @@ import requests
 
 from . import __version__, paths
 from .signing import sign
-from .util import atomic_write_json, is_newer, read_json, redact, remove_quietly, sha256_file
+from .util import atomic_write_json, is_newer, is_version, read_json, redact, remove_quietly, sha256_file
 
 log = logging.getLogger('update')
 
@@ -248,17 +249,104 @@ def set_state(**fields):
     return s
 
 
-def _move_shipped(src_root, dst_root):
-    """Move every SHIPPED item present in src_root into dst_root.
-    Returns the names moved (for undo)."""
-    moved = []
+# Top-level names an update never moves, whatever the zip holds: site data,
+# runtime state, the venv and the staging area itself.
+_NEVER_SWAP = frozenset(os.path.basename(d) for d in (
+    paths.DATA_DIR, paths.LOG_DIR, paths.RUN_DIR, paths.BACKUP_DIR, paths.STAGING_DIR,
+    paths.VENV_DIR)) | {'.git'}
+
+
+def _swap_names(staged_root):
+    """What the staged build installs: its top-level entries (a newer release
+    may ship a name this one does not know), never a protected one."""
+    try:
+        listed = os.listdir(staged_root)
+    except OSError:
+        listed = []
+    return sorted(n for n in listed if n not in _NEVER_SWAP and not n.startswith('.'))
+
+
+def _remove(path):
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    elif os.path.lexists(path):
+        os.remove(path)
+
+
+def _move(names, src_root, dst_root, done):
+    """Move each name present in src_root to dst_root, appending to `done`
+    AS IT GOES, so a failure half-way still tells the undo what moved."""
     os.makedirs(dst_root, exist_ok=True)
-    for name in paths.SHIPPED:
+    for name in names:
         src = os.path.join(src_root, name)
         if os.path.lexists(src):
-            os.replace(src, os.path.join(dst_root, name))
-            moved.append(name)
-    return moved
+            dst = os.path.join(dst_root, name)
+            if os.path.lexists(dst):
+                _remove(dst)
+            os.replace(src, dst)
+            done.append(name)
+
+
+def _undo(moved_out, out_dir, moved_in, in_dir):
+    """Reverse a swap: put what came in back into in_dir, then what went out
+    back into ROOT. Never raises -- every step is tried; returns the failures,
+    each already logged CRITICAL (the install may be half old, half new)."""
+    problems = []
+    for name in reversed(moved_in):
+        try:
+            _move([name], paths.ROOT, in_dir, [])
+        except OSError as e:
+            problems.append('%s: %s' % (name, e))
+    for name in reversed(moved_out):
+        try:
+            _move([name], out_dir, paths.ROOT, [])
+        except OSError as e:
+            problems.append('%s: %s' % (name, e))
+    for p in problems:
+        log.critical('[UPDATE] Could not restore %s -- copy it back from %s by hand', p, out_dir)
+    return problems
+
+
+def _swap(names_out, out_dir, in_dir, names_in):
+    """ROOT/names_out -> out_dir, then in_dir/names_in -> ROOT. All or
+    nothing: on any error the moves are undone and the error re-raised."""
+    moved_out, moved_in = [], []
+    try:
+        _move(names_out, paths.ROOT, out_dir, moved_out)
+        _move(names_in, in_dir, paths.ROOT, moved_in)
+    except Exception:
+        _undo(moved_out, out_dir, moved_in, in_dir)
+        raise
+    return moved_out, moved_in
+
+
+_SMOKE = ('import sys; sys.path.insert(0, sys.argv[1]); '
+          'import uptime_sync, uptime_sync.cli, uptime_sync.supervisor, uptime_sync.engine, '
+          'uptime_sync.web; print(uptime_sync.__version__)')
+
+
+def _smoke_test(version):
+    """Import the swapped-in code with the venv interpreter, in a fresh
+    process, before it is trusted. A release that cannot even import (a
+    missing package, a syntax error under Python 3.8) is caught here and
+    put back at once, instead of crash-looping until the rollback counter
+    trips. (ok, detail)."""
+    py = paths.venv_python()
+    if not os.path.isfile(py):
+        py = sys.executable
+    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    try:
+        proc = subprocess.run([py, '-I', '-c', _SMOKE, paths.ROOT], cwd=paths.ROOT,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              stdin=subprocess.DEVNULL, timeout=120, creationflags=flags)
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, 'could not run %s: %s' % (py, e)
+    out = proc.stdout.decode('utf-8', 'replace').strip()
+    if proc.returncode != 0:
+        return False, out.splitlines()[-1] if out else 'exit %d' % proc.returncode
+    if out.splitlines()[-1:] != [version]:
+        return False, 'the new code reports version %r' % out[-40:]
+    return True, ''
 
 
 def _pip_install(root):
@@ -277,7 +365,7 @@ def apply():
     was nothing (valid) to apply. Leaves the old code in backups/."""
     ready = read_json(paths.UPDATE_READY, None)
     remove_quietly(paths.UPDATE_READY)
-    if not isinstance(ready, dict) or not ready.get('version'):
+    if not isinstance(ready, dict) or not is_version(ready.get('version')):
         return None
     version = ready['version']
     try:
@@ -290,12 +378,17 @@ def apply():
     old_req = _read(os.path.join(paths.ROOT, 'requirements.txt'))
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     backup = os.path.join(paths.BACKUP_DIR, 'v%s-%s' % (__version__, stamp))
+    names_in = _swap_names(paths.STAGING_DIR)
+    names_out = sorted(set(paths.SHIPPED) | set(names_in))
     log.info('[UPDATE] Applying v%s (backup of v%s in %s)', version, __version__, backup)
-    moved_in = []
+    try:
+        moved_out, moved_in = _swap(names_out, backup, paths.STAGING_DIR, names_in)
+    except Exception as e:
+        log.error('[UPDATE] Swap to v%s failed, v%s kept: %s', version, __version__, e)
+        set_state(status='Failed', version=version, time=_now(), detail='swap failed: %s' % e)
+        return None
     pip_ran = False
     try:
-        _move_shipped(paths.ROOT, backup)
-        moved_in = _move_shipped(paths.STAGING_DIR, paths.ROOT)
         if _read(os.path.join(paths.ROOT, 'requirements.txt')) != old_req:
             log.info('[UPDATE] requirements.txt changed - running pip install')
             pip_ran = True
@@ -303,15 +396,12 @@ def apply():
             if not ok:
                 last = out.strip().splitlines()[-1] if out.strip() else ''
                 raise RuntimeError('pip install failed: ' + last)
+        ok, detail = _smoke_test(version)
+        if not ok:
+            raise RuntimeError('the new code does not start: ' + detail)
     except Exception as e:
-        log.error('[UPDATE] Swap to v%s failed, restoring v%s: %s', version, __version__, e)
-        for name in moved_in:
-            try:
-                p = os.path.join(paths.ROOT, name)
-                shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
-            except OSError:
-                pass
-        _move_shipped(backup, paths.ROOT)
+        log.error('[UPDATE] v%s failed after the swap, restoring v%s: %s', version, __version__, e)
+        _undo(moved_out, backup, moved_in, paths.STAGING_DIR)
         if pip_ran:
             # pip may have upgraded part of the venv before it failed.
             ok, _ = _pip_install(paths.ROOT)
@@ -321,30 +411,41 @@ def apply():
         return None
     shutil.rmtree(paths.STAGING_DIR, ignore_errors=True)
     set_state(status='Applied', version=version, previous=__version__, backup=backup,
-              time=_now(), applied_at=time.time(), crashes=0, detail='')
+              installed=moved_in, time=_now(), applied_at=time.time(), crashes=0, detail='')
     _prune_backups()
     return version
 
 
 def rollback(reason):
-    """Put the backup of the previous version back. True on success."""
+    """Put the backup of the previous version back. True on success. Never
+    raises: on failure the state becomes RollbackFailed, which stops the
+    supervisor from trying again on every child start."""
     s = state()
-    backup = s.get('backup')
-    if not backup or not os.path.isdir(backup):
-        log.error('[UPDATE] Cannot roll back: no backup recorded')
-        return False
     failed = s.get('version')
-    trash = os.path.join(paths.BACKUP_DIR, 'failed-v%s-%s' % (failed, int(time.time())))
-    _move_shipped(paths.ROOT, trash)
-    _move_shipped(backup, paths.ROOT)
-    if _read(os.path.join(trash, 'requirements.txt')) != _read(os.path.join(paths.ROOT, 'requirements.txt')):
+    backup = s.get('backup')
+    try:
+        if not backup or not os.path.isdir(backup):
+            raise RuntimeError('no backup recorded')
+        trash = os.path.join(paths.BACKUP_DIR, 'failed-v%s-%s' % (failed, int(time.time())))
+        names_back = _swap_names(backup)
+        names_out = sorted(set(s.get('installed') or paths.SHIPPED) | set(names_back))
+        new_req = _read(os.path.join(paths.ROOT, 'requirements.txt'))
+        _swap(names_out, trash, backup, names_back)
+    except Exception as e:
+        log.critical('[UPDATE] Cannot roll back from v%s: %s -- the agent stays on it', failed, e)
+        try:
+            set_state(status='RollbackFailed', time=_now(), detail='%s; rollback failed: %s' % (reason, e))
+        except OSError:
+            pass
+        return False
+    if new_req != _read(os.path.join(paths.ROOT, 'requirements.txt')):
         ok, _ = _pip_install(paths.ROOT)
         log.log(logging.INFO if ok else logging.ERROR,
                 '[UPDATE] Reinstalled the v%s requirements: %s', s.get('previous'), 'ok' if ok else 'FAILED')
     shutil.rmtree(backup, ignore_errors=True)
     shutil.rmtree(trash, ignore_errors=True)
     set_state(status='Failed', version=failed, time=_now(), detail=reason, backup='',
-              rolled_back_to=s.get('previous'))
+              installed=[], rolled_back_to=s.get('previous'))
     log.error('[UPDATE] Rolled back from v%s to v%s: %s', failed, s.get('previous'), reason)
     return True
 
@@ -374,6 +475,8 @@ def heartbeat_fields():
     status = s.get('status')
     if status == 'Applied':
         status = 'Installing'
+    elif status == 'RollbackFailed':
+        status = 'Failed'   # the server only knows Success / Failed / Installing
     return (status or 'No update history', s.get('time', ''), s.get('version', ''))
 
 

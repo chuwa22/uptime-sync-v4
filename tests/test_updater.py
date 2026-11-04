@@ -93,6 +93,10 @@ class StageAndApplyTests(unittest.TestCase):
             f.write(_read('requirements.txt'))
         self.settings = {'remote': {'url': SERVER, 'api_key': 'k', 'secret_key': 's'},
                          'update': {'github_repo': REPO}}
+        # The fake build cannot really be imported; SmokeTests runs the real one.
+        p = mock.patch.object(updater, '_smoke_test', return_value=(True, ''))
+        p.start()
+        self.addCleanup(p.stop)
 
     def tearDown(self):
         # put the real VERSION and config back for the other tests
@@ -152,6 +156,56 @@ class StageAndApplyTests(unittest.TestCase):
         with open(os.path.join(paths.DATA_DIR, 'monitors.json')) as f:
             self.assertEqual(f.read(), '{"monitors": []}')
 
+
+    def _old(self):
+        with open(os.path.join(paths.ROOT, 'main.py')) as f, \
+                open(os.path.join(paths.ROOT, 'uptime_sync', '__init__.py')) as g:
+            return f.read(), g.read()
+
+    def test_code_that_cannot_start_is_put_back(self):
+        self.stage(make_zip(NEXT))
+        with mock.patch.object(updater, '_smoke_test', return_value=(False, 'ImportError: x')):
+            self.assertIsNone(updater.apply())
+        self.assertEqual(self._old(), ('# old\n', '# old\n'))
+        s = updater.state()
+        self.assertEqual(s['status'], 'Failed')
+        self.assertIn('does not start', s['detail'])
+
+    def test_swap_failing_half_way_is_undone(self):
+        self.stage(make_zip(NEXT))
+        real = os.replace
+
+        def flaky(src, dst):
+            # moving the new main.py in fails (a file held open by AV, say)
+            if src.startswith(paths.STAGING_DIR) and dst == os.path.join(paths.ROOT, 'main.py'):
+                raise PermissionError(13, 'in use')
+            return real(src, dst)
+        with mock.patch.object(updater.os, 'replace', side_effect=flaky):
+            self.assertIsNone(updater.apply())
+        self.assertEqual(self._old(), ('# old\n', '# old\n'))
+        self.assertIn('swap failed', updater.state()['detail'])
+
+    def test_rollback_without_backup_stops_retrying(self):
+        updater.set_state(status='Applied', version=NEXT, previous=__version__, backup='', crashes=3)
+        self.assertFalse(updater.rollback('test'))
+        self.assertEqual(updater.state()['status'], 'RollbackFailed')
+        self.assertEqual(updater.heartbeat_fields()[0], 'Failed')
+        from uptime_sync import supervisor
+        self.assertFalse(supervisor.Supervisor()._check_rollback_needed())   # no loop
+
+    def test_bad_version_never_staged(self):
+        for bad in ('99.0.0/../../x', '99.0.0-evil', ' 99.0.0', 'v99.0.0'):
+            with self.assertRaises(UpdateRefused, msg=bad):
+                self.stage(make_zip(NEXT), version=bad)
+
+
+class SmokeTests(unittest.TestCase):
+    def test_real_code_imports(self):
+        with mock.patch.object(paths, 'ROOT', _env.REPO):
+            self.assertEqual(updater._smoke_test(__version__), (True, ''))
+            ok, detail = updater._smoke_test('99.0.0')
+        self.assertFalse(ok)
+        self.assertIn('reports version', detail)
 
 if __name__ == '__main__':
     unittest.main()

@@ -20,6 +20,15 @@ README.md covers usage. This file covers the rules for changing the code.
   - `heartbeat.py` and `signing.py`: the protocol.
 - **Updates:** `updater.py` handles the URL policy, download and stage (engine
   side) and swap and rollback (supervisor side).
+  - The swap is all or nothing (`_swap`/`_undo`: each move is recorded as it
+    happens, and the undo never raises). After it, `_smoke_test` imports the
+    new code with the venv python; a build that cannot import is put back at
+    once. A rollback that fails sets `RollbackFailed` so it is not retried on
+    every child start.
+  - A version is used in URLs and paths only when `util.is_version()` (exactly
+    x.y.z) accepts it.
+- **Durations use `time.monotonic()`** (check timings, loop sleeps, grace and
+  backoff). Wall time only for timestamps and certificate expiry.
 - **Autostart:** `autostart.py` (Task Scheduler XML, systemd, launchd).
 - **Processes:** `procs.py` (pid, lock, popen flags).
 - **Settings:** `settings.py` handles the overlay and `.env`.
@@ -80,7 +89,10 @@ README.md covers usage. This file covers the rules for changing the code.
   - `perms.harden()` runs at every supervisor start, because applying
     permissions only when a file is created misses hand-made and restored
     files.
-    - Windows: icacls by SID, inheritance removed.
+    - Windows: icacls by SID, inheritance removed. The install folder itself
+      gets SYSTEM/Admins full control and Users read+execute only (4.0.6): it
+      runs as SYSTEM every minute, and a folder made under C:\ inherits
+      "Authenticated Users: Modify".
     - POSIX: 0700/0600, umask 077.
   - A new folder that holds secrets goes in `perms.PROTECTED`.
   - A CLI command run with sudo gives data/, logs/ and run/ back to

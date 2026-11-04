@@ -3,49 +3,70 @@
 {% block content %}
 <h1>{{ 'Add monitor' if is_new else 'Edit monitor' }}</h1>
 {% for e in errors %}<div class="flash warn">{{ e }}</div>{% endfor %}
+{#- Placeholders need IE10+; the <small> hints carry the same examples for IE8/9.
+    data-ph="TYPE=text|..." swaps the placeholder when the type changes (app.js). -#}
 <form method="post" action="{{ url_for('monitor_save') }}" class="card form">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <input type="hidden" name="id" value="{{ '' if is_new else m.id }}">
   <div class="cols">
-    <label>Name <input name="name" value="{{ m.name }}" required maxlength="100"></label>
+    <label>Name <small class="muted">e.g. WAN1 - Google DNS</small>
+      <input name="name" value="{{ m.name }}" required maxlength="100" placeholder="WAN1 - Google DNS"></label>
     <label>Type
       <select name="type" data-type-select>
         {% for t in types %}<option value="{{ t }}"{{ ' selected' if t == m.type }}>{{ t }}</option>{% endfor %}
       </select></label>
   </div>
   <div class="cols">
-    <label>Target <small class="muted">host name or IP, no http://</small>
-      <input name="target" value="{{ m.target }}" required class="mono"></label>
-    <label data-for-types="TCP HTTP HTTPS">Port <small class="muted">required for TCP PORT, optional for HTTP(S)</small>
-      <input name="port" type="number" min="1" max="65535" value="{{ m.port if m.port is not none else '' }}"></label>
+    <label>Target <small class="muted">host name or IP, no http://, e.g. 8.8.8.8 or example.com (HTTP: ignored when Monitor URL is set)</small>
+      <input name="target" value="{{ m.target }}" class="mono" placeholder="8.8.8.8"
+        data-ph="PING=192.168.1.1|DNS=1.1.1.1|TCP=192.168.1.10|HTTP=intranet.local|HTTPS=example.com"></label>
+    <label data-for-types="TCP HTTP HTTPS">Port <small class="muted">required for TCP PORT (e.g. 3389), optional for HTTP(S)</small>
+      <input name="port" type="number" min="1" max="65535" value="{{ m.port if m.port is not none else '' }}"
+        placeholder="3389" data-ph="TCP=3389|HTTP=80 (default)|HTTPS=443 (default)"></label>
   </div>
-  <label data-for-types="HTTP HTTPS">Monitor URL <small class="muted">optional, e.g. https://example.com/health</small>
-    <input name="monitor_url" value="{{ m.monitor_url }}" class="mono"></label>
-  <label>Push URL <small class="muted">Uptime Kuma push monitor, https only. ${NAME} reads NAME from data/.env</small>
-    <input name="push_url" value="{{ m.push_url }}" required class="mono"></label>
+  <label data-for-types="HTTP HTTPS">Monitor URL <small class="muted">optional, a full URL to check instead of Target, e.g. https://example.com/health</small>
+    <input name="monitor_url" value="{{ m.monitor_url }}" class="mono" placeholder="https://example.com/health"></label>
+  <label>Push URL <small class="muted">from the Uptime Kuma push monitor, https only, e.g. https://kuma.example.com/api/push/&lt;token&gt;.
+      Paste it as Kuma shows it: the agent replaces ?status=&amp;msg=&amp;ping= itself. ${NAME} reads NAME from data/.env</small>
+    <input name="push_url" value="{{ m.push_url }}" required class="mono" placeholder="https://kuma.example.com/api/push/${KUMA_WAN1}"></label>
   <div class="cols" data-for-types="DNS">
-    <label>DNS probe
+    <label>DNS probe <small class="muted">when Target is a DNS server IP; a host name is just resolved</small>
       <select name="dns_method">
         {% for v, t in [('auto', 'auto - DNS query, ping if no answer'), ('query', 'query - DNS query only'), ('ping', 'ping - ICMP only')] %}
         <option value="{{ v }}"{{ ' selected' if v == m.dns_method }}>{{ t }}</option>{% endfor %}
       </select></label>
-    <label>Query name <small class="muted">default google.com</small>
-      <input name="dns_query_name" value="{{ m.dns_query_name }}" class="mono"></label>
+    <label>Query name <small class="muted">the name asked for; empty = google.com</small>
+      <input name="dns_query_name" value="{{ m.dns_query_name }}" class="mono" placeholder="google.com"></label>
   </div>
   <div class="cols">
-    <label>Timeout (s) <input name="timeout" type="number" min="1" max="120" value="{{ m.timeout }}"></label>
-    <label>Attempts <input name="retry_count" type="number" min="1" max="10" value="{{ m.retry_count }}"></label>
+    <label>Timeout (s) <small class="muted">per attempt, 1-120</small>
+      <input name="timeout" type="number" min="1" max="120" value="{{ m.timeout }}" placeholder="10"></label>
+    <label>Attempts <small class="muted">tries before reporting down, 1-10</small>
+      <input name="retry_count" type="number" min="1" max="10" value="{{ m.retry_count }}" placeholder="3"></label>
   </div>
-  <label data-for-types="HTTP HTTPS">Request headers <small class="muted">one "Name: value" per line</small>
-    <textarea name="headers" rows="3" class="mono">{% for k, v in m.headers.items() %}{{ k }}: {{ v }}
+  <label data-for-types="HTTP HTTPS">Request headers <small class="muted">optional, one "Name: value" per line, e.g. Authorization: Bearer ${API_TOKEN}</small>
+    <textarea name="headers" rows="3" class="mono" placeholder="Authorization: Bearer ${API_TOKEN}&#10;X-Site: head-office">{% for k, v in m.headers.items() %}{{ k }}: {{ v }}
 {% endfor %}</textarea></label>
   <div class="checks">
     <label class="check"><input type="checkbox" name="enabled"{{ ' checked' if m.enabled }}> Enabled</label>
-    <label class="check" data-for-types="HTTPS"><input type="checkbox" name="ssl_verify"{{ ' checked' if m.ssl_verify }}> Verify TLS certificate</label>
+    <label class="check" data-for-types="HTTP HTTPS"><input type="checkbox" name="ssl_verify"{{ ' checked' if m.ssl_verify }}> Verify TLS certificate (HTTPS, or an https:// Monitor URL)</label>
   </div>
   <div class="actions">
     <button class="primary">Save</button>
     <a class="button" href="{{ url_for('monitors_list') }}">Cancel</a>
   </div>
 </form>
+
+<div class="card flush examples">
+  <table class="grid">
+    <thead><tr><th>Example</th><th>Type</th><th>Target</th><th>Port</th><th>What it tells you</th></tr></thead>
+    <tbody>
+      <tr><td>Router</td><td>PING</td><td class="mono">192.168.1.1</td><td>-</td><td>the LAN gateway answers</td></tr>
+      <tr><td>WAN via DNS</td><td>DNS</td><td class="mono">1.1.1.1</td><td>-</td><td>the internet line works, even where the ISP drops ping (probe: auto)</td></tr>
+      <tr><td>Server port</td><td>TCP PORT</td><td class="mono">192.168.1.10</td><td>3389</td><td>a service is listening: RDP 3389, SQL 1433, SMTP 25</td></tr>
+      <tr><td>Intranet page</td><td>HTTP</td><td class="mono">intranet.local</td><td>8080</td><td>the web app answers with HTTP 200-399</td></tr>
+      <tr><td>Web site</td><td>HTTPS</td><td class="mono">example.com</td><td>-</td><td>the site answers over TLS (200-399); with Verify TLS on, warns before the certificate expires</td></tr>
+    </tbody>
+  </table>
+</div>
 {% endblock %}

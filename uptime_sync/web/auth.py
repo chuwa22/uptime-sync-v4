@@ -88,6 +88,31 @@ def set_password(username, password):
         return user['epoch']
 
 
+def revoke_sessions(username):
+    """End every session of this user. Sessions live in the signed cookie, so
+    clearing it on sign-out is not enough: a copied cookie (plain http on a
+    LAN) would keep working. Bumping the epoch makes all of them stale. It
+    also signs the user out on their other browsers, which is the safe
+    reading of "Sign out" for an admin UI."""
+    with _lock:
+        users = load_users()
+        if username in users:
+            users[username]['epoch'] = int(users[username].get('epoch', 1)) + 1
+            save_users(users)
+
+
+def canonical_name(username):
+    """The stored spelling of a username typed in any case ('Admin' finds
+    'admin'; 3.x users imported as 'ADMIN' still log in as 'admin'). An
+    exact match wins; an ambiguous one (two users differing only in case)
+    is left as typed."""
+    users = load_users()
+    if username in users:
+        return username
+    hits = [n for n in users if n.lower() == username.lower()]
+    return hits[0] if len(hits) == 1 else username
+
+
 def authenticate(username, password):
     """The user dict on success, else None. Upgrades old hashes in place."""
     users = load_users()
@@ -169,7 +194,9 @@ def csrf_token():
 
 def check_csrf():
     sent = request.form.get('csrf') or request.headers.get('X-CSRF-Token') or ''
-    if not session.get('csrf') or not hmac.compare_digest(sent, session['csrf']):
+    # Compare bytes: compare_digest raises TypeError on non-ASCII str (-> 500).
+    if not session.get('csrf') or not hmac.compare_digest(sent.encode('utf-8'),
+                                                          session['csrf'].encode('utf-8')):
         abort(400, 'Invalid or missing CSRF token - reload the page and try again.')
 
 

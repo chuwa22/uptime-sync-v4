@@ -106,7 +106,19 @@ def version_tuple(version):
     return tuple(int(x) for x in m.groups()) if m else None
 
 
+_STRICT_VERSION_RE = re.compile(r'^\d{1,4}\.\d{1,5}\.\d{1,6}$')
+
+
+def is_version(text):
+    """Exactly x.y.z. The version goes into the GitHub URL and file paths, so
+    a suffix such as '9.9.9/../../evil' must never get that far."""
+    return isinstance(text, str) and bool(_STRICT_VERSION_RE.match(text))
+
+
 def is_newer(candidate, current):
+    """candidate must be a strict x.y.z (see is_version); current may be loose."""
+    if not is_version(candidate):
+        return False
     a, b = version_tuple(candidate), version_tuple(current)
     return bool(a and b and a > b)
 

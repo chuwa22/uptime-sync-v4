@@ -21,7 +21,7 @@ import sys
 import tempfile
 from xml.sax.saxutils import escape
 
-from . import paths, procs
+from . import paths, perms, procs
 from .util import atomic_write_json, read_json, remove_quietly
 
 STATE_FILE = os.path.join(paths.DATA_DIR, 'autostart.json')
@@ -39,7 +39,7 @@ def _run(cmd, check=True):
     flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           stdin=subprocess.DEVNULL, creationflags=flags)
-    out = proc.stdout.decode('utf-8', 'replace').strip()
+    out = perms._console_text(proc.stdout).strip()   # OEM code page on Windows
     if check and proc.returncode != 0:
         raise AutostartError('%s failed (%d): %s' % (' '.join(cmd[:2]), proc.returncode, out))
     return proc.returncode, out

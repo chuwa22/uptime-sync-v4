@@ -130,6 +130,101 @@ class WebTests(unittest.TestCase):
         self.assertEqual(monitors.normalize({'type': 'TCP PORT', 'port': '8080'})['port'], 8080)
         self.assertEqual(monitors.normalize({'type': 'HTTPS', 'port': 8443})['port'], 8443)
 
+    def test_push_url_drops_params_the_agent_sends(self):
+        base = 'https://kuma.example/api/push/' + 'abc'
+        self.assertEqual(monitors.push_base_url(base + '?status=up&msg=OK&ping='), base)
+        self.assertEqual(monitors.push_base_url(base), base)
+        self.assertEqual(monitors.push_base_url(base + '?Status=up&x=1&dns_ping=3'), base + '?x=1')
+
+    def test_monitor_form_examples_and_placeholders(self):
+        self.setup_admin()
+        html = self.c.get('/monitors/new').get_data(as_text=True)
+        self.assertIn('class="card flush examples"', html)
+        for name in ('name', 'target', 'port', 'monitor_url', 'push_url', 'dns_query_name'):
+            self.assertRegex(html, r'name="%s"[^>]*placeholder="[^"]+"' % name, name)
+        ph = re.search(r'name="target"[^>]*data-ph="([^"]+)"', html).group(1)
+        keys = set(p.split('=')[0] for p in ph.split('|'))
+        self.assertEqual(keys, set(t.split(' ')[0] for t in monitors.TYPES))
+
+    def test_setup_only_from_the_box_itself(self):
+        lan = {'REMOTE_ADDR': '192.168.10.50'}
+        r = self.c.get('/setup', environ_base=lan)
+        self.assertEqual(r.status_code, 403)
+        self.assertIn('only be created on this PC', r.get_data(as_text=True))
+        r = self.c.post('/setup', data={'password': PW, 'confirm': PW}, environ_base=lan)
+        self.assertIn(r.status_code, (400, 403))
+        self.assertFalse(auth.has_users())
+
+    def test_login_next_cannot_leave_the_site(self):
+        from uptime_sync.web.views import safe_next
+        for bad in ('//evil.example', '/\t/evil.example', '/\\evil', 'https://evil.example/', '/\n/x', ''):
+            self.assertEqual(safe_next(bad), '', repr(bad))
+        self.assertEqual(safe_next('/monitors?x=1'), '/monitors?x=1')
+
+    def test_logout_revokes_a_copied_cookie(self):
+        self.setup_admin()
+        token = self.csrf('/settings')
+        cookie = self.c.get_cookie('session')
+        stolen = self.app.test_client()
+        stolen.set_cookie('session', cookie.value)
+        self.assertEqual(stolen.get('/settings').status_code, 200)
+        self.c.post('/logout', data={'csrf': token})
+        self.assertEqual(stolen.get('/settings').status_code, 302)
+
+    def test_bad_csrf_value_is_400_not_500(self):
+        self.setup_admin()
+        self.assertEqual(self.c.post('/monitors/save', data={'csrf': '\u00e9'}).status_code, 400)
+
+    def test_monitor_ids_made_unique_on_load(self):
+        with open(paths.MONITORS_FILE, 'w') as f:
+            json.dump({'monitors': [{'id': 'monitor_3', 'name': 'A', 'type': 'PING', 'target': 'a'},
+                                    {'id': 'monitor_3', 'name': 'B', 'type': 'PING', 'target': 'b'},
+                                    {'name': 'C', 'type': 'PING', 'target': 'c'}]}, f)
+        first = [m['id'] for m in monitors.load()]
+        self.assertEqual(len(set(first)), 3)
+        self.assertEqual(first, [m['id'] for m in monitors.load()])   # stable without a save
+        self.assertEqual(first[0], 'monitor_3')
+
+    def test_monitor_form_refuses_bad_numbers_and_headers(self):
+        self.setup_admin()
+        token = self.csrf('/monitors/new')
+        base = {'csrf': token, 'name': 'w', 'type': 'HTTP', 'target': 'example.com',
+                'push_url': 'https://k.example/api/push/x', 'timeout': '10', 'retry_count': '3'}
+        cases = (({'port': '8o8o'}, 'Port must be'), ({'timeout': 'abc'}, 'Timeout must be'),
+                 ({'headers': 'X Bad: 1'}, 'not valid'),
+                 ({'headers': 'X-Site: \u0e17\u0e14\u0e2a\u0e2d\u0e1a'}, 'Latin'))
+        for extra, msg in cases:
+            r = self.c.post('/monitors/save', data=dict(base, **extra))
+            self.assertEqual(r.status_code, 400, extra)
+            self.assertIn(msg, r.get_data(as_text=True), extra)
+        self.assertEqual(monitors.load(), [])
+
+    def test_http_target_optional_with_monitor_url(self):
+        m = monitors.normalize({'name': 'h', 'type': 'HTTPS', 'target': '', 'monitor_url': 'https://site.example/health',
+                                'push_url': 'https://k.example/api/push/x'})
+        self.assertEqual(m['target'], 'site.example')
+        self.assertEqual(monitors.validate(m), [])
+
+    def test_web_host_must_be_an_ip(self):
+        self.setup_admin()
+        token = self.csrf('/settings')
+        r = self.c.post('/settings', data={'csrf': token, 'web_host': 'not a host!', 'web_port': '5000',
+                                           'check_interval': '60', 'max_workers': '10',
+                                           'log_retention_days': '14', 'heartbeat_interval': '60'})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('must be an IP address', r.get_data(as_text=True))
+        self.assertNotEqual(settings.load()['web'].get('host'), 'not a host!')
+
+    def test_logs_huge_before_is_not_a_500(self):
+        self.setup_admin()
+        self.assertEqual(self.c.get('/logs?before=999999999999999999999999').status_code, 200)
+
+    def test_heartbeat_error_is_red(self):
+        from uptime_sync.web.views import tones
+        p = {'engine': {'running': True}, 'monitors': [], 'signing': {'state': 'not-yet'},
+             'heartbeat': {'enabled': True, 'failures': 0, 'last_ok': 1, 'error': 'HTTP 401'}}
+        self.assertEqual(tones(p)['heartbeat'], 'bad')
+
     def test_tile_tones(self):
         from uptime_sync.web.views import tones
 
@@ -206,6 +301,7 @@ class OldBrowserTests(unittest.TestCase):
     def test_flex_grid_gap_only_inside_supports(self):
         outside, inside = _supports_split(self.css)
         self.assertIn('display: grid', inside)
+        self.assertIsNone(re.search(r'\drem\b', self.css), 'IE8 has no rem: use px')
         for pattern in (r'display:\s*(flex|grid)', r'(^|[;{\s])gap:', r'grid-template'):
             self.assertIsNone(re.search(pattern, outside), pattern)
 

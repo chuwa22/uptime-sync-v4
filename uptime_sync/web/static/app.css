@@ -6,7 +6,9 @@
  *     declaration with the light-theme value (IE ignores the var() line);
  *   - layout outside @supports uses only floats, inline-block and margins;
  *   - flex, grid and gap live in the @supports block at the end, which IE
- *     skips entirely.
+ *     skips entirely;
+ *   - sizes are px, not rem: IE8 has no rem (html is fixed at 15px, so
+ *     1rem was always 15px anyway).
  * tests/test_web.py checks both rules.
  */
 :root {
@@ -27,45 +29,45 @@ body { margin: 0; background: #f4f6f9; background: var(--bg); color: #1b2330; co
   font-family: -apple-system, "Segoe UI", Roboto, Tahoma, sans-serif; line-height: 1.45; }
 a { color: #2f6fe4; color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-h1 { font-size: 1.45rem; margin: 0 0 .9rem; }
-h2 { font-size: 1.05rem; margin: 0 0 .8rem; }
+h1 { font-size: 21.75px; margin: 0 0 13.5px; }
+h2 { font-size: 15.75px; margin: 0 0 12px; }
 .muted { color: #6b7686; color: var(--muted); }
-.small { font-size: .85rem; }
+.small { font-size: 12.75px; }
 .mono { font-family: Consolas, "SF Mono", Menlo, monospace; font-size: .92em; }
 
-.topbar { padding: .7rem 1.4rem; background: #ffffff; background: var(--card);
+.topbar { padding: 10.5px 21px; background: #ffffff; background: var(--card);
   border-top: 3px solid #2f6fe4; border-top: 3px solid var(--accent);
   border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line); overflow: hidden; }
-.brand { float: left; padding: .35rem 0; font-weight: 650; color: #1b2330; color: var(--text); }
-.brand .dot { width: .7rem; height: .7rem; border-radius: 50%; background: #1f9d55; background: var(--up);
-  display: inline-block; margin-right: .5rem; }
+.brand { float: left; padding: 5.25px 0; font-weight: 650; color: #1b2330; color: var(--text); }
+.brand .dot { width: 10.5px; height: 10.5px; border-radius: 50%; background: #1f9d55; background: var(--up);
+  display: inline-block; margin-right: 7.5px; }
 .topbar .nav { float: right; }
-.topbar .nav a { display: inline-block; margin-left: .2rem; color: #6b7686; color: var(--muted);
-  padding: .35rem .65rem; border-radius: 6px; }
+.topbar .nav a { display: inline-block; margin-left: 3px; color: #6b7686; color: var(--muted);
+  padding: 5.25px 9.75px; border-radius: 6px; }
 .topbar .nav a:hover { color: #1b2330; color: var(--text);
   background: #f4f6f9; background: var(--bg); text-decoration: none; }
 .topbar .nav a.active { color: #2f6fe4; color: var(--accent); font-weight: 600;
   background: #e8f0fd; background: rgba(47, 111, 228, .12); text-decoration: none; }
 
-.page { display: block; max-width: 1180px; margin: 1.4rem auto; padding: 0 1.2rem; }
-.narrow { display: block; max-width: 440px; margin: 3rem auto; padding: 0 1.2rem; }
-.foot { text-align: center; color: #6b7686; color: var(--muted); font-size: .8rem; padding: 1.5rem 0; }
+.page { display: block; max-width: 1180px; margin: 21px auto; padding: 0 18px; }
+.narrow { display: block; max-width: 440px; margin: 45px auto; padding: 0 18px; }
+.foot { text-align: center; color: #6b7686; color: var(--muted); font-size: 12px; padding: 22.5px 0; }
 
 .card { background: #ffffff; background: var(--card); border: 1px solid #e2e7ee; border: 1px solid var(--line);
-  border-radius: 10px; border-radius: var(--radius); padding: 1.2rem 1.3rem;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, .06); box-shadow: var(--shadow); margin-bottom: 1rem; }
+  border-radius: 10px; border-radius: var(--radius); padding: 18px 19.5px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .06); box-shadow: var(--shadow); margin-bottom: 15px; }
 .card.flush { padding: 0; overflow-x: auto; }
-.head { overflow: hidden; margin-bottom: .9rem; }
-.head h1 { float: left; margin: 0 1rem 0 0; }
+.head { overflow: hidden; margin-bottom: 13.5px; }
+.head h1 { float: left; margin: 0 15px 0 0; }
 .head > a, .head > form { float: right; }
 
-.tiles { margin-bottom: 1rem; }
-.tile { display: inline-block; vertical-align: top; width: 24%; min-width: 200px; margin: 0 .5% .9rem 0;
+.tiles { margin-bottom: 15px; }
+.tile { display: inline-block; vertical-align: top; width: 24%; min-width: 200px; margin: 0 .5% 13.5px 0;
   background: #ffffff; background: var(--card); border: 1px solid #e2e7ee; border: 1px solid var(--line);
-  border-radius: 10px; border-radius: var(--radius); padding: .9rem 1.1rem; }
-.tile .label { color: #6b7686; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
-.tile .value { font-size: 1.35rem; font-weight: 650; margin: .15rem 0; }
-.tile .sub { font-size: .82rem; min-height: 1.1em; }
+  border-radius: 10px; border-radius: var(--radius); padding: 13.5px 16.5px; }
+.tile .label { color: #6b7686; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.tile .value { font-size: 20.25px; font-weight: 650; margin: 2.25px 0; }
+.tile .sub { font-size: 12.3px; min-height: 1.1em; }
 /* Tile colour from views.tones(): green ok, amber warn, red bad, grey off.
    rgba() tints work in IE9+ and in both themes. */
 .tile { border-left-width: 5px; }
@@ -80,100 +82,103 @@ h2 { font-size: 1.05rem; margin: 0 0 .8rem; }
 
 .banner { overflow: hidden; background: #ffffff; background: var(--card);
   border: 1px solid #2f6fe4; border: 1px solid var(--accent);
-  border-radius: 10px; border-radius: var(--radius); padding: .7rem 1rem; margin-bottom: 1rem; }
-.banner > span { float: left; padding: .45rem 0; }
+  border-radius: 10px; border-radius: var(--radius); padding: 10.5px 15px; margin-bottom: 15px; }
+.banner > span { float: left; padding: 6.75px 0; }
 .banner > form { float: right; }
 
 table.grid { width: 100%; border-collapse: collapse; }
-table.grid th, table.grid td { padding: .6rem .9rem; border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line);
+table.grid th, table.grid td { padding: 9px 13.5px; border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line);
   text-align: left; vertical-align: middle; }
-table.grid th { font-size: .78rem; color: #6b7686; color: var(--muted); text-transform: uppercase;
+table.grid th { font-size: 11.7px; color: #6b7686; color: var(--muted); text-transform: uppercase;
   letter-spacing: .04em; font-weight: 600; background: #f0f3f7; background: var(--code); }
 table.grid tr:last-child td { border-bottom: 0; }
 table.grid .num { text-align: right; white-space: nowrap; }
-td.empty { text-align: center; color: #6b7686; color: var(--muted); padding: 2rem; }
+td.empty { text-align: center; color: #6b7686; color: var(--muted); padding: 30px; }
 .row-actions { white-space: nowrap; text-align: right; }
 
-.pill { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .78rem; font-weight: 600;
+.pill { display: inline-block; padding: 1.5px 8.25px; border-radius: 999px; font-size: 11.7px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .03em; color: #fff; background: #8a94a3; background: var(--paused); }
 .pill.up { background: #1f9d55; background: var(--up); }
 .pill.down { background: #d64545; background: var(--down); }
 .pill.unknown { background: #c98a12; background: var(--warn); }
 
-.flash { padding: .65rem .9rem; border-radius: 8px; margin-bottom: 1rem;
+.flash { padding: 9.75px 13.5px; border-radius: 8px; margin-bottom: 15px;
   border: 1px solid #e2e7ee; border: 1px solid var(--line); background: #ffffff; background: var(--card); }
 .flash.ok { border-color: #1f9d55; border-color: var(--up); background: rgba(31, 157, 85, .08); }
 .flash.warn { border-color: #d64545; border-color: var(--down); background: rgba(214, 69, 69, .08); }
 
 form.inline { display: inline; margin: 0; }
-label { display: block; margin-bottom: .85rem; font-weight: 550; font-size: .92rem; }
+label { display: block; margin-bottom: 12.75px; font-weight: 550; font-size: 13.8px; }
 label small { font-weight: 400; }
-input, select, textarea { display: block; width: 100%; margin-top: .3rem; padding: .5rem .6rem; font: inherit;
+input, select, textarea { display: block; width: 100%; margin-top: 4.5px; padding: 7.5px 9px; font: inherit;
   color: #1b2330; color: var(--text); background: #ffffff; background: var(--field);
   border: 1px solid #e2e7ee; border: 1px solid var(--line); border-radius: 7px; }
 input:focus, select:focus, textarea:focus { outline: 2px solid #2f6fe4; outline: 2px solid var(--accent); outline-offset: -1px; }
 input:disabled { opacity: .6; }
 label.check { font-weight: 500; }
-label.check input { display: inline; width: auto; margin: 0 .5rem 0 0; vertical-align: middle; }
-.checks label { display: inline-block; margin-right: 1.5rem; }
+label.check input { display: inline; width: auto; margin: 0 7.5px 0 0; vertical-align: middle; }
+.checks label { display: inline-block; margin-right: 22.5px; }
 .cols { overflow: hidden; }
 .cols > label { display: inline-block; vertical-align: top; width: 48%; margin-right: 1.5%; }
-.note { color: #6b7686; color: var(--muted); font-size: .85rem; margin: -.3rem 0 .9rem; }
-.lock { color: #c98a12; color: var(--warn); font-weight: 500; margin-left: .3rem; }
-.actions { margin: .5rem 0 1rem; }
-.actions > * { margin-right: .6rem; vertical-align: middle; }
+.note { color: #6b7686; color: var(--muted); font-size: 12.75px; margin: -4.5px 0 13.5px; }
+.lock { color: #c98a12; color: var(--warn); font-weight: 500; margin-left: 4.5px; }
+.actions { margin: 7.5px 0 15px; }
+.actions > * { margin-right: 9px; vertical-align: middle; }
 .hidden { display: none !important; }
 
-button, .button { display: inline-block; font: inherit; font-size: .92rem; padding: .45rem .95rem; border-radius: 7px;
+button, .button { display: inline-block; font: inherit; font-size: 13.8px; padding: 6.75px 14.25px; border-radius: 7px;
   border: 1px solid #e2e7ee; border: 1px solid var(--line); background: #ffffff; background: var(--card);
   color: #1b2330; color: var(--text); cursor: pointer; }
 button:hover, .button:hover { border-color: #2f6fe4; border-color: var(--accent); text-decoration: none; }
 button.primary, .button.primary { background: #2f6fe4; background: var(--accent);
   border-color: #2f6fe4; border-color: var(--accent); color: #ffffff; color: var(--accent-text); }
-button.small { padding: .2rem .55rem; font-size: .8rem; }
+button.small { padding: 3px 8.25px; font-size: 12px; }
 button.danger { color: #d64545; color: var(--down); }
-button.link { border: 0; background: none; color: #6b7686; color: var(--muted); padding: .35rem .65rem; }
+button.link { border: 0; background: none; color: #6b7686; color: var(--muted); padding: 5.25px 9.75px; }
 button.link:hover { color: #1b2330; color: var(--text); }
 
-pre.log { margin: 0; padding: 1rem; font-size: .8rem; max-height: 70vh; overflow: auto;
+pre.log { margin: 0; padding: 15px; font-size: 12px; max-height: 70vh; overflow: auto;
   background: #f0f3f7; background: var(--code); border-radius: 10px; border-radius: var(--radius);
   white-space: pre-wrap; word-wrap: break-word; word-break: break-all; }
 .l-err { color: #d64545; color: var(--down); }
 .l-warn { color: #c98a12; color: var(--warn); }
-input.secret { font-size: 1rem; margin: 1rem 0; }
+input.secret { font-size: 15px; margin: 15px 0; }
 
 /* Logs center */
 form.filters { margin: 0; }
 form.filters select, form.filters input, form.filters button { display: inline-block; width: auto;
-  margin: 0 .5rem 0 0; vertical-align: middle; }
-form.filters input.search { width: 14rem; max-width: 100%; }
-table.logtable { width: 100%; border-collapse: collapse; font-size: .8rem; }
-table.logtable th, table.logtable td { text-align: left; vertical-align: top; padding: .3rem .6rem;
+  margin: 0 7.5px 0 0; vertical-align: middle; }
+form.filters input.search { width: 210px; max-width: 100%; }
+table.logtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.logtable th, table.logtable td { text-align: left; vertical-align: top; padding: 4.5px 9px;
   border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line); }
 table.logtable pre.msg { margin: 0; white-space: pre-wrap; word-wrap: break-word; font: inherit; }
 .nowrap { white-space: nowrap; }
 ul.plain { list-style: none; padding: 0; }
+input::placeholder, textarea::placeholder { color: #9aa4b2; opacity: 1; }
+input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
+.examples table.grid th, .examples table.grid td { font-size: 12.75px; padding: 6.75px 13.5px; }
 
 /* Modern layout. IE (every version) does not know @supports and skips it. */
 @supports (display: grid) {
-  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap; }
   .brand { display: flex; align-items: center; padding: 0; }
-  .topbar .nav { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+  .topbar .nav { display: flex; align-items: center; gap: 4.5px; flex-wrap: wrap; }
   .topbar .nav a { margin-left: 0; }
-  .head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
   .head h1 { margin: 0; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .9rem; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 13.5px; }
   .tile { width: auto; min-width: 0; margin: 0; }
-  .banner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .banner { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
   .banner > span { padding: 0; }
-  label.check { display: flex; align-items: center; gap: .5rem; }
+  label.check { display: flex; align-items: center; gap: 7.5px; }
   label.check input { margin: 0; }
-  .checks { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .checks { display: flex; gap: 22.5px; flex-wrap: wrap; }
   .checks label { margin-right: 0; }
-  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 1rem; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 15px; }
   .cols > label { width: auto; margin-right: 0; }
-  .actions { display: flex; gap: .6rem; align-items: center; }
+  .actions { display: flex; gap: 9px; align-items: center; }
   .actions > * { margin-right: 0; }
-  form.filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  form.filters { display: flex; flex-wrap: wrap; gap: 7.5px; align-items: center; }
   form.filters select, form.filters input, form.filters button { margin: 0; }
 }

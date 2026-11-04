@@ -28,7 +28,8 @@ BACKOFF = (1, 2, 5, 10, 30, 60)
 STABLE_SECONDS = 300          # a child that ran this long resets its backoff
 UPDATE_TRIAL_SECONDS = 300    # a new version that survives this long is kept
 UPDATE_MAX_CRASHES = 3
-STOP_GRACE_SECONDS = 10
+STOP_GRACE_SECONDS = 20        # above a check's worst attempt (ping timeout + 2 s)
+RESTART_MIN_GAP = 60          # server-requested restarts closer than this are delayed
 MAIN_PY = os.path.join(paths.ROOT, 'main.py')
 
 
@@ -52,7 +53,7 @@ class Child:
         finally:
             if err is not None:
                 err.close()
-        self.started = time.time()
+        self.started = time.monotonic()
         log.info('Started %s (pid %d)', self.name, self.proc.pid)
 
     def _stderr_file(self):
@@ -81,8 +82,8 @@ class Child:
             self.proc = None
             return
         touch(paths.child_stop_flag(self.name))
-        deadline = time.time() + grace
-        while time.time() < deadline and self.proc.poll() is None:
+        deadline = time.monotonic() + grace
+        while time.monotonic() < deadline and self.proc.poll() is None:
             time.sleep(0.2)
         if self.proc.poll() is None:
             log.warning('%s did not stop within %ds - killing it', self.name, grace)
@@ -95,12 +96,12 @@ class Child:
         self.proc = None
 
     def schedule_restart(self):
-        ran = time.time() - self.started
+        ran = time.monotonic() - self.started
         if ran > STABLE_SECONDS:
             self.failures = 0
         delay = BACKOFF[min(self.failures, len(BACKOFF) - 1)]
         self.failures += 1
-        self.next_start = time.time() + delay
+        self.next_start = time.monotonic() + delay
         return delay
 
 
@@ -109,6 +110,7 @@ class Supervisor:
         self.lock = procs.InstanceLock(paths.LOCK_FILE)
         self.children = {}
         self.stopping = False
+        self._last_restart = None
 
     def _argv(self, role):
         py = procs.background_python()
@@ -120,14 +122,15 @@ class Supervisor:
     def run(self, wait_for_lock=0):
         paths.ensure_dirs()
         logsetup.setup('supervisor', settings.load().get('log_level'))
-        deadline = time.time() + wait_for_lock
+        deadline = time.monotonic() + wait_for_lock
         while not self.lock.acquire():
-            if time.time() >= deadline:
+            if time.monotonic() >= deadline:
                 return 0   # another supervisor owns this install
             time.sleep(0.5)
         try:
             if os.path.exists(paths.STOPPED_FLAG):
-                log.info('Not starting: stopped by `main.py stop` (run `main.py start` to resume)')
+                # debug: the Windows minute trigger would write this 1440 times a day
+                log.debug('Not starting: stopped by `main.py stop` (run `main.py start` to resume)')
                 return 0
             procs.write_pid(paths.SUPERVISOR_PID)
             remove_quietly(paths.SHUTDOWN_FLAG)
@@ -175,21 +178,34 @@ class Supervisor:
                 log.info('Restart requested - restarting children')
                 self._restart_children()
             self._check_update_trial()
-            for role, child in list(self.children.items()):
+            # By role, looking each child up afresh: _restart_children()
+            # replaces the Child objects, and a stale one started here would
+            # be a second, untracked process.
+            for role in list(self.children):
+                child = self.children.get(role)
+                if child is None:
+                    continue
                 if child.proc is not None and child.proc.poll() is not None:
                     code = child.proc.returncode
                     child.proc = None
                     if role == 'engine' and code == updater.EXIT_UPDATE:
                         return self._apply_update()
                     if role == 'engine' and code == updater.EXIT_RESTART:
-                        log.warning('Engine asked for a restart')
-                        self._restart_children()
+                        now = time.monotonic()
+                        if self._last_restart is None or now - self._last_restart >= RESTART_MIN_GAP:
+                            self._last_restart = now
+                            log.warning('Engine asked for a restart')
+                            self._restart_children()
+                            break
+                        # The server keeps asking: restart only the engine, with backoff.
+                        log.warning('Engine asked for another restart within %ds - restarting '
+                                    'the engine only, in %ds', RESTART_MIN_GAP, child.schedule_restart())
                         continue
                     if code != 0:
                         self._note_crash(role, code)
                     delay = child.schedule_restart()
                     log.warning('%s exited with code %s - restarting in %ds', role, code, delay)
-                if child.proc is None and time.time() >= child.next_start:
+                if child.proc is None and time.monotonic() >= child.next_start:
                     if self._check_rollback_needed():
                         return self._reexec()
                     child.start()
@@ -236,7 +252,7 @@ class Supervisor:
         if s.get('status') != 'Applied':
             return
         engine = self.children.get('engine')
-        if engine and engine.running() and time.time() - engine.started > UPDATE_TRIAL_SECONDS:
+        if engine and engine.running() and time.monotonic() - engine.started > UPDATE_TRIAL_SECONDS:
             updater.set_state(status='Success')
             log.info('[UPDATE] v%s has run for %ds - update successful', s.get('version'),
                      UPDATE_TRIAL_SECONDS)

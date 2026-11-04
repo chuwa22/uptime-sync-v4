@@ -1,6 +1,7 @@
 """Routes. Every state-changing route is POST (CSRF-checked in
 __init__.csrf_guard) and admin-only."""
 
+import ipaddress
 import logging
 import secrets
 import time
@@ -54,7 +55,7 @@ def tones(p):
         'engine': 'ok' if p['engine']['running'] else 'bad',
         'monitors': ('off' if not enabled else 'bad' if 'down' in states
                      else 'warn' if 'unknown' in states else 'ok'),
-        'heartbeat': ('off' if not hb['enabled'] else 'bad' if hb['failures']
+        'heartbeat': ('off' if not hb['enabled'] else 'bad' if hb['failures'] or hb.get('error')
                       else 'ok' if hb['last_ok'] else 'warn'),
         'signing': ('off' if not hb['enabled'] else
                     'ok' if p['signing']['state'] in ('enforced', 'required') else 'warn'),
@@ -99,6 +100,20 @@ def _status_payload():
     return p
 
 
+LOOPBACK = ('127.0.0.1', '::1', '::ffff:127.0.0.1')
+
+
+def safe_next(nxt):
+    """A same-site path to go to after login, else ''. Browsers drop tabs and
+    newlines inside URLs, so /\t/evil.example becomes //evil.example."""
+    if not nxt or any(ord(c) < 0x20 or c == '\\' for c in nxt):
+        return ''
+    u = urlparse(nxt)
+    if not nxt.startswith('/') or nxt.startswith('//') or u.scheme or u.netloc:
+        return ''
+    return nxt
+
+
 def register(app):  # noqa: C901 -- one place for the whole route table
 
     # -- first run / login ----------------------------------------------------
@@ -107,6 +122,10 @@ def register(app):  # noqa: C901 -- one place for the whole route table
     def setup():
         if auth.has_users():
             return redirect(url_for('login'))
+        if request.remote_addr not in LOOPBACK:
+            # Until the admin exists, whoever opens /setup first becomes admin.
+            # Only someone on the box itself may do that.
+            return render_template('setup.html', remote=True, error='', min_len=auth.MIN_PASSWORD), 403
         error = ''
         if request.method == 'POST':
             pw, confirm = request.form.get('password', ''), request.form.get('confirm', '')
@@ -129,14 +148,12 @@ def register(app):  # noqa: C901 -- one place for the whole route table
             if auth.rate_limited(ip):
                 error = 'Too many failed attempts. Wait a few minutes and try again.'
             else:
-                name = request.form.get('username', '').strip()
+                name = auth.canonical_name(request.form.get('username', '').strip())
                 user = auth.authenticate(name, request.form.get('password', ''))
                 if user:
                     auth.clear_failures(ip)
                     auth.login(name, user)
-                    nxt = request.args.get('next', '')
-                    return redirect(nxt if nxt.startswith('/') and not nxt.startswith('//')
-                                    else url_for('dashboard'))
+                    return redirect(safe_next(request.args.get('next', '')) or url_for('dashboard'))
                 auth.note_failure(ip)
                 log.warning('Failed login for %r from %s', name[:40], ip)
                 error = 'Wrong username or password.'
@@ -145,6 +162,9 @@ def register(app):  # noqa: C901 -- one place for the whole route table
     @app.route('/logout', methods=['POST'])
     def logout():
         from flask import session
+        name, _ = auth.current_user()
+        if name:
+            auth.revoke_sessions(name)
         session.clear()
         return redirect(url_for('login'))
 
@@ -233,6 +253,15 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         }
         m = monitors.normalize(raw)
         errors = monitors.validate(m)
+        # normalize() is lenient (it also reads hand-edited files); a typo in
+        # the form must be an error, not a silent default.
+        for key, label, lo, hi in (('port', 'Port', 1, 65535), ('timeout', 'Timeout', 1, 120),
+                                   ('retry_count', 'Attempts', 1, 10)):
+            value = str(f.get(key, '')).strip()
+            if key == 'port' and (not value or m['type'] in ('DNS', 'PING')):
+                continue
+            if not value.isdigit() or not lo <= int(value) <= hi:
+                errors.append('%s must be a whole number from %d to %d.' % (label, lo, hi))
         items = monitors.load()
         if any(o['name'].lower() == m['name'].lower() and o['id'] != m['id'] for o in items):
             errors.append('Another monitor already has that name.')
@@ -323,6 +352,13 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                 new['web']['port'] = port
             except ValueError:
                 errors.append('Web port must be between 1 and 65535.')
+            host = new['web']['host']
+            if host and host != 'localhost':
+                try:
+                    ipaddress.ip_address(host)
+                except ValueError:
+                    errors.append('Web listens on must be an IP address: 0.0.0.0 (every network), '
+                                  '127.0.0.1 (this PC only) or one of this PC\'s addresses.')
             if new['log_level'] not in ('DEBUG', 'INFO', 'WARNING', 'ERROR'):
                 new['log_level'] = 'INFO'
             if new['remote']['require_signed_response'] not in ('auto', 'true', 'false'):
@@ -401,6 +437,8 @@ def register(app):  # noqa: C901 -- one place for the whole route table
             proc = ''
         text = (request.args.get('q') or '')[:200]
         before = request.args.get('before', type=int)
+        if before is not None and not 0 < before < 2 ** 63:
+            before = None    # sqlite integers are 64-bit; bigger raises OverflowError
         rows = logstore.query(min_level=LOG_LEVELS[level], proc=proc, text=text,
                               before_id=before, limit=LOG_PAGE + 1)
         more = len(rows) > LOG_PAGE

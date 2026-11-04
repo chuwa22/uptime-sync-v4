@@ -61,14 +61,28 @@
     on(el, 'focus', function () { el.select(); });
   });
 
-  // Monitor form: show only the fields that apply to the chosen type.
+  // Monitor form: show only the fields that apply to the chosen type, and
+  // swap placeholders from data-ph="PING=...|DNS=...|TCP=..." (keyed by the
+  // type's first word). IE8/9 have no placeholder; the hints say the same.
   var typeSelect = $all('[data-type-select]')[0];
+  function placeholderFor(spec, first) {
+    var pairs = spec.split('|');
+    for (var i = 0; i < pairs.length; i++) {
+      var eq = pairs[i].indexOf('=');
+      if (eq > 0 && pairs[i].substring(0, eq) === first) { return pairs[i].substring(eq + 1); }
+    }
+    return null;
+  }
   function applyType() {
     var t = typeSelect.value;
     var first = t.split(' ')[0];
     each($all('[data-for-types]'), function (el) {
       var types = ' ' + el.getAttribute('data-for-types') + ' ';
       setHidden(el, types.indexOf(' ' + first + ' ') < 0 && types.indexOf(' ' + t + ' ') < 0);
+    });
+    each($all('[data-ph]'), function (el) {
+      var ph = placeholderFor(el.getAttribute('data-ph'), first);
+      if (ph !== null) { el.setAttribute('placeholder', ph); }
     });
   }
   if (typeSelect) { on(typeSelect, 'change', applyType); applyType(); }
@@ -101,16 +115,25 @@
     setText(field('engine'), st.engine.running ? 'Running' : 'Stopped');
     setText(field('engine_sub'), 'last cycle ' + (st.engine.updated_at ? st.engine.updated_at.slice(11, 19) : '-'));
     var hb = st.heartbeat;
-    setText(field('heartbeat'), !hb.enabled ? 'Off' : hb.failures ? 'Failing' : hb.last_ok ? 'OK' : 'Waiting');
+    setText(field('heartbeat'), !hb.enabled ? 'Off' : hb.failures ? 'Failing' : hb.error ? 'Error' :
+      hb.last_ok ? 'OK' : 'Waiting');
     setText(field('heartbeat_sub'), !hb.enabled ? 'reporting disabled' :
       (hb.error ? hb.error + ' - ' : '') + 'last OK ' + ago(hb.last_ok, st.now));
     setText(field('signing'), st.signing.state);
     setText(field('signing_sub'), st.signing.since ? 'since ' + st.signing.since.slice(0, 10) : '');
 
     var body = $all('[data-rows]')[0];
-    if (!body || !st.monitors.length) { return; }
+    if (!body) { return; }
     // IE9 and older cannot set innerHTML on a tbody: remove rows one by one.
     while (body.firstChild) { body.removeChild(body.firstChild); }
+    if (!st.monitors.length) {
+      var empty = document.createElement('tr');
+      var etd = cell('No monitors yet.', 'empty');
+      etd.setAttribute('colSpan', '7');
+      empty.appendChild(etd);
+      body.appendChild(empty);
+      return;
+    }
     for (i = 0; i < st.monitors.length; i++) {
       m = st.monitors[i];
       var tr = document.createElement('tr');

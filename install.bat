@@ -13,7 +13,11 @@ rem
 rem Keep this file ASCII with CRLF line endings (.gitattributes).
 
 setlocal EnableExtensions
-cd /d "%~dp0"
+rem Saved before the argument loop: SHIFT moves %0 too, so %~f0 / %~dp0
+rem would name the last argument afterwards.
+set "SELF=%~f0"
+set "HERE=%~dp0"
+cd /d "%HERE%"
 title Uptime Sync 4 - install
 
 set "ELEVATED="
@@ -32,9 +36,9 @@ if not errorlevel 1 goto admin
 if defined ELEVATED goto not_admin
 echo [INFO] Asking for administrator rights...
 if defined ARGS (
-    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '/elevated%ARGS%' -Verb RunAs"
+    powershell -NoProfile -Command "Start-Process -FilePath '%SELF%' -ArgumentList '/elevated%ARGS%' -Verb RunAs"
 ) else (
-    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '/elevated' -Verb RunAs"
+    powershell -NoProfile -Command "Start-Process -FilePath '%SELF%' -ArgumentList '/elevated' -Verb RunAs"
 )
 if errorlevel 1 goto not_admin
 exit /b 0
@@ -62,7 +66,7 @@ goto done_fail
 %PY% -c "import sys; print('[INFO] Python ' + sys.version.split()[0] + ' ' + sys.executable)"
 echo [INFO] Folder %CD%
 echo.
-%PY% "%~dp0install.py"%ARGS%
+%PY% "%HERE%install.py"%ARGS%
 set "RC=%ERRORLEVEL%"
 echo.
 if not "%RC%"=="0" goto done_rc

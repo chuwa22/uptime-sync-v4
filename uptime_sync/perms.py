@@ -13,6 +13,10 @@ reports what check() finds.
              German Windows works the same), plus the user who ran
              `main.py install`; everything inside is reset to inherit that.
              Without this, a folder under C:\\ inherits "Users: read".
+             The install folder itself gets the same treatment, except that
+             Users keep read+execute: a folder made under C:\\ inherits
+             "Authenticated Users: Modify", and its code runs as SYSTEM every
+             minute -- any local user could edit a .py file and own the box.
 
 A failure is logged and never stops the agent: a permission problem must
 not be the reason a monitoring box stays down.
@@ -26,6 +30,7 @@ from . import paths
 IS_WINDOWS = os.name == 'nt'
 SID_SYSTEM = '*S-1-5-18'
 SID_ADMINS = '*S-1-5-32-544'
+SID_USERS = '*S-1-5-32-545'
 PROTECTED = (paths.DATA_DIR, paths.LOG_DIR)
 
 
@@ -88,16 +93,43 @@ def icacls_commands(directory, extra_sids=()):
     ]
 
 
+def root_icacls_command(root, extra_sids=()):
+    """Lock the install folder (pure: unit-tested): inheritance from the
+    drive removed, SYSTEM/Administrators (and the installing user) full
+    control, Users read+execute. Children that inherit pick it up; data\\
+    and logs\\ have inheritance removed and keep their own, stricter ACL."""
+    grants = []
+    for sid in (SID_SYSTEM, SID_ADMINS) + tuple(s for s in extra_sids if s):
+        grants += ['/grant:r', '%s:(OI)(CI)F' % sid]
+    return ['icacls', root, '/inheritance:r'] + grants + ['/grant:r', '%s:(OI)(CI)RX' % SID_USERS, '/Q']
+
+
 def _run(cmd):
     flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        stdin=subprocess.DEVNULL, timeout=60, creationflags=flags)
-    return p.returncode, p.stdout.decode('utf-8', 'replace')
+    # schtasks / icacls / whoami print in the OEM code page (cp874 on Thai
+    # Windows), not UTF-8; ASCII-safe so the message can always be printed.
+    return p.returncode, _console_text(p.stdout)
+
+
+def _console_text(raw):
+    enc = 'oem' if IS_WINDOWS else 'utf-8'
+    try:
+        text = raw.decode(enc, 'replace')
+    except LookupError:
+        text = raw.decode('utf-8', 'replace')
+    return text.encode('ascii', 'replace').decode('ascii')
 
 
 def _windows_harden(grant_current_user):
     extra = (current_user_sid(),) if grant_current_user else ()
     problems = []
+    root = paths.ROOT
+    if os.path.dirname(root) != root:      # never a drive root such as C:\\
+        code, out = _run(root_icacls_command(root, extra))
+        if code != 0:
+            problems.append('%s: icacls exit %d: %s' % (root, code, out.strip()[-200:]))
     for d in _dirs():
         for i, cmd in enumerate(icacls_commands(d, extra)):
             if i == 1 and not os.listdir(d):

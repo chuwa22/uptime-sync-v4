@@ -29,7 +29,8 @@ class Engine:
     def __init__(self, supervised=False, parent_pid=0):
         self.supervised = supervised
         self.parent_pid = parent_pid
-        self.start_time = time.time()
+        self.start_time = time.time()        # timestamp, reported to the server
+        self._start_mono = time.monotonic()  # durations: immune to clock steps
         self.checker = Checker()
         self.session = requests.Session()
         self.session.headers['User-Agent'] = 'UptimeSync/%s' % __version__
@@ -40,13 +41,16 @@ class Engine:
         self.monitors = []
         self._monitor_stamp = None
         self.results = {}
-        self.history = read_json(paths.HISTORY_FILE, {}) or {}
+        h = read_json(paths.HISTORY_FILE, {})
+        self.history = h if isinstance(h, dict) else {}
         self._push_codes = {}
         self._push_alerted = set()
         self._updating = threading.Lock()
         self._pruned_day = None
         self._last_cycle_ok = True
         self._skip_logged = None
+        self._lock = threading.Lock()   # results + history: written by check threads
+        self._inflight = set()          # monitor ids whose check is still running
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -61,14 +65,15 @@ class Engine:
         threading.Thread(target=self._watch, name='watch', daemon=True).start()
         try:
             while not self.stop_event.is_set():
-                started = time.time()
+                started = time.monotonic()
                 self.settings = settings.load()
                 logsetup.set_level(self.settings.get('log_level'))
                 self._reload_monitors()
                 self._run_cycle()
                 self._daily_housekeeping()
                 interval = max(10, int(self.settings.get('check_interval', 60) or 60))
-                self.stop_event.wait(max(1.0, interval - (time.time() - started)))
+                # monotonic: a clock stepped back by w32time must not stretch the sleep
+                self.stop_event.wait(min(interval, max(1.0, interval - (time.monotonic() - started))))
         finally:
             self._save_history()
             remove_quietly(paths.child_pid_file('engine'))
@@ -117,7 +122,9 @@ class Engine:
         all_monitors = monitors.load()
         self.monitors = [monitors.runtime_view(m, env) for m in all_monitors if m['enabled']]
         known = {m['id'] for m in all_monitors}
-        self.results = {k: v for k, v in self.results.items() if k in known}
+        with self._lock:
+            self.results = {k: v for k, v in self.results.items() if k in known}
+            self.history = {k: v for k, v in self.history.items() if k in known}
         log.info('Loaded %d monitor(s), %d enabled', len(all_monitors), len(self.monitors))
 
     def _warn_insecure_push_urls(self):
@@ -134,9 +141,27 @@ class Engine:
             return
         workers = max(1, min(int(self.settings.get('max_workers', 10) or 10), len(self.monitors)))
         budget = max(10, int(self.settings.get('check_interval', 60) or 60) * 0.9)
+        # A check that overran the last budget is still running in its old
+        # pool thread: do not start a second copy of it alongside.
+        with self._lock:
+            todo = [m for m in self.monitors if m['id'] not in self._inflight]
+            busy = len(self.monitors) - len(todo)
+            self._inflight.update(m['id'] for m in todo)
+        if busy:
+            log.warning('%d check(s) from the last cycle still running - not started again', busy)
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
-        futures = {pool.submit(self._check_one, m): m for m in self.monitors}
-        done, not_done = concurrent.futures.wait(futures, timeout=budget)
+        futures = {pool.submit(self._check_one, m): m for m in todo}
+        deadline = time.monotonic() + budget
+        not_done = set(futures)
+        while not_done and not self.stop_event.is_set():
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            # short waits so a stop request is seen within a second
+            done_now, not_done = concurrent.futures.wait(not_done, timeout=min(1.0, left))
+        done = set(futures) - set(not_done)
+        if self.stop_event.is_set():
+            not_done = set()   # stopping: nothing to warn about
         for f in done:
             if f.exception():
                 log.error('Check of %s crashed: %s', futures[f]['name'], f.exception())
@@ -148,6 +173,13 @@ class Engine:
         self._write_status()
 
     def _check_one(self, m):
+        try:
+            self._check_and_push(m)
+        finally:
+            with self._lock:
+                self._inflight.discard(m['id'])
+
+    def _check_and_push(self, m):
         retry_delay = float(self.settings.get('retry_delay', 1) or 1)
         ok, ms, dns_ms = False, 0, 0
         for attempt in range(m['retry_count']):
@@ -156,17 +188,18 @@ class Engine:
             try:
                 ok, ms, dns_ms = self.checker.check(m)
             except Exception as e:
-                log.debug('%s attempt %d raised %s', m['name'], attempt + 1, e)
+                log.debug('%s attempt %d raised %s', m['name'], attempt + 1, type(e).__name__)
                 ok = False
             if ok:
                 break
-            if attempt < m['retry_count'] - 1:
-                time.sleep(retry_delay)
-        self.results[m['id']] = {'name': m['name'], 'type': m['type'], 'target': m['target'],
-                                 'ok': ok, 'ms': ms, 'checked_at': iso_now()}
-        h = self.history.setdefault(m['id'], [])
-        h.append([int(time.time()), 1 if ok else 0, ms])
-        del h[:-HISTORY_LEN]
+            if attempt < m['retry_count'] - 1 and self.stop_event.wait(retry_delay):
+                return
+        with self._lock:
+            self.results[m['id']] = {'name': m['name'], 'type': m['type'], 'target': m['target'],
+                                     'ok': ok, 'ms': ms, 'checked_at': iso_now()}
+            h = self.history.setdefault(m['id'], [])
+            h.append([int(time.time()), 1 if ok else 0, ms])
+            del h[:-HISTORY_LEN]
         self._push(m, ok, ms, dns_ms)
 
     def _push(self, m, ok, ms, dns_ms):
@@ -176,7 +209,7 @@ class Engine:
                   'msg': '%s: %s' % (m['name'], 'All systems UP' if ok else 'Service is DOWN'),
                   'ping': ms, 'dns_ping': dns_ms}
         try:
-            r = self.session.get(m['push_url'], params=params, timeout=10)
+            r = self.session.get(monitors.push_base_url(m['push_url']), params=params, timeout=10)
             code = r.status_code
             r.close()
         except requests.RequestException as e:
@@ -202,17 +235,21 @@ class Engine:
                         'may have been deleted in Uptime Kuma', m['name'], redact(url))
 
     def _save_history(self):
+        with self._lock:   # a snapshot: check threads keep appending meanwhile
+            snap = {k: list(v) for k, v in self.history.items()}
         try:
-            atomic_write_json(paths.HISTORY_FILE, self.history)
+            atomic_write_json(paths.HISTORY_FILE, snap)
         except OSError as e:
             log.warning('Could not save history: %s', e)
 
     def _write_status(self):
         hb = self.heartbeat
+        with self._lock:
+            results = dict(self.results)
         try:
             atomic_write_json(paths.STATUS_FILE, {
                 'updated_at': iso_now(), 'version': __version__, 'pid': os.getpid(),
-                'started_at': int(self.start_time), 'monitors': self.results,
+                'started_at': int(self.start_time), 'monitors': results,
                 'heartbeat': {'last_ok': hb.last_ok, 'failures': hb.failures, 'error': hb.last_error},
             })
         except OSError:
@@ -281,7 +318,7 @@ class Engine:
                 log.warning('[UPDATE] v%s failed on this box before (%s) - not retrying it '
                             'unless Force Update is used', version, last.get('detail') or '?')
             return
-        elif time.time() - self.start_time < UPDATE_GRACE_SECONDS:
+        elif time.monotonic() - self._start_mono < UPDATE_GRACE_SECONDS:
             log.info('[UPDATE] v%s offered; waiting for the post-start grace period', version)
             return
         elif mode == 'manual':
@@ -303,17 +340,23 @@ class Engine:
             return
         if not self._updating.acquire(blocking=False):
             return
+        staged = False
         try:
             updater.download_and_stage(url, version, sha, settings.load())
+            staged = True
         except updater.UpdateRefused as e:
             log.error('[UPDATE] [SECURITY] Refusing v%s: %s', version, e)
-            updater.set_state(status='Failed', version=version, time=iso_now(), detail=str(e))
-            self._updating.release()
+            try:
+                updater.set_state(status='Failed', version=version, time=iso_now(), detail=str(e))
+            except OSError as e2:
+                log.error('[UPDATE] Could not record the refusal: %s', e2)
             return
         except Exception as e:
             log.error('[UPDATE] v%s failed: %s', version, redact(e))
-            self._updating.release()
             return
+        finally:
+            if not staged:
+                self._updating.release()
         log.warning('[UPDATE] v%s verified and staged - handing over to the supervisor', version)
         self.stop(updater.EXIT_UPDATE)
 

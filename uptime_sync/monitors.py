@@ -7,10 +7,11 @@ A monitor:
 """
 
 import copy
+import hashlib
 import re
 import threading
 import uuid
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from . import paths, settings
 from .checks import DNS_METHODS, is_valid_dns_query_name
@@ -36,7 +37,27 @@ DEFAULTS = {
 }
 
 _HOST_RE = re.compile(r'^[A-Za-z0-9_.:\-\[\]]{1,253}$')
+_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,100}$")
 _lock = threading.Lock()
+
+
+PUSH_PARAMS = ('status', 'msg', 'ping', 'dns_ping')
+
+
+def push_base_url(url):
+    """The push URL without the parameters the agent sends itself.
+
+    Uptime Kuma shows a push URL as .../api/push/<token>?status=up&msg=OK&ping=
+    and that is what people paste. Sent as-is plus the agent's own params,
+    every name appears twice; Kuma then reads status as a list, which is not
+    "up", and marks the monitor DOWN on every beat. Other query parameters
+    are kept."""
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if k.lower() not in PUSH_PARAMS]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), parts.fragment))
 
 
 def normalize(raw):
@@ -56,6 +77,9 @@ def normalize(raw):
         m['port'] = int(m['port']) if m['port'] not in (None, '') else None
     except (TypeError, ValueError):
         m['port'] = None
+    if m['type'] in ('HTTP', 'HTTPS') and not m['target'] and m['monitor_url']:
+        # Target is ignored when a monitor URL is set; keep its host for display.
+        m['target'] = urlparse(m['monitor_url']).hostname or ''
     if m['type'] in ('DNS', 'PING'):
         # Not used by these checks; a value left over from another type (the
         # form only hides the field) would otherwise be saved and shown.
@@ -94,6 +118,15 @@ def validate(m):
         u = urlparse(settings.expand_refs(m['monitor_url']))
         if u.scheme not in ('http', 'https') or not u.hostname:
             errors.append('Monitor URL must be an http(s) URL.')
+    for name, value in m['headers'].items():
+        if not _HEADER_NAME_RE.match(name):
+            errors.append('Header name %r is not valid (letters, digits and - only, no spaces).' % name[:40])
+        try:
+            value.encode('latin-1')
+        except UnicodeEncodeError:
+            errors.append('Header %s: HTTP header values can only use Latin characters.' % name[:40])
+        if '\r' in value or '\n' in value:
+            errors.append('Header %s: the value cannot contain a line break.' % name[:40])
     if m['type'] == 'DNS' and m['dns_query_name'] and not is_valid_dns_query_name(m['dns_query_name']):
         errors.append('DNS query name is not a valid host name.')
     if m['push_url']:
@@ -108,12 +141,35 @@ def validate(m):
     return errors
 
 
+def _fix_ids(items):
+    """Every row gets an id that is unique and the same on every load.
+
+    3.x numbered monitors monitor_<count+1>, so add / delete / add left two
+    rows with one id, and the import copies them; a row without an id would
+    get a new random one per load. Either way the web UI's Edit / Delete
+    links hit the wrong row (or none). The ids made here are deterministic,
+    so the engine and the web process agree without writing the file; the
+    next save stores them."""
+    seen = set()
+    for i, m in enumerate(items):
+        mid = str(m.get('id') or '').strip()
+        if not mid:
+            src = '%s|%s|%s|%d' % (m.get('name'), m.get('type'), m.get('target'), i)
+            mid = 'm' + hashlib.sha1(src.encode('utf-8')).hexdigest()[:11]
+        while mid in seen:
+            mid = '%s-%d' % (mid, i)
+        seen.add(mid)
+        m['id'] = mid
+    return items
+
+
 def load():
     data = read_json(paths.MONITORS_FILE, {'monitors': []})
     if isinstance(data, list):
         data = {'monitors': data}
     items = data.get('monitors') if isinstance(data, dict) else None
-    return [normalize(m) for m in (items or []) if isinstance(m, dict)]
+    rows = [dict(m) for m in (items or []) if isinstance(m, dict)]
+    return [normalize(m) for m in _fix_ids(rows)]
 
 
 def save(monitors):

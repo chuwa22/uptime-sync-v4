@@ -26,7 +26,8 @@ main.py restarts itself inside `.venv`. The system Python is used only to create
 `.venv`.
 
 `.venv` still uses the system Python's standard library. If you uninstall or
-upgrade that Python, run `python install.py --recreate`.
+upgrade that Python, run `python main.py stop`, then `python install.py --recreate`
+(it refuses while the agent is running), then `python main.py start`.
 It then registers autostart and starts the agent. Open `http://<box>:5000/` and
 create the admin account.
 

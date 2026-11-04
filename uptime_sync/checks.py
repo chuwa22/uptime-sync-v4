@@ -71,15 +71,18 @@ def parse_ping(returncode, output, elapsed_ms):
 
     Windows exits 0 even for "Destination host unreachable" sent back by a
     router, so a real reply there is recognised by its TTL= field (present
-    in every language Windows ships). The time field is localised around
+    in every language Windows ships) or, for IPv6 replies, which have no TTL,
+    by the time field. That field is localised around
     '=' / '<' + digits + 'ms'; when it cannot be parsed the wall-clock time
     of the ping process stands in.
     """
     if returncode != 0:
         return None
-    if sys.platform.startswith('win') and 'TTL=' not in output.upper():
-        return None
     m = _PING_TIME_RE.search(output)
+    if sys.platform.startswith('win') and 'TTL=' not in output.upper() and not m:
+        # IPv6 replies carry no TTL ("Reply from ::1: time<1ms"), but they do
+        # carry the time; "unreachable" / "TTL expired" lines carry neither.
+        return None
     if m:
         return round(float(m.group(1)), 1)
     return round(elapsed_ms, 1)
@@ -137,7 +140,7 @@ class Checker:
     def ping(self, host, timeout=10):
         cmd = ping_command(host, timeout)
         flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-        start = time.time()
+        start = time.monotonic()
         try:
             proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   stdin=subprocess.DEVNULL, timeout=timeout + 2,
@@ -149,7 +152,7 @@ class Checker:
             log.warning('ping could not run (%s): %s', cmd[0], e)
             return None
         output = proc.stdout.decode('latin-1', errors='replace')
-        return parse_ping(proc.returncode, output, (time.time() - start) * 1000)
+        return parse_ping(proc.returncode, output, (time.monotonic() - start) * 1000)
 
     # -- DNS ---------------------------------------------------------------
 
@@ -165,7 +168,7 @@ class Checker:
                 return False, 0
         if self._circuit_open(target):
             return False, 0
-        start = time.time()
+        start = time.monotonic()
         try:
             socket.getaddrinfo(target, None)
         except Exception as e:
@@ -173,7 +176,7 @@ class Checker:
             self._mark_failure(target)
             return False, 0
         self._mark_success(target)
-        return True, int((time.time() - start) * 1000)
+        return True, int((time.monotonic() - start) * 1000)
 
     def _check_dns_server(self, server, timeout, method, query_name):
         """'query' = DNS over UDP/53 only; 'ping' = ICMP only; 'auto' = query,
@@ -183,7 +186,7 @@ class Checker:
         method = str(method or 'auto').lower()
         if method not in DNS_METHODS:
             method = 'auto'
-        start = time.time()
+        start = time.monotonic()
         if method != 'ping':
             budget = float(timeout) if method == 'query' else min(
                 float(timeout) / 2.0, self._DNS_AUTO_QUERY_BUDGET_SECONDS)
@@ -194,7 +197,7 @@ class Checker:
                 return True, rtt
             if method == 'query':
                 return False, 0
-        remaining = max(1, int(round(float(timeout) - (time.time() - start))))
+        remaining = max(1, int(round(float(timeout) - (time.monotonic() - start))))
         ms = self.ping(server, remaining)
         if ms is None:
             return False, 0
@@ -239,11 +242,11 @@ class Checker:
             sock.connect((server, 53))
             for _ in range(max(1, attempts)):
                 txid = struct.unpack('>H', os.urandom(2))[0]
-                sent[txid] = time.time()
+                sent[txid] = time.monotonic()
                 sock.send(self.build_dns_query(txid, query_name))
                 deadline = sent[txid] + per_try
                 while True:
-                    remaining = deadline - time.time()
+                    remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         break
                     sock.settimeout(remaining)
@@ -255,7 +258,7 @@ class Checker:
                         continue
                     rid, flags = struct.unpack('>HH', data[:4])
                     if rid in sent and flags & 0x8000:
-                        return round((time.time() - sent[rid]) * 1000, 1)
+                        return round((time.monotonic() - sent[rid]) * 1000, 1)
             return None
         except OSError as e:
             log.debug('DNS query to %s failed: %s', server, e)
@@ -270,7 +273,7 @@ class Checker:
             count, opened = self._dns_failures.get(host, (0, 0))
             if not opened:
                 return False
-            if time.time() - opened > self._DNS_CIRCUIT_OPEN_SECONDS:
+            if time.monotonic() - opened > self._DNS_CIRCUIT_OPEN_SECONDS:
                 self._dns_failures[host] = (0, 0)
                 return False
             return True
@@ -280,7 +283,7 @@ class Checker:
             count, opened = self._dns_failures.get(host, (0, 0))
             count += 1
             if count >= self._DNS_FAILURE_THRESHOLD and not opened:
-                opened = time.time()
+                opened = time.monotonic()
                 log.warning('[DNS] %s failed to resolve %d times; skipping it for %ds',
                             host, count, self._DNS_CIRCUIT_OPEN_SECONDS)
             self._dns_failures[host] = (count, opened)
@@ -295,25 +298,28 @@ class Checker:
     # -- TCP / HTTP --------------------------------------------------------
 
     def check_tcp(self, host, port, timeout=10):
-        start = time.time()
+        start = time.monotonic()
         try:
             with socket.create_connection((host, int(port)), timeout=timeout):
-                return True, int((time.time() - start) * 1000)
+                return True, int((time.monotonic() - start) * 1000)
         except (OSError, ValueError) as e:
             log.debug('TCP %s:%s failed: %s', host, port, e)
             return False, 0
 
     def check_http(self, url, timeout=10, headers=None, verify=True):
         """Up = any 2xx/3xx after at most 5 redirects."""
-        start = time.time()
+        start = time.monotonic()
         try:
             r = self.session.get(url, timeout=timeout, headers=headers or {}, verify=verify,
                                  allow_redirects=True, stream=True)
             r.close()
-        except requests.RequestException as e:
-            log.debug('HTTP %s failed: %s', url, e)
+        except Exception as e:   # noqa: BLE001 -- a bad header value raises UnicodeEncodeError
+            # Never the URL or the raw error: an expanded ${NAME} from data/.env
+            # may sit in its query string.
+            u = urlparse(url)
+            log.debug('HTTP %s://%s failed: %s', u.scheme, u.hostname, type(e).__name__)
             return False, 0
-        ms = int((time.time() - start) * 1000)
+        ms = int((time.monotonic() - start) * 1000)
         return 200 <= r.status_code < 400, ms
 
     def _warn_ssl_expiry(self, host, port, timeout):

@@ -44,6 +44,19 @@ def step(msg):
     sys.stdout.flush()
 
 
+def agent_running():
+    """True while a supervisor holds this install's lock. paths/procs are
+    stdlib-only, so this works before .venv exists."""
+    sys.path.insert(0, ROOT)
+    try:
+        from uptime_sync import paths, procs
+        return procs.InstanceLock(paths.LOCK_FILE).held_by_other()
+    except Exception:
+        return False
+    finally:
+        sys.path.remove(ROOT)
+
+
 def main():
     p = argparse.ArgumentParser(description='Set up Uptime Sync 4 in this folder.')
     p.add_argument('--wheels', help='folder of wheel files for an offline install')
@@ -59,6 +72,14 @@ def main():
         return 1
 
     py = venv_python()
+    rebuild = os.path.isdir(VENV) and (a.recreate or not works(py))
+    if rebuild and agent_running():
+        # Deleting .venv under a running agent removes part of it and then
+        # fails on the files Windows keeps open -- the agent is left broken.
+        print('[ERROR] The agent is running from this .venv. Stop it first:')
+        print('        %s main.py stop' % venv_python())
+        print('        then run this again (and `main.py start` afterwards if needed).')
+        return 1
     if a.recreate and os.path.isdir(VENV):
         step('Removing the old .venv')
         shutil.rmtree(VENV)

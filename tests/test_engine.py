@@ -16,7 +16,7 @@ class ConsiderUpdateTests(unittest.TestCase):
         _env.reset()
         paths.ensure_dirs()
         self.e = engine.Engine(supervised=True)
-        self.e.start_time = time.time() - 3600          # past the grace period
+        self.e._start_mono = time.monotonic() - 3600     # past the grace period
         self.s = {'update': {'enabled': True}}
 
     def test_installs_when_auto(self):
@@ -37,7 +37,7 @@ class ConsiderUpdateTests(unittest.TestCase):
             self.e._consider_update(dict(REPLY), {'update': {'enabled': False}})
             self.e._consider_update(dict(REPLY, update_mode='manual'), self.s)
             self.assertEqual(updater.pending()['version'], '99.0.0')
-            self.e.start_time = time.time()
+            self.e._start_mono = time.monotonic()
             self.e._consider_update(dict(REPLY), self.s)
             inst.assert_not_called()
 
