@@ -170,6 +170,9 @@ class StageAndApplyTests(unittest.TestCase):
         s = updater.state()
         self.assertEqual(s['status'], 'Failed')
         self.assertIn('does not start', s['detail'])
+        # no empty backup folder left to count towards KEEP_BACKUPS, no bad staging
+        self.assertEqual(os.listdir(paths.BACKUP_DIR), [])
+        self.assertFalse(os.path.exists(paths.STAGING_DIR))
 
     def test_swap_failing_half_way_is_undone(self):
         self.stage(make_zip(NEXT))
@@ -184,6 +187,7 @@ class StageAndApplyTests(unittest.TestCase):
             self.assertIsNone(updater.apply())
         self.assertEqual(self._old(), ('# old\n', '# old\n'))
         self.assertIn('swap failed', updater.state()['detail'])
+        self.assertEqual(os.listdir(paths.BACKUP_DIR), [])
 
     def test_rollback_without_backup_stops_retrying(self):
         updater.set_state(status='Applied', version=NEXT, previous=__version__, backup='', crashes=3)

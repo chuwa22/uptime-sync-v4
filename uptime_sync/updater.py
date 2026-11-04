@@ -315,9 +315,23 @@ def _swap(names_out, out_dir, in_dir, names_in):
         _move(names_out, paths.ROOT, out_dir, moved_out)
         _move(names_in, in_dir, paths.ROOT, moved_in)
     except Exception:
-        _undo(moved_out, out_dir, moved_in, in_dir)
+        if not _undo(moved_out, out_dir, moved_in, in_dir):
+            _drop_failed_attempt(out_dir)
         raise
     return moved_out, moved_in
+
+
+def _drop_failed_attempt(backup):
+    """After a clean undo: the backup folder is empty again and the staged
+    build is known bad. An empty v<ver>-<ts> folder would count towards
+    KEEP_BACKUPS and, after a few failed updates, push real backups out.
+    Only called when the undo restored everything -- otherwise both stay
+    for a by-hand recovery."""
+    try:
+        os.rmdir(backup)
+    except OSError:
+        pass
+    shutil.rmtree(paths.STAGING_DIR, ignore_errors=True)
 
 
 _SMOKE = ('import sys; sys.path.insert(0, sys.argv[1]); '
@@ -401,7 +415,8 @@ def apply():
             raise RuntimeError('the new code does not start: ' + detail)
     except Exception as e:
         log.error('[UPDATE] v%s failed after the swap, restoring v%s: %s', version, __version__, e)
-        _undo(moved_out, backup, moved_in, paths.STAGING_DIR)
+        if not _undo(moved_out, backup, moved_in, paths.STAGING_DIR):
+            _drop_failed_attempt(backup)
         if pip_ran:
             # pip may have upgraded part of the venv before it failed.
             ok, _ = _pip_install(paths.ROOT)

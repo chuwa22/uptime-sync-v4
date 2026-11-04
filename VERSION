@@ -21,6 +21,7 @@
   - A swap that failed half-way could leave a mix of old and new code, and the restore raised on the files already moved. Now every move is recorded as it happens, and the undo puts both halves back.
   - After the swap, the new code is test-imported with the venv python. A release that cannot start is put back at once, instead of crash-looping until the rollback counter trips.
   - A rollback that cannot run (no backup) no longer stops and starts all children forever. It is marked RollbackFailed once and reported to the server as Failed.
+  - An update that was put back leaves no empty backup folder (it counted towards the 5 kept and pushed real backups out) and no bad staged build.
   - Versions must be exactly x.y.z before they are used in a URL or path.
   - The update lock is always released, even when recording a refusal fails.
 - Fix (full review, engine and supervisor):

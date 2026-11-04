@@ -158,6 +158,10 @@ ul.plain { list-style: none; padding: 0; }
 input::placeholder, textarea::placeholder { color: #9aa4b2; opacity: 1; }
 input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
 .examples table.grid th, .examples table.grid td { font-size: 12.75px; padding: 6.75px 13.5px; }
+/* On a phone the description column would shrink to a word per line; keep it
+   readable and let the card scroll sideways instead (.card.flush overflow). */
+.examples table.grid td:last-child { min-width: 220px; }
+.examples table.grid td { white-space: normal; }
 
 /* Modern layout. IE (every version) does not know @supports and skips it. */
 @supports (display: grid) {
