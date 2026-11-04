@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 
-from . import __version__, log as logsetup, paths, procs, settings, updater
+from . import __version__, log as logsetup, paths, perms, procs, settings, updater
 from .util import remove_quietly, touch
 
 log = logging.getLogger('supervisor')
@@ -131,6 +131,8 @@ class Supervisor:
                 return 0
             procs.write_pid(paths.SUPERVISOR_PID)
             remove_quietly(paths.SHUTDOWN_FLAG)
+            for problem in perms.harden():
+                log.warning('[SECURITY] Could not restrict permissions: %s', problem)
             self._install_signal_handlers()
             log.info('Uptime Sync %s supervisor starting (pid %d, python %s)',
                      __version__, os.getpid(), sys.version.split()[0])

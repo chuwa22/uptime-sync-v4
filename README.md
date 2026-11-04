@@ -85,6 +85,17 @@ The supervisor restarts a child that dies, with a backoff of 1, 2, 5, 10, 30 and
     could log.
   - `logs/fallback-<date>.log` holds lines the database could not take.
 
+## Permissions
+
+`data/` holds the secrets and `logs/` holds the history. On every start, the agent makes both folders readable only by the service account and the admin who ran `install`.
+
+- **Windows:** inheritance is removed, and only SYSTEM, Administrators and the installing user get access.
+- **Linux / macOS:** folders are set to 0700 and files to 0600.
+
+`main.py status` lists anything that other users can still read.
+
+On Windows, put the folder somewhere like `C:\UptimeSync4`, not under a user profile.
+
 ## Settings
 
 | Path | What | Updates |

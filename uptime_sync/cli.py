@@ -11,7 +11,7 @@ import os
 import sys
 import time
 
-from . import __version__, paths, procs, settings
+from . import __version__, paths, perms, procs, settings
 from .util import read_json, remove_quietly, touch
 
 STOP_WAIT_SECONDS = 40
@@ -39,16 +39,19 @@ def _web_url(s=None):
 
 def cmd_run(a):
     from . import supervisor
+    perms.restrict_umask()
     return supervisor.run(wait_for_lock=a.wait_lock)
 
 
 def cmd_engine(a):
     from . import engine
+    perms.restrict_umask()
     return engine.main(supervised=a.supervised, parent_pid=a.parent)
 
 
 def cmd_web(a):
     from . import web
+    perms.restrict_umask()
     return web.main(parent_pid=a.parent)
 
 
@@ -73,6 +76,7 @@ def cmd_start(a):
     from . import autostart
     paths.ensure_dirs()
     remove_quietly(paths.STOPPED_FLAG)
+    perms.return_to_sudo_user()       # before the service (as that user) starts
     pid, running = _running()
     if running:
         _say('[OK] Already running (supervisor pid %s)' % pid)
@@ -142,6 +146,7 @@ def cmd_status(a):
         'web_url': _web_url(s) if s.get('web', {}).get('enabled', True) else None,
         'heartbeat': st.get('heartbeat'),
         'update': updater.state() or None,
+        'readable_by_others': perms.check(),
     }
     if a.json:
         info['monitors'] = st.get('monitors', {})
@@ -171,6 +176,12 @@ def cmd_status(a):
         for m in sorted(mons.values(), key=lambda m: m.get('name', '')):
             if not m.get('ok'):
                 _say('    [DOWN] %s (%s %s)' % (m.get('name'), m.get('type'), m.get('target')))
+    exposed = info['readable_by_others']
+    if exposed:
+        exposed = [os.path.relpath(e, paths.ROOT) for e in exposed]
+        _say('  [SECURITY] readable by other local users: %s' % ', '.join(exposed[:5]) +
+             (' (+%d more)' % (len(exposed) - 5) if len(exposed) > 5 else ''))
+        _say('             fixed on the next start, or now with `main.py install --no-autostart`')
     u = info['update']
     if u:
         _say('  update      %s v%s %s' % (u.get('status'), u.get('version', '?'), u.get('time', '')))
@@ -188,6 +199,11 @@ def cmd_install(a):
     from . import autostart
     paths.ensure_dirs()
     _say('[OK] Directories ready under %s' % paths.ROOT)
+    problems = perms.harden(grant_current_user=True)
+    for problem in problems:
+        _say('[WARN] Could not restrict permissions: %s' % problem)
+    if not problems:
+        _say('[OK] data/ and logs/ are readable only by this account and the service')
     if a.no_autostart:
         _say('[INFO] Autostart skipped (--no-autostart). Start with `main.py run`.')
         return 0
@@ -331,3 +347,6 @@ def main(argv=None):
         return a.fn(a) or 0
     except KeyboardInterrupt:
         return 130
+    finally:
+        if a.fn not in (cmd_run, cmd_engine, cmd_web):
+            perms.return_to_sudo_user()

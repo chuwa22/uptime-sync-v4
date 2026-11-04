@@ -66,6 +66,15 @@ README.md covers usage. This file covers the rules for changing the code.
     It signs, it does not travel.
   - Log URLs through `util.redact()`.
   - Write data files with `util.atomic_write_json(..., private=True)`.
+  - `perms.harden()` runs at every supervisor start, because applying
+    permissions only when a file is created misses hand-made and restored
+    files.
+    - Windows: icacls by SID, inheritance removed.
+    - POSIX: 0700/0600, umask 077.
+  - A new folder that holds secrets goes in `perms.PROTECTED`.
+  - A CLI command run with sudo gives data/, logs/ and run/ back to
+    `SUDO_UID` (`perms.return_to_sudo_user()`), because the service runs as
+    that user.
 - **Heartbeat protocol is additive-only.** The rules match 3.x:
   - Never remove or rename a field.
   - Every field has a default (`data.get(...)`).

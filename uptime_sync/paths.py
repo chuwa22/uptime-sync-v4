@@ -61,4 +61,4 @@ def child_pid_file(name):
 
 def ensure_dirs():
     for d in (DATA_DIR, LOG_DIR, RUN_DIR):
-        os.makedirs(d, exist_ok=True)
+        os.makedirs(d, mode=0o700, exist_ok=True)

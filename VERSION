@@ -1,3 +1,12 @@
+4.0.1
+2026-11-04
+- Security (file permissions): data/ holds the HMAC secret, the api_key, push tokens and password hashes, and logs/ holds the agent's history. Until now, on Windows, both folders took their permissions from the parent folder. Under C:\ that means every local user could read them. On Linux and macOS, a file made by hand (`cp config/env.example data/.env`) or restored from a backup kept mode 0644. The supervisor now re-applies owner-only permissions on every start (new `uptime_sync/perms.py`).
+  - Windows: icacls removes inheritance. It grants full control to SYSTEM and Administrators, by well-known SID so localized Windows works the same, and to the user who ran `main.py install`. Everything inside then inherits exactly that.
+  - POSIX: folders become 0700 and files 0600, and every agent process runs with umask 077.
+  - A failure is logged as a [SECURITY] warning and never stops the agent.
+  - `main.py status` lists anything other local users can still read. `main.py install` applies the permissions immediately.
+- Fix (sudo installs): `sudo main.py install` / `start` / `import` / `reset-password` left root-owned files in data/, logs/ and run/. The systemd unit or LaunchDaemon runs the agent as the sudo user, so it could not write its logs, and with 0600 it could not read its own settings either. These commands now hand those folders back to the sudo user before the service starts and when they finish.
+
 4.0.0
 2026-11-04
 - New: Uptime Sync 4 -- a pure-Python rewrite that runs on Windows (7 SP1 32-bit through 11), Linux and macOS with no PowerShell. Fresh install per box; `python main.py import <old install>` carries a 3.x site over (api_key, secret, monitors, push URLs, users).
