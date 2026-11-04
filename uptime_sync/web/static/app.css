@@ -115,6 +115,24 @@ input, select, textarea { display: block; width: 100%; margin-top: 4.5px; paddin
   border: 1px solid #e2e7ee; border: 1px solid var(--line); border-radius: 7px; }
 input:focus, select:focus, textarea:focus { outline: 2px solid #2f6fe4; outline: 2px solid var(--accent); outline-offset: -1px; }
 input:disabled { opacity: .6; }
+/* Password eye (added by app.js). One rule per vendor selector: a browser
+   drops a whole rule that holds a selector it does not know. */
+.pwd-wrap { position: relative; display: block; margin-top: 4.5px; }
+.pwd-wrap input { margin-top: 0; padding-right: 39px; }
+.pwd-eye { position: absolute; top: 0; bottom: 0; right: 0; width: 36px; margin: 0; padding: 0;
+  border: 0; background: transparent; cursor: pointer; line-height: 0;
+  color: #6b7686; color: var(--muted); border-radius: 0 7px 7px 0; }
+.pwd-eye:hover, .pwd-eye:focus { color: #1b2330; color: var(--text); }
+.pwd-eye:focus { outline: 2px solid #2f6fe4; outline: 2px solid var(--accent); outline-offset: -2px; }
+.pwd-eye svg { display: inline-block; vertical-align: middle; }
+.pwd-eye .eye-slash { display: none; }
+.pwd-wrap.shown .eye-slash { display: inline; }
+/* The browsers' own buttons would sit on top of ours: IE10/11 and Edge
+   (also Chromium Edge) draw a reveal eye and a clear X, Safari a key. */
+input::-ms-reveal { display: none; }
+input::-ms-clear { display: none; }
+.pwd-wrap input::-webkit-credentials-auto-fill-button { visibility: hidden; position: absolute; right: 0; pointer-events: none; }
+.pwd-wrap input::-webkit-strong-password-auto-fill-button { display: none !important; }
 label.check { font-weight: 500; }
 label.check input { display: inline; width: auto; margin: 0 7.5px 0 0; vertical-align: middle; }
 .checks label { display: inline-block; margin-right: 22.5px; }

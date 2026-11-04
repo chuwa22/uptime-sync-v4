@@ -61,6 +61,85 @@
     on(el, 'focus', function () { el.select(); });
   });
 
+  // Password fields: an eye button that shows / hides what was typed. Added
+  // here, not in the templates, so every password field gets it. Skipped
+  // where the browser cannot switch an input's type once it is on the page
+  // (IE8 throws): no half-working button there. app.css hides the browser's
+  // own reveal eye (IE10+/Edge) and Safari's key icon, so there is one eye.
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  function canSwitchType() {
+    if (!document.createElementNS || !document.body) { return false; }
+    var t = document.createElement('input');
+    var ok = false;
+    try {
+      t.type = 'password';
+      t.className = 'hidden';
+      document.body.appendChild(t);
+      t.type = 'text';
+      ok = t.type === 'text';
+    } catch (err) {
+      ok = false;
+    }
+    if (t.parentNode) { t.parentNode.removeChild(t); }
+    return ok;
+  }
+  function svgEl(name, attrs) {
+    var el = document.createElementNS(SVG_NS, name);
+    for (var k in attrs) {
+      if (attrs.hasOwnProperty(k)) { el.setAttribute(k, attrs[k]); }
+    }
+    return el;
+  }
+  function eyeIcon() {
+    var svg = svgEl('svg', {viewBox: '0 0 24 24', width: '18', height: '18', fill: 'none',
+      stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round',
+      'stroke-linejoin': 'round', 'aria-hidden': 'true', focusable: 'false'});
+    svg.appendChild(svgEl('path', {d: 'M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z'}));
+    svg.appendChild(svgEl('circle', {cx: '12', cy: '12', r: '3'}));
+    var slash = svgEl('path', {d: 'M3 3l18 18', 'class': 'eye-slash'});
+    svg.appendChild(slash);
+    return svg;
+  }
+  function addReveal(input) {
+    var wrap = document.createElement('span');
+    wrap.className = 'pwd-wrap';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    var btn = document.createElement('button');
+    btn.setAttribute('type', 'button');
+    btn.className = 'pwd-eye';
+    btn.setAttribute('aria-label', 'Show password');
+    btn.setAttribute('title', 'Show password');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.appendChild(eyeIcon());
+    wrap.appendChild(btn);
+    on(btn, 'click', function (e) {
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      var label = show ? 'Hide password' : 'Show password';
+      btn.setAttribute('aria-label', label);
+      btn.setAttribute('title', label);
+      btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+      wrap.className = show ? 'pwd-wrap shown' : 'pwd-wrap';
+      input.focus();
+      return cancel(e);   // a button inside a <label> must not re-trigger it
+    });
+    // Back to a password field before the form goes, so the browser does not
+    // remember it as plain text.
+    if (input.form) {
+      on(input.form, 'submit', function () {
+        if (input.type !== 'password') {
+          input.type = 'password';
+          wrap.className = 'pwd-wrap';
+        }
+      });
+    }
+  }
+  var pwds = $all('input[type=password]');
+  if (pwds.length && canSwitchType()) {
+    each(pwds, function (el) { if (!el.disabled) { addReveal(el); } });
+  }
+
   // Monitor form: show only the fields that apply to the chosen type, and
   // swap placeholders from data-ph="PING=...|DNS=...|TCP=..." (keyed by the
   // type's first word). IE8/9 have no placeholder; the hints say the same.

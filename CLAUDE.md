@@ -136,6 +136,13 @@ README.md covers usage. This file covers the rules for changing the code.
     handlers per element (attachEvent fallback). Templates use `div` + `role`,
     not main/header/nav/footer/section. Pages must work with JS off.
     `OldBrowserTests` in tests/test_web.py checks all of this.
+  - **Password eye (4.0.7).** app.js adds the show/hide button to every
+    `input[type=password]` itself, so a new password field needs no markup.
+    app.css hides the browsers' own buttons (`::-ms-reveal` in IE10+/Edge,
+    Safari's key) or there are two eyes on top of each other. Each vendor
+    pseudo-element gets a rule of its own: a browser drops a whole rule over
+    one selector it does not know. No button where the type cannot be
+    switched (IE8).
   - Every POST carries the `csrf` form field.
   - Admin-only routes use `@auth.admin_required`.
   - A viewer never sees a push token. Use `mask_push_url`.

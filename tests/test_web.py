@@ -288,6 +288,17 @@ class OldBrowserTests(unittest.TestCase):
     def setUp(self):
         self.css = re.sub(r'/\*.*?\*/', '', _read('static', 'app.css'), flags=re.S)
 
+    def test_one_password_eye(self):
+        # IE10/11 and Edge draw their own reveal eye on top of app.js's one.
+        self.assertIn('input::-ms-reveal { display: none; }', self.css)
+        # A rule with a selector the browser does not know is dropped whole,
+        # so each vendor pseudo-element sits alone in its rule.
+        for sel in re.findall(r'([^{}]*::-(?:ms|webkit)-[^{}]*)\{', self.css):
+            self.assertNotIn(',', sel, sel.strip())
+        js = _read('static', 'app.js')
+        self.assertIn('canSwitchType()', js)          # IE8 cannot switch type: no button
+        self.assertIn("input.type = 'password'", js)  # reset before the form is sent
+
     def test_every_var_has_a_literal_fallback(self):
         for body in re.findall(r'\{([^{}]*)\}', self.css):
             decls = [d.strip() for d in body.split(';') if d.strip()]

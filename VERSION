@@ -1,3 +1,11 @@
+4.0.7
+2026-11-05
+- Feature (web): every password field has an eye button that shows or hides what was typed: sign in, first-time setup, change password, and the HMAC secret in Settings. A field locked by data/.env gets none.
+  - The browsers' own buttons are hidden, so there is only one eye: the reveal eye of IE10/11 and Edge (Chromium Edge too), the clear X of IE, and Safari's key icon.
+  - IE8 cannot switch a field's type once it is on the page, so it gets no button rather than a broken one. It has no eye of its own either.
+  - The field turns back into a password field before the form is sent, so the browser never stores it as plain text.
+  - The button has a label ("Show password" / "Hide password") for screen readers and works from the keyboard.
+
 4.0.6
 2026-11-05
 - Fix (monitor form): the Port field showed for DNS and PING monitors, which never use it. Found on Windows 7 / IE10.
