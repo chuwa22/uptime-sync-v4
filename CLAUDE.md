@@ -30,6 +30,17 @@ README.md covers usage. This file covers the rules for changing the code.
 
 ## Rules
 
+- **Always `.venv`.** Agent processes run only on `<root>/.venv`
+  (`paths.venv_python()` / `procs.background_python()`).
+  - main.py re-launches itself there and refuses to run without it.
+  - Never start the agent, pip or a child on `sys.executable` from outside
+    `.venv`. install.py is the only system-Python script.
+  - requirements.txt pins the full dependency tree, using environment markers
+    where 3.8 and newer Pythons need different versions. After a bump, run
+    `install.py --recreate` and `pip check` on 3.8 and on a current Python.
+  - For development, `python3.8 install.py --no-autostart` gives this checkout
+    a `.venv`. The unit tests run on any venv with the requirements; they do
+    not go through main.py.
 - **Python 3.8 floor.** Do not use:
   - `match`
   - 3.9+ APIs such as `str.removeprefix`, `dict | dict`, or builtin generics like

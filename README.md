@@ -20,6 +20,13 @@ system Python:
 | macOS | `sudo python3 install.py` | LaunchDaemon `com.uptimesync.agent`. Without sudo it creates a LaunchAgent that runs only while you are logged in |
 
 `install.py` creates `.venv/` in the folder and installs `requirements.txt` into it.
+Every pinned package, dependencies included, goes there. After that, everything
+runs on `.venv`'s Python. You can type `python main.py ...` with any Python:
+main.py restarts itself inside `.venv`. The system Python is used only to create
+`.venv`.
+
+`.venv` still uses the system Python's standard library. If you uninstall or
+upgrade that Python, run `python install.py --recreate`.
 It then registers autostart and starts the agent. Open `http://<box>:5000/` and
 create the admin account.
 

@@ -283,6 +283,8 @@ def _mac_start(state):
 def install():
     """Register the supervisor with the OS. Returns the state dict."""
     python = procs.background_python()
+    if not os.path.isfile(python):
+        raise AutostartError('%s does not exist - run install.py first' % python)
     if procs.IS_WINDOWS:
         state = _win_install(python)
     elif sys.platform == 'darwin':

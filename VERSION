@@ -1,3 +1,12 @@
+4.0.2
+2026-11-04
+- Change (always .venv): every agent process now runs on this folder's `.venv` interpreter. That covers the supervisor, engine and web UI, the CLI, and the pip run during an update. The packages from requirements.txt therefore live only in `.venv` and never mix with the system Python's.
+  - Started with any other Python (`python main.py status` from a prompt), main.py re-launches itself on `.venv`'s python with the same arguments.
+  - With no `.venv`, or with packages missing from it, main.py stops with one line naming the fix: `python install.py`.
+  - Autostart refuses to register without `.venv`.
+  - install.py, which creates `.venv`, is the only script meant for the system Python.
+- Change (pinned dependencies): requirements.txt now pins every package the agent loads, the indirect dependencies too: Jinja2, MarkupSafe, click, blinker, itsdangerous, idna, charset-normalizer, importlib-metadata, zipp. Before, they were resolved on the day of install, so two boxes could differ. MarkupSafe is pinned per Python version: 2.1.5 below 3.9, 3.0.4 from 3.9. Verified with fresh `install.py` runs on Python 3.8 and 3.14 plus `pip check`.
+
 4.0.1
 2026-11-04
 - Security (file permissions): data/ holds the HMAC secret, the api_key, push tokens and password hashes, and logs/ holds the agent's history. Until now, on Windows, both folders took their permissions from the parent folder. Under C:\ that means every local user could read them. On Linux and macOS, a file made by hand (`cp config/env.example data/.env`) or restored from a backup kept mode 0644. The supervisor now re-applies owner-only permissions on every start (new `uptime_sync/perms.py`).

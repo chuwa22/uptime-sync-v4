@@ -23,7 +23,6 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 import time
 import zipfile
 from urllib.parse import urljoin, urlparse
@@ -263,7 +262,9 @@ def _move_shipped(src_root, dst_root):
 
 
 def _pip_install(root):
-    cmd = [sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
+    # .venv's console python (not pythonw: pip wants a real stdout), so
+    # packages land in .venv and never in the system Python.
+    cmd = [paths.venv_python(), '-m', 'pip', 'install', '--disable-pip-version-check',
            '-r', os.path.join(root, 'requirements.txt')]
     flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

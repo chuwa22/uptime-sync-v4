@@ -61,14 +61,15 @@ def write_pid(path, pid=None):
 
 
 def background_python():
-    """The interpreter for a process with no console window: pythonw.exe
-    next to python.exe on Windows, the current interpreter elsewhere."""
-    exe = sys.executable
-    if IS_WINDOWS and os.path.basename(exe).lower() == 'python.exe':
-        candidate = os.path.join(os.path.dirname(exe), 'pythonw.exe')
-        if os.path.isfile(candidate):
-            return candidate
-    return exe
+    """The interpreter for an agent process with no console window: always
+    <root>/.venv's (pythonw.exe on Windows), never the system Python, so
+    the agent only ever sees the packages installed in .venv."""
+    from . import paths
+    exe = paths.venv_python(background=True)
+    if os.path.isfile(exe):
+        return exe
+    # .venv without pythonw.exe (should not happen): its console python.
+    return paths.venv_python()
 
 
 def child_popen_kwargs():

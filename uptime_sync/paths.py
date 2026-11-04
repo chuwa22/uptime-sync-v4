@@ -11,6 +11,7 @@ UPTIME_SYNC_ROOT overrides the root; the tests use it to run a throwaway copy.
 """
 
 import os
+import sys
 
 ROOT = os.path.abspath(os.environ.get('UPTIME_SYNC_ROOT') or
                        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -49,6 +50,27 @@ STATUS_FILE = os.path.join(RUN_DIR, 'status.json')
 # developer tooling for a git clone and never ships.
 SHIPPED = ('uptime_sync', 'config', 'main.py', 'install.py', 'VERSION',
            'requirements.txt', 'README.md', 'LICENSE')
+
+
+# The agent always runs on the interpreter inside <root>/.venv, so its
+# packages (requirements.txt) never mix with the system Python's.
+# install.py creates it; main.py re-launches itself into it.
+VENV_DIR = os.path.join(ROOT, '.venv')
+
+
+def venv_python(background=False):
+    """<root>/.venv's interpreter. background=True: pythonw.exe on Windows
+    (no console window); the same python elsewhere."""
+    if os.name == 'nt':
+        return os.path.join(VENV_DIR, 'Scripts', 'pythonw.exe' if background else 'python.exe')
+    return os.path.join(VENV_DIR, 'bin', 'python')
+
+
+def in_venv():
+    """True when this process runs on <root>/.venv's interpreter."""
+    def norm(p):
+        return os.path.normcase(os.path.realpath(p))
+    return norm(sys.prefix) == norm(VENV_DIR)
 
 
 def child_stop_flag(name):
