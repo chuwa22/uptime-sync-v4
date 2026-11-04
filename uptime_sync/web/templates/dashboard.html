@@ -2,22 +2,22 @@
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 <div class="tiles" data-status-url="{{ url_for('api_status') }}">
-  <div class="tile">
+  <div class="tile tone-{{ st.tones.engine }}" data-tile="engine">
     <div class="label">Engine</div>
     <div class="value" data-field="engine">{{ 'Running' if st.engine.running else 'Stopped' }}</div>
     <div class="sub muted" data-field="engine_sub">last cycle {{ st.engine.updated_at or '-' }}</div>
   </div>
-  <div class="tile">
+  <div class="tile tone-{{ st.tones.monitors }}" data-tile="monitors">
     <div class="label">Monitors</div>
-    <div class="value" data-field="counts">-</div>
+    <div class="value" data-field="counts">{{ st.counts.up }} / {{ st.counts.enabled }}</div>
     <div class="sub muted">up / total enabled</div>
   </div>
-  <div class="tile">
+  <div class="tile tone-{{ st.tones.heartbeat }}" data-tile="heartbeat">
     <div class="label">Heartbeat</div>
     <div class="value" data-field="heartbeat">{{ 'On' if st.heartbeat.enabled else 'Off' }}</div>
     <div class="sub muted" data-field="heartbeat_sub"></div>
   </div>
-  <div class="tile">
+  <div class="tile tone-{{ st.tones.signing }}" data-tile="signing">
     <div class="label">Reply signing</div>
     <div class="value" data-field="signing">{{ st.signing.state }}</div>
     <div class="sub muted" data-field="signing_sub">{{ st.signing.since }}</div>

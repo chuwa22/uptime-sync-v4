@@ -44,6 +44,23 @@ def mask_push_url(url):
     return '%s://%s%s' % (u.scheme, u.netloc, path)
 
 
+def tones(p):
+    """Colour of each dashboard tile: ok | warn | bad | off. The template and
+    app.js both use this, so the rule lives in one place."""
+    enabled = [m for m in p['monitors'] if m['enabled']]
+    states = [m['state'] for m in enabled]
+    hb = p['heartbeat']
+    return {
+        'engine': 'ok' if p['engine']['running'] else 'bad',
+        'monitors': ('off' if not enabled else 'bad' if 'down' in states
+                     else 'warn' if 'unknown' in states else 'ok'),
+        'heartbeat': ('off' if not hb['enabled'] else 'bad' if hb['failures']
+                      else 'ok' if hb['last_ok'] else 'warn'),
+        'signing': ('off' if not hb['enabled'] else
+                    'ok' if p['signing']['state'] in ('enforced', 'required') else 'warn'),
+    }
+
+
 def _status_payload():
     status, alive = _engine_state()
     history = read_json(paths.HISTORY_FILE, {}) or {}
@@ -63,9 +80,11 @@ def _status_payload():
     hb = status.get('heartbeat', {})
     sign_state, sign_since = signing.status(s.get('remote', {}))
     pending = updater.pending()
-    return {
+    enabled = [r for r in rows if r['enabled']]
+    p = {
         'version': __version__,
         'engine': {'running': alive, 'updated_at': status.get('updated_at', '')},
+        'counts': {'up': len([r for r in enabled if r['state'] == 'up']), 'enabled': len(enabled)},
         'heartbeat': {
             'enabled': bool(s.get('remote', {}).get('enabled')),
             'last_ok': hb.get('last_ok'), 'failures': hb.get('failures', 0), 'error': hb.get('error', ''),
@@ -76,6 +95,8 @@ def _status_payload():
         'monitors': rows,
         'now': int(time.time()),
     }
+    p['tones'] = tones(p)
+    return p
 
 
 def register(app):  # noqa: C901 -- one place for the whole route table

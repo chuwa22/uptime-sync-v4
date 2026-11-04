@@ -122,6 +122,35 @@ class WebTests(unittest.TestCase):
         for path in ('/api/status', '/monitors'):
             self.assertNotIn('SECRETTOKEN1', self.c.get(path).get_data(as_text=True), path)
 
+    def test_tile_tones(self):
+        from uptime_sync.web.views import tones
+
+        def payload(running=True, states=(), hb_on=False, failures=0, last_ok=None, sign='not-yet'):
+            return {'engine': {'running': running},
+                    'monitors': [{'enabled': st != 'paused', 'state': st} for st in states],
+                    'heartbeat': {'enabled': hb_on, 'failures': failures, 'last_ok': last_ok},
+                    'signing': {'state': sign}}
+        t = tones(payload())
+        self.assertEqual(t, {'engine': 'ok', 'monitors': 'off', 'heartbeat': 'off', 'signing': 'off'})
+        self.assertEqual(tones(payload(running=False))['engine'], 'bad')
+        self.assertEqual(tones(payload(states=('up', 'paused')))['monitors'], 'ok')
+        self.assertEqual(tones(payload(states=('up', 'unknown')))['monitors'], 'warn')
+        self.assertEqual(tones(payload(states=('up', 'down')))['monitors'], 'bad')
+        self.assertEqual(tones(payload(hb_on=True))['heartbeat'], 'warn')
+        self.assertEqual(tones(payload(hb_on=True, last_ok=1))['heartbeat'], 'ok')
+        self.assertEqual(tones(payload(hb_on=True, last_ok=1, failures=2))['heartbeat'], 'bad')
+        self.assertEqual(tones(payload(hb_on=True, sign='enforced'))['signing'], 'ok')
+        self.assertEqual(tones(payload(hb_on=True, sign='off'))['signing'], 'warn')
+
+    def test_dashboard_tiles_carry_tones(self):
+        self.setup_admin()
+        html = self.c.get('/').get_data(as_text=True)
+        for key in ('engine', 'monitors', 'heartbeat', 'signing'):
+            self.assertRegex(html, r'class="tile tone-(ok|warn|bad|off)" data-tile="%s"' % key)
+        st = json.loads(self.c.get('/api/status').get_data(as_text=True))
+        self.assertEqual(set(st['tones']), {'engine', 'monitors', 'heartbeat', 'signing'})
+        self.assertEqual(st['counts'], {'up': 0, 'enabled': 0})
+
 
 
 WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uptime_sync', 'web')

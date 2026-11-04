@@ -34,6 +34,7 @@ h2 { font-size: 1.05rem; margin: 0 0 .8rem; }
 .mono { font-family: Consolas, "SF Mono", Menlo, monospace; font-size: .92em; }
 
 .topbar { padding: .7rem 1.4rem; background: #ffffff; background: var(--card);
+  border-top: 3px solid #2f6fe4; border-top: 3px solid var(--accent);
   border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line); overflow: hidden; }
 .brand { float: left; padding: .35rem 0; font-weight: 650; color: #1b2330; color: var(--text); }
 .brand .dot { width: .7rem; height: .7rem; border-radius: 50%; background: #1f9d55; background: var(--up);
@@ -41,8 +42,10 @@ h2 { font-size: 1.05rem; margin: 0 0 .8rem; }
 .topbar .nav { float: right; }
 .topbar .nav a { display: inline-block; margin-left: .2rem; color: #6b7686; color: var(--muted);
   padding: .35rem .65rem; border-radius: 6px; }
-.topbar .nav a.active, .topbar .nav a:hover { color: #1b2330; color: var(--text);
+.topbar .nav a:hover { color: #1b2330; color: var(--text);
   background: #f4f6f9; background: var(--bg); text-decoration: none; }
+.topbar .nav a.active { color: #2f6fe4; color: var(--accent); font-weight: 600;
+  background: #e8f0fd; background: rgba(47, 111, 228, .12); text-decoration: none; }
 
 .page { display: block; max-width: 1180px; margin: 1.4rem auto; padding: 0 1.2rem; }
 .narrow { display: block; max-width: 440px; margin: 3rem auto; padding: 0 1.2rem; }
@@ -63,6 +66,17 @@ h2 { font-size: 1.05rem; margin: 0 0 .8rem; }
 .tile .label { color: #6b7686; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
 .tile .value { font-size: 1.35rem; font-weight: 650; margin: .15rem 0; }
 .tile .sub { font-size: .82rem; min-height: 1.1em; }
+/* Tile colour from views.tones(): green ok, amber warn, red bad, grey off.
+   rgba() tints work in IE9+ and in both themes. */
+.tile { border-left-width: 5px; }
+.tile.tone-ok { border-left-color: #1f9d55; border-left-color: var(--up); background: rgba(31, 157, 85, .07); }
+.tile.tone-ok .value { color: #1f9d55; color: var(--up); }
+.tile.tone-warn { border-left-color: #c98a12; border-left-color: var(--warn); background: rgba(201, 138, 18, .08); }
+.tile.tone-warn .value { color: #c98a12; color: var(--warn); }
+.tile.tone-bad { border-left-color: #d64545; border-left-color: var(--down); background: rgba(214, 69, 69, .08); }
+.tile.tone-bad .value { color: #d64545; color: var(--down); }
+.tile.tone-off { border-left-color: #8a94a3; border-left-color: var(--paused); }
+.tile.tone-off .value { color: #6b7686; color: var(--muted); }
 
 .banner { overflow: hidden; background: #ffffff; background: var(--card);
   border: 1px solid #2f6fe4; border: 1px solid var(--accent);
@@ -74,7 +88,7 @@ table.grid { width: 100%; border-collapse: collapse; }
 table.grid th, table.grid td { padding: .6rem .9rem; border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line);
   text-align: left; vertical-align: middle; }
 table.grid th { font-size: .78rem; color: #6b7686; color: var(--muted); text-transform: uppercase;
-  letter-spacing: .04em; font-weight: 600; }
+  letter-spacing: .04em; font-weight: 600; background: #f0f3f7; background: var(--code); }
 table.grid tr:last-child td { border-bottom: 0; }
 table.grid .num { text-align: right; white-space: nowrap; }
 td.empty { text-align: center; color: #6b7686; color: var(--muted); padding: 2rem; }
@@ -88,8 +102,8 @@ td.empty { text-align: center; color: #6b7686; color: var(--muted); padding: 2re
 
 .flash { padding: .65rem .9rem; border-radius: 8px; margin-bottom: 1rem;
   border: 1px solid #e2e7ee; border: 1px solid var(--line); background: #ffffff; background: var(--card); }
-.flash.ok { border-color: #1f9d55; border-color: var(--up); }
-.flash.warn { border-color: #d64545; border-color: var(--down); }
+.flash.ok { border-color: #1f9d55; border-color: var(--up); background: rgba(31, 157, 85, .08); }
+.flash.warn { border-color: #d64545; border-color: var(--down); background: rgba(214, 69, 69, .08); }
 
 form.inline { display: inline; margin: 0; }
 label { display: block; margin-bottom: .85rem; font-weight: 550; font-size: .92rem; }

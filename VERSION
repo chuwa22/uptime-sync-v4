@@ -1,3 +1,14 @@
+4.0.5
+2026-11-05
+- Change (web colour): the dashboard said everything in grey and black, so a problem looked the same as a healthy box. This was clearest in IE on Windows 7. Each status tile is now coloured by its state: green ok, amber waiting or warning, red problem, grey off. Each tile gets a coloured left bar, a tinted background and a coloured value.
+  - Engine: red when stopped.
+  - Monitors: red if any is down, amber while any is still unchecked.
+  - Heartbeat: amber until the first OK reply, red while failing.
+  - Reply signing: amber until the server signs its replies.
+  - The colour is decided once, in Python (`views.tones()`). It is rendered into the page and sent in `/api/status` as `tones`, and app.js only applies it. The monitor count (`counts`) is now rendered server-side too, so it shows without JavaScript.
+  - Also: an accent line on the top bar, the active menu item in the accent colour, a tinted table header, and tinted ok/warn messages.
+  - Works in IE9+ (rgba tints) and in both light and dark themes. Checked in Chrome light, dark and with the IE fallback layout.
+
 4.0.4
 2026-11-04
 - Fix (old browsers): the web UI now works in Internet Explorer 8 to 11, the browsers Windows 7 ships with. On a real Windows 7 32-bit box (IE10) the page looked broken.

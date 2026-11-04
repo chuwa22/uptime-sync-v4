@@ -91,15 +91,13 @@
     return td;
   }
   function render(st) {
-    var enabled = 0, up = 0, i, m;
-    for (i = 0; i < st.monitors.length; i++) {
-      m = st.monitors[i];
-      if (m.enabled) {
-        enabled++;
-        if (m.state === 'up') { up++; }
-      }
+    var i, m, tiles = $all('[data-tile]');
+    // The server decides each tile's colour (views.tones); just apply it.
+    for (i = 0; i < tiles.length; i++) {
+      var tone = st.tones && st.tones[tiles[i].getAttribute('data-tile')];
+      if (tone) { tiles[i].className = 'tile tone-' + tone; }
     }
-    setText(field('counts'), up + ' / ' + enabled);
+    setText(field('counts'), st.counts.up + ' / ' + st.counts.enabled);
     setText(field('engine'), st.engine.running ? 'Running' : 'Stopped');
     setText(field('engine_sub'), 'last cycle ' + (st.engine.updated_at ? st.engine.updated_at.slice(11, 19) : '-'));
     var hb = st.heartbeat;
