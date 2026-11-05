@@ -132,10 +132,12 @@ On Windows, put the folder somewhere like `C:\UptimeSync4`, not under a user pro
 
 Precedence is: OS environment > `data/.env` > `data/settings.json` > defaults.
 
-**Server location** (Settings > Reporting): *Public* checks the server's certificate.
-*Local network* also accepts http and a self-signed https certificate. It is allowed
-only for localhost and private or LAN addresses, for example
-`http://192.168.1.10/uptime-monitor/api/heartbeat.php`.
+**Server location** (Settings > Reporting): Public and Local network each have
+their own URL. Heartbeats go to the URL of the chosen one.
+- *Public* (`remote.url`) always checks the server's certificate.
+- *Local network* (`remote.local_url`) also accepts http and a self-signed https
+  certificate. It is allowed only for localhost and private or LAN addresses, for
+  example `http://192.168.1.10/uptime-monitor/api/heartbeat.php`.
 
 ## Updates
 

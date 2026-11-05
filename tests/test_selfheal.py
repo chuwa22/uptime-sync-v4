@@ -759,9 +759,13 @@ class ServerTlsTests(unittest.TestCase):
             self.assertFalse(util.is_local_host(host), host)
 
     def test_verify_off_only_for_local_on_a_local_address(self):
-        self.assertFalse(util.server_tls_verify({'server_type': 'local', 'url': 'https://192.168.1.10/x'}))
-        self.assertTrue(util.server_tls_verify({'server_type': 'local', 'url': 'https://8.8.8.8/x'}))
-        self.assertTrue(util.server_tls_verify({'server_type': 'public', 'url': 'https://192.168.1.10/x'}))
+        local = {'server_type': 'local', 'url': 'https://8.8.8.8/x', 'local_url': 'https://192.168.1.10/x'}
+        self.assertEqual(util.active_server_url(local), 'https://192.168.1.10/x')
+        self.assertFalse(util.server_tls_verify(local))
+        self.assertTrue(util.server_tls_verify(dict(local, local_url='https://8.8.8.8/x')))
+        public = dict(local, server_type='public', url='https://192.168.1.10/x')
+        self.assertEqual(util.active_server_url(public), 'https://192.168.1.10/x')
+        self.assertTrue(util.server_tls_verify(public))
         self.assertTrue(util.server_tls_verify({'url': 'https://192.168.1.10/x'}))
 
     def test_heartbeat_passes_verify(self):
@@ -769,14 +773,21 @@ class ServerTlsTests(unittest.TestCase):
         paths.ensure_dirs()
         hb = heartbeat.Heartbeat(time.time())
         s = util.deep_merge(settings.load(), {'remote': {
-            'enabled': True, 'url': 'https://192.168.1.10/api/heartbeat.php', 'api_key': 'k',
+            'enabled': True, 'url': 'https://mon.example.com/api/heartbeat.php', 'api_key': 'k',
+            'local_url': 'https://192.168.1.10/api/heartbeat.php',
             'server_type': 'local', 'require_signed_response': False}})
         with mock.patch.object(hb.session, 'post', return_value=FakeReply(200)) as post:
             with self.assertLogs('heartbeat', 'INFO'):
                 hb.send(s)
+        self.assertEqual(post.call_args[0][0], 'https://192.168.1.10/api/heartbeat.php')
         self.assertIs(post.call_args[1]['verify'], False)
-        s['remote']['url'] = 'https://8.8.8.8/api/heartbeat.php'
+        s['remote']['local_url'] = 'https://8.8.8.8/api/heartbeat.php'
         with mock.patch.object(hb.session, 'post', return_value=FakeReply(200)) as post:
             with self.assertLogs('heartbeat', 'WARNING'):
                 hb.send(s)
+        self.assertIs(post.call_args[1]['verify'], True)
+        s['remote']['server_type'] = 'public'
+        with mock.patch.object(hb.session, 'post', return_value=FakeReply(200)) as post:
+            hb.send(s)
+        self.assertEqual(post.call_args[0][0], 'https://mon.example.com/api/heartbeat.php')
         self.assertIs(post.call_args[1]['verify'], True)

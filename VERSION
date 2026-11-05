@@ -1,12 +1,15 @@
 4.0.9
 2026-11-05
-- Feature (Settings > Reporting): the "Where is the server?" choice has two radio buttons, Public (internet) and Local network (LAN). The Server URL example changes with the choice.
-  - Public: the server's certificate is always checked, as before.
+- Feature (Settings > Reporting): "Where is the server?" has two radio buttons, Public (internet) and Local network (LAN). Each has its own Server URL field (`remote.url` and `remote.local_url`), so switching between them loses neither URL. Heartbeats go to the URL of the chosen type. Clicking into a URL field selects its radio.
+  - Public: the server's certificate is always checked, as before. `UPTIME_REMOTE_URL` in data/.env still sets this URL.
   - Local network: http works, and an https server with a self-signed certificate is accepted (`remote.server_type: "local"`). Reply signing (HMAC) still protects what the agent acts on.
-  - Local is refused for a server that is not on the local network: it must be localhost, a private, link-local or CGNAT address, or a name that resolves only to such addresses. The heartbeat checks this again on every beat, so a name that later points to the internet gets its certificate checked again, with a warning.
-  - The same rule applies to the update download from the server, which is still off unless `update.allow_server_download` is set. GitHub's certificate is always checked.
+  - The Local URL must point to this network: localhost, a private, link-local or CGNAT address, or a name that resolves only to such addresses. The heartbeat checks this again on every beat, so a name that later points to the internet gets its certificate checked again, with a warning.
+  - The same rule applies to the update download from the server, which is still off unless `update.allow_server_download` is set. GitHub's certificate is always checked. The reply-signing latch follows the host of the chosen URL.
   - urllib3's "unverified HTTPS request" warning is turned off. It went to the engine's stderr log on every request to a server or monitor that was set not to verify.
-
+- Fix (web, since 4.0.0): in the templates, `s.update` was Jinja's lookup of the dict method `update`, not the setting.
+  - The "Install updates offered by uptime-monitor" box always showed unticked, so saving the Settings page turned updates OFF on that box (`"update": {"enabled": false}` in data/settings.json).
+  - The dashboard never showed the Install button for an update waiting for manual install.
+  - Boxes where Settings was saved before 4.0.9 ignore update offers, Force Update included. On each such box, delete `"update": {"enabled": false}` from data/settings.json, or tick the box again after installing 4.0.9 by hand.
 4.0.8
 2026-11-05
 - Security (update): the agent no longer downloads an update from the reporting server unless `update.allow_server_download` is true in data/settings.json. Only the GitHub release asset is accepted by default. The web UI cannot set this flag. Before, an admin session could point `remote.url` at a server it controlled, and that server could offer its own zip with its own SHA-256. The agent would then run that code as SYSTEM.

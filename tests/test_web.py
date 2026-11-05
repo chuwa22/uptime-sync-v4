@@ -5,7 +5,7 @@ import os
 import re
 import unittest
 
-from uptime_sync import monitors, paths, settings
+from uptime_sync import monitors, paths, settings, util
 from uptime_sync.web import auth, create_app
 
 PW = 'correct horse battery'
@@ -338,7 +338,7 @@ if __name__ == '__main__':
 
 
 class ServerTypeTests(unittest.TestCase):
-    """Settings > Reporting: Public / Local network radios (4.0.9)."""
+    """Settings > Reporting: Public / Local network, each with its own URL (4.0.9)."""
 
     def setUp(self):
         _env.reset()
@@ -349,36 +349,82 @@ class ServerTypeTests(unittest.TestCase):
         self.c = self.app.test_client()
         WebTests.setup_admin(self)
 
-    def post(self, server_type, url):
+    def post(self, server_type, public='', local='', enabled=False):
         token = WebTests.csrf(self, '/settings')
         form = {'csrf': token, 'site_name': '', 'check_interval': '60', 'max_workers': '10',
                 'log_retention_days': '14', 'log_level': 'INFO', 'web_port': '5000', 'web_host': '',
-                'heartbeat_interval': '60', 'require_signed': 'auto', 'remote_url': url,
-                'api_key': 'k', 'server_type': server_type}
+                'heartbeat_interval': '60', 'require_signed': 'auto', 'remote_url': public,
+                'local_url': local, 'api_key': 'k', 'server_type': server_type}
+        if enabled:
+            form['remote_enabled'] = 'on'
         return self.c.post('/settings', data=form)
 
-    def test_radios_render_with_examples(self):
+    def test_radios_and_two_url_fields(self):
         html = self.c.get('/settings').get_data(as_text=True)
-        self.assertIn('name="server_type" value="public" data-server-type checked', html)
-        self.assertIn('http://192.168.1.10/uptime-monitor/api/heartbeat.php', html)
-        self.assertIn('data-by-server-attr="placeholder"', html)
+        self.assertIn('name="server_type" value="public" id="server-public" checked', html)
+        self.assertIn('name="remote_url"', html)
+        self.assertIn('name="local_url"', html)
+        self.assertIn('data-selects="server-local"', html)
 
-    def test_local_server_saved(self):
-        r = self.post('local', 'http://192.168.1.10/uptime-monitor/api/heartbeat.php')
-        self.assertEqual(r.status_code, 302)
-        s = settings.load()
-        self.assertEqual(s['remote']['server_type'], 'local')
-        self.assertEqual(s['remote']['url'], 'http://192.168.1.10/uptime-monitor/api/heartbeat.php')
+    def test_each_type_keeps_its_own_url(self):
+        pub = 'https://mon.example.com/api/heartbeat.php'
+        loc = 'http://192.168.1.10/uptime-monitor/api/heartbeat.php'
+        self.assertEqual(self.post('local', pub, loc, enabled=True).status_code, 302)
+        r = settings.load()['remote']
+        self.assertEqual((r['server_type'], r['url'], r['local_url']), ('local', pub, loc))
+        self.assertEqual(util.active_server_url(r), loc)
         html = self.c.get('/settings').get_data(as_text=True)
-        self.assertIn('value="local" data-server-type checked', html)
+        self.assertIn('value="local" id="server-local" checked', html)
+        self.assertIn('value="%s"' % pub, html)
+        self.assertEqual(self.post('public', pub, loc, enabled=True).status_code, 302)
+        r = settings.load()['remote']
+        self.assertEqual((util.active_server_url(r), r['local_url']), (pub, loc))
 
-    def test_local_refused_for_an_internet_host(self):
-        r = self.post('local', 'https://8.8.8.8/api/heartbeat.php')
+    def test_local_url_must_be_on_this_network(self):
+        r = self.post('public', '', 'https://8.8.8.8/api/heartbeat.php')
         self.assertEqual(r.status_code, 200)
-        self.assertIn('choose Public', r.get_data(as_text=True))
-        self.assertEqual(settings.load()['remote']['server_type'], 'public')
+        self.assertIn('put it under Public', r.get_data(as_text=True))
+        self.assertEqual(settings.load()['remote']['local_url'], '')
+
+    def test_chosen_type_needs_its_url(self):
+        r = self.post('local', 'https://mon.example.com/api/heartbeat.php', '', enabled=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('chosen server (Local network)', r.get_data(as_text=True))
 
     def test_public_accepts_any_http_url(self):
         self.assertEqual(self.post('public', 'http://10.0.0.5/api/heartbeat.php').status_code, 302)
         self.assertEqual(self.post('bogus', 'https://mon.example.com/api/heartbeat.php').status_code, 302)
         self.assertEqual(settings.load()['remote']['server_type'], 'public')
+
+
+class DictMethodNameTests(unittest.TestCase):
+    """Jinja looks up `x.update` as dict.update (the method) before the key:
+    the Install updates box rendered unticked, so saving Settings turned
+    updates off, and the dashboard never showed a pending update."""
+
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        auth._attempts.clear()
+        self.app = create_app()
+        self.app.testing = True
+        self.c = self.app.test_client()
+        WebTests.setup_admin(self)
+
+    def test_settings_shows_update_settings(self):
+        html = self.c.get('/settings').get_data(as_text=True)
+        self.assertIn('name="update_enabled" checked', html)
+        self.assertIn('GitHub (chuwa22/uptime-sync-v4)', html)
+
+    def test_dashboard_offers_a_pending_update(self):
+        from uptime_sync import updater
+        updater.write_pending('99.0.0', 'u', 'a' * 64, 'manual')
+        self.assertIn('Version <b>99.0.0</b> is ready to install', self.c.get('/').get_data(as_text=True))
+
+    def test_no_dict_method_names_in_templates(self):
+        tdir = os.path.join(_env.REPO, 'uptime_sync', 'web', 'templates')
+        bad = re.compile(r'\b\w+\.(update|items|keys|values|pop|copy|clear|setdefault)\b(?!\()')
+        for name in os.listdir(tdir):
+            with open(os.path.join(tdir, name), encoding='utf-8') as f:
+                for i, line in enumerate(f, 1):
+                    self.assertIsNone(bad.search(line), '%s:%d %s' % (name, i, line.strip()))

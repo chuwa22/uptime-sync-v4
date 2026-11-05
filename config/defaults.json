@@ -17,7 +17,8 @@
     "secret_key": "",
     "heartbeat_interval": 60,
     "require_signed_response": "auto",
-    "server_type": "public"
+    "server_type": "public",
+    "local_url": ""
   },
   "update": {
     "enabled": true,

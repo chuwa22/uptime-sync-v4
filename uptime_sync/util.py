@@ -217,15 +217,28 @@ def is_local_host(host):
     return bool(ips) and all(_is_local_ip(ip) for ip in ips)
 
 
+def is_local_server(remote):
+    return str((remote or {}).get('server_type') or 'public').lower() == 'local'
+
+
+def active_server_url(remote):
+    """The URL the agent reports to: remote.local_url when Local network is
+    chosen, remote.url (the Public one) otherwise. Each type keeps its own
+    URL, so switching back and forth loses neither."""
+    remote = remote or {}
+    key = 'local_url' if is_local_server(remote) else 'url'
+    return str(remote.get(key) or '').strip()
+
+
 def server_tls_verify(remote):
     """Check the reporting server's certificate? Always, unless the admin
     chose server_type 'local' AND the host really is on the local network:
     a LAN server often has a self-signed certificate. Reply signing (HMAC)
     still protects what the agent acts on."""
-    if str((remote or {}).get('server_type') or 'public').lower() != 'local':
+    if not is_local_server(remote):
         return True
     try:
-        host = urlparse(str(remote.get('url') or '')).hostname
+        host = urlparse(active_server_url(remote)).hostname
     except ValueError:
         return True
     return not is_local_host(host)

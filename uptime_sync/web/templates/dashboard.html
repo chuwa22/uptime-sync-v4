@@ -24,12 +24,12 @@
   </div>
 </div>
 
-{% if st.update.pending and is_admin %}
+{% if st['update'].pending and is_admin %}
 <div class="banner">
-  <span>Version <b>{{ st.update.pending }}</b> is ready to install.</span>
+  <span>Version <b>{{ st['update'].pending }}</b> is ready to install.</span>
   <form method="post" action="{{ url_for('update_install') }}" class="inline">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <button class="primary" data-confirm="Install version {{ st.update.pending }} now? The agent restarts.">Install</button>
+    <button class="primary" data-confirm="Install version {{ st['update'].pending }} now? The agent restarts.">Install</button>
   </form>
 </div>
 {% endif %}

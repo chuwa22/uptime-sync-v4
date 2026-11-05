@@ -20,7 +20,8 @@ import requests
 import urllib3
 
 from . import __version__, paths, signing, updater
-from .util import MIN_FREE_BYTES, USER_AGENT, free_bytes, iso_now, redact, server_tls_verify, url_host
+from .util import (MIN_FREE_BYTES, USER_AGENT, active_server_url, free_bytes, is_local_server, iso_now,
+                   redact, server_tls_verify, url_host)
 
 # verify=False is used only where the admin chose it (a Local server, a
 # monitor with ssl_verify off); urllib3 would otherwise write a warning
@@ -106,7 +107,7 @@ class Heartbeat:
         (signature rules satisfied), {} if the reply must be ignored, or
         None on failure."""
         remote = settings.get('remote', {})
-        url = (remote.get('url') or '').strip()
+        url = active_server_url(remote)
         secret = (remote.get('secret_key') or '').strip()
         if not url or not remote.get('api_key'):
             return None
@@ -150,8 +151,8 @@ class Heartbeat:
 
     def _verify(self, remote):
         verify = server_tls_verify(remote)
-        local = str(remote.get('server_type') or 'public').lower() == 'local'
-        note = (local, verify, url_host(remote.get('url')))
+        local = is_local_server(remote)
+        note = (local, verify, url_host(active_server_url(remote)))
         if note != self._tls_note:
             self._tls_note = note
             if local and verify:

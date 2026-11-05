@@ -34,7 +34,7 @@ from urllib.parse import urljoin, urlparse
 from . import __version__, paths, procs
 from .signing import sign
 from .util import (MIN_FREE_BYTES, USER_AGENT, atomic_write_json, is_newer, is_version, iso_now,
-                   read_json, redact, remove_quietly, server_tls_verify, sha256_file)
+                   read_json, redact, remove_quietly, server_tls_verify, sha256_file, active_server_url)
 
 log = logging.getLogger('update')
 
@@ -179,8 +179,9 @@ def download_and_stage(url, version, sha256, settings):
     if not is_newer(version, __version__):
         raise UpdateRefused('v%s is not newer than v%s' % (version, __version__))
     remote = settings.get('remote', {})
+    server_url = active_server_url(remote)
     repo = settings.get('update', {}).get('github_repo', '')
-    url, kind = resolve(url, remote.get('url', ''), repo, version)
+    url, kind = resolve(url, server_url, repo, version)
     if kind == 'server' and settings.get('update', {}).get('allow_server_download') is not True:
         raise UpdateRefused('the server offered its own download, but only the GitHub release '
                             'asset is accepted (set update.allow_server_download in '
@@ -199,7 +200,7 @@ def download_and_stage(url, version, sha256, settings):
     last_error = None
     for attempt in range(3):
         try:
-            r = _open(url, kind, remote.get('url', ''), server_tls_verify(remote))
+            r = _open(url, kind, server_url, server_tls_verify(remote))
             size = 0
             with open(part, 'wb') as f:
                 for chunk in r.iter_content(65536):

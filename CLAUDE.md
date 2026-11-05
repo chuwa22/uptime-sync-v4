@@ -159,6 +159,9 @@ README.md covers usage. This file covers the rules for changing the code.
     pseudo-element gets a rule of its own: a browser drops a whole rule over
     one selector it does not know. No button where the type cannot be
     switched (IE8).
+  - In templates, never write `x.update`, `x.items`, `x.keys` and the like for a dict
+    key. Jinja finds the dict method first. Write `x['update']`
+    (`DictMethodNameTests` enforces this).
   - Every POST carries the `csrf` form field.
   - Admin-only routes use `@auth.admin_required`.
   - A viewer never sees a push token. Use `mask_push_url`.
@@ -186,8 +189,10 @@ README.md covers usage. This file covers the rules for changing the code.
     recovery relies on it to tell old files from new ones.
   - The supervisor restarts an engine whose `run/status.json` is older than
     3 x check_interval + 60 s. The engine must keep writing it every cycle.
-- **TLS to the reporting server (4.0.9).** Every request to `remote.url`
-  passes `verify=util.server_tls_verify(remote)`. It is False only when
+- **Reporting server URL (4.0.9).** `remote.url` is the Public URL and
+  `remote.local_url` is the Local one. Always read the URL in use through
+  `util.active_server_url(remote)`: heartbeat, signing latch and updater all do.
+  Every request to it passes `verify=util.server_tls_verify(remote)`. It is False only when
   `server_type` is "local" AND `util.is_local_host()` holds right now. That check
   is repeated on every call, never cached in settings. GitHub is always verified.
 - **Supervisor start order.** The lock, then the stopped flag, then everything

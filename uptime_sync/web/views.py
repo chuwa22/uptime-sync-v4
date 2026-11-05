@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 
 from .. import __version__, log as logsetup, logstore, monitors, paths, procs, settings, signing, updater
-from ..util import deep_merge, is_local_host, read_json, touch
+from ..util import active_server_url, deep_merge, is_local_host, is_local_server, read_json, touch
 from . import auth
 
 log = logging.getLogger('web')
@@ -121,6 +121,15 @@ def _local_request():
     except ValueError:
         return False
     return request.remote_addr in LOOPBACK and host in LOOPBACK_HOSTS
+
+
+def _url_host(url):
+    """Host of an http(s) URL, or '' when it is not one."""
+    try:
+        u = urlparse(url)
+        return u.hostname or '' if u.scheme in ('http', 'https') else ''
+    except ValueError:
+        return ''
 
 
 def safe_next(nxt):
@@ -393,22 +402,20 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                 new['remote']['server_type'] = 'public'
             if 'remote.url' not in managed:
                 url = f.get('remote_url', '').strip()
-                try:
-                    u = urlparse(url)
-                    host = u.hostname
-                except ValueError:
-                    u, host = None, None
-                if url and (u is None or u.scheme not in ('http', 'https') or not host):
-                    errors.append('Server URL must be an http(s) URL to api/heartbeat.php.')
+                if url and not _url_host(url):
+                    errors.append('Public server URL must be an http(s) URL to api/heartbeat.php.')
                 new['remote']['url'] = url
-            else:
-                host = urlparse(s.get('remote', {}).get('url', '')).hostname
-            if new['remote']['server_type'] == 'local' and host and not is_local_host(host):
-                # "Local" turns certificate checks off; never for a server
-                # out on the internet.
-                errors.append('Local network needs a server on this network: localhost, a '
+            local_url = f.get('local_url', '').strip()
+            local_host = _url_host(local_url)
+            if local_url and not local_host:
+                errors.append('Local server URL must be an http(s) URL to api/heartbeat.php.')
+            elif local_host and not is_local_host(local_host):
+                # A Local server's certificate is not checked; never accept
+                # that for a server out on the internet.
+                errors.append('Local server URL must point to this network: localhost, a '
                               '192.168.x.x / 10.x.x.x / 172.16-31.x.x address, or a name that '
-                              'resolves to one. %s is not - choose Public.' % host)
+                              'resolves to one. %s is not - put it under Public.' % local_host)
+            new['remote']['local_url'] = local_url
             if 'remote.api_key' not in managed:
                 new['remote']['api_key'] = f.get('api_key', '').strip()
             if 'remote.secret_key' not in managed and f.get('secret_key', '').strip():
@@ -416,8 +423,10 @@ def register(app):  # noqa: C901 -- one place for the whole route table
             if new['remote']['enabled'] and not errors:
                 merged = settings.load()
                 merged_remote = dict(merged.get('remote', {}), **new['remote'])
-                if not merged_remote.get('url') or not merged_remote.get('api_key'):
-                    errors.append('Reporting needs a server URL and an API key.')
+                if not active_server_url(merged_remote) or not merged_remote.get('api_key'):
+                    errors.append('Reporting needs an API key and a URL for the chosen server '
+                                  '(%s).' % ('Local network' if is_local_server(merged_remote)
+                                             else 'Public'))
             if not errors:
                 restart_web = (new['web']['port'] != s['web'].get('port') or
                                (new['web']['host'] or s['web'].get('host')) != s['web'].get('host'))

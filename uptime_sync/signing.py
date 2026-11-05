@@ -22,7 +22,7 @@ import hmac
 from urllib.parse import urlparse
 
 from . import paths
-from .util import atomic_write_json, read_json
+from .util import active_server_url, atomic_write_json, read_json
 
 _LATCH_CONTEXT = b'uptime-sync response-signing latch|'
 
@@ -56,7 +56,7 @@ def mode(remote):
 
 def fingerprint(remote):
     secret = (remote.get('secret_key') or '').strip()
-    url = (remote.get('url') or '').strip()
+    url = active_server_url(remote)
     if not secret or not url:
         return ''
     try:

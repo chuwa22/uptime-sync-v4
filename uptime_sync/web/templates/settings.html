@@ -29,15 +29,16 @@
     <label class="check"><input type="checkbox" name="remote_enabled"{{ ' checked' if s.remote.enabled }}> Send heartbeats</label>
     {% set st = 'local' if s.remote.server_type == 'local' else 'public' %}
     <fieldset class="radio-group">
-      <legend>Where is the server?</legend>
-      <label class="check"><input type="radio" name="server_type" value="public" data-server-type{{ ' checked' if st == 'public' }}> Public (internet)
-        <small class="muted">e.g. https://monitor.example.com/api/heartbeat.php - its certificate is always checked</small></label>
-      <label class="check"><input type="radio" name="server_type" value="local" data-server-type{{ ' checked' if st == 'local' }}> Local network (LAN)
-        <small class="muted">e.g. http://192.168.1.10/uptime-monitor/api/heartbeat.php - http, or https with a self-signed certificate</small></label>
+      <legend>Where is the server? <small class="muted">heartbeats go to the one chosen; each keeps its own URL</small></legend>
+      <label class="check"><input type="radio" name="server_type" value="public" id="server-public"{{ ' checked' if st == 'public' }}> Public (internet)
+        <small class="muted">its certificate is always checked</small></label>
+      <label class="server-url">Public server URL <small class="muted">e.g. https://monitor.example.com/api/heartbeat.php</small> {{ locked('remote.url') }}
+        <input name="remote_url" class="mono" value="{{ '' if 'remote.url' in managed else s.remote.url }}"{{ ' disabled' if 'remote.url' in managed }} placeholder="https://monitor.example.com/api/heartbeat.php" data-selects="server-public"></label>
+      <label class="check"><input type="radio" name="server_type" value="local" id="server-local"{{ ' checked' if st == 'local' }}> Local network (LAN)
+        <small class="muted">http, or https with a self-signed certificate; this network only</small></label>
+      <label class="server-url">Local server URL <small class="muted">e.g. http://192.168.1.10/uptime-monitor/api/heartbeat.php</small>
+        <input name="local_url" class="mono" value="{{ s.remote.local_url }}" placeholder="http://192.168.1.10/uptime-monitor/api/heartbeat.php" data-selects="server-local"></label>
     </fieldset>
-    {% set ph = {'public': 'https://monitor.example.com/api/heartbeat.php', 'local': 'http://192.168.1.10/uptime-monitor/api/heartbeat.php'} %}
-    <label>Server URL <small class="muted" data-by-server="public=e.g. {{ ph.public }}|local=e.g. {{ ph.local }}">e.g. {{ ph[st] }}</small> {{ locked('remote.url') }}
-      <input name="remote_url" class="mono" value="{{ '' if 'remote.url' in managed else s.remote.url }}"{{ ' disabled' if 'remote.url' in managed }} placeholder="{{ ph[st] }}" data-by-server="public={{ ph.public }}|local={{ ph.local }}" data-by-server-attr="placeholder"></label>
     <div class="cols">
       <label>API key <small class="muted">from this agent's card in uptime-monitor</small> {{ locked('remote.api_key') }}
         <input name="api_key" class="mono" value="{{ '' if 'remote.api_key' in managed else s.remote.api_key }}"{{ ' disabled' if 'remote.api_key' in managed }} autocomplete="off"></label>
@@ -61,8 +62,8 @@
 
   <div class="card">
     <h2>Updates and web</h2>
-    <label class="check"><input type="checkbox" name="update_enabled"{{ ' checked' if s.update.enabled }}> Install updates offered by uptime-monitor</label>
-    <p class="note">The server decides when (mode, window, Force Update). The zip comes from GitHub ({{ s.update.github_repo }}) and must match the SHA-256 in the server's signed reply.</p>
+    <label class="check"><input type="checkbox" name="update_enabled"{{ ' checked' if s['update'].enabled }}> Install updates offered by uptime-monitor</label>
+    <p class="note">The server decides when (mode, window, Force Update). The zip comes from GitHub ({{ s['update'].github_repo }}) and must match the SHA-256 in the server's signed reply.</p>
     <div class="cols">
       <label>Web listens on <small class="muted">0.0.0.0 = every network, 127.0.0.1 = this PC only</small>
         <input name="web_host" class="mono" value="{{ s.web.host }}" placeholder="0.0.0.0"></label>
