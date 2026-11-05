@@ -6,7 +6,10 @@
   - The Local URL must point to this network: localhost, a private, link-local or CGNAT address, or a name that resolves only to such addresses. The heartbeat checks this again on every beat, so a name that later points to the internet gets its certificate checked again, with a warning.
   - The same rule applies to the update download from the server, which is still off unless `update.allow_server_download` is set. GitHub's certificate is always checked. The reply-signing latch follows the host of the chosen URL.
   - urllib3's "unverified HTTPS request" warning is turned off. It went to the engine's stderr log on every request to a server or monitor that was set not to verify.
-- Feature (web): a sun/moon button switches between light and dark mode. It is in the top bar, and in the top-right corner of the sign-in and setup pages.
+- Feature (web, top bar): the version shows after the site name, for example "v4.0.9".
+- Feature (web, top bar): the user name opens a menu that shows "Signed in as <name> (<role>)", with Account and Sign out. Click outside it or press Escape to close it. On a narrow screen it opens to the right so it stays on screen.
+  - Without JavaScript, and in IE8-11, the name links to Account and Sign out sits next to it, as before. The menu is a div, not <details>, because IE8 cannot style unknown tags.
+- Feature (web): a sun/moon button switches between light and dark mode. It is the last item in the top bar, and in the top-right corner of the sign-in and setup pages.
   - The choice is kept in this browser only (localStorage). With no choice saved, the page follows the system setting, as before.
   - static/theme.js applies the saved choice in <head>, before the page is drawn, so the page never flashes the other theme. It is a file because the CSP allows no inline script.
   - The button is not shown in IE8-11: they have no CSS variables and always show light mode.

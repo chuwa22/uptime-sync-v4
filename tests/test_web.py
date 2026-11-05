@@ -508,3 +508,35 @@ class ThemeToggleTests(unittest.TestCase):
     def test_both_scripts_use_the_same_key(self):
         self.assertIn("'uptime-sync-theme'", _read('static', 'theme.js'))
         self.assertIn("'uptime-sync-theme'", _read('static', 'app.js'))
+
+
+class TopBarTests(unittest.TestCase):
+    """Version after the site name; name + Sign out in one user menu; the
+    theme button last."""
+
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        auth._attempts.clear()
+        self.app = create_app()
+        self.app.testing = True
+        self.c = self.app.test_client()
+        WebTests.setup_admin(self)
+
+    def topbar(self):
+        html = self.c.get('/').get_data(as_text=True)
+        return html.split('<div class="topbar"', 1)[1].split('role="main"', 1)[0]
+
+    def test_version_follows_the_site_name(self):
+        from uptime_sync import __version__
+        self.assertIn('<span class="ver">v%s</span></a>' % __version__, self.topbar())
+
+    def test_user_menu_holds_account_and_sign_out_then_theme(self):
+        bar = self.topbar()
+        menu = bar.split('data-user-menu', 1)[1]
+        self.assertLess(menu.index('class="menu-btn'), menu.index('action="/logout"'))
+        self.assertIn('href="/account" class="acct"', menu)
+        self.assertIn('(admin)', menu)
+        self.assertGreater(bar.index('data-theme-toggle'), bar.index('action="/logout"'))
+        # Without app.js the name is still a link to Account (IE, no JS).
+        self.assertIn('<a href="/account" class="menu-btn', bar)

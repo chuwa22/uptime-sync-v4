@@ -44,6 +44,7 @@ def create_app():
             'site_name': s.get('site_name') or 'Uptime Sync',
             'current_user': name,
             'is_admin': bool(user) and user.get('role', 'admin') == 'admin',
+            'current_role': (user.get('role') or 'admin') if user else '',
             'csrf_token': auth.csrf_token,
         }
 

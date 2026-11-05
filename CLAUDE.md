@@ -168,6 +168,12 @@ README.md covers usage. This file covers the rules for changing the code.
     `static/theme.js` (in `<head>`) sets `html[data-theme]` from localStorage
     `uptime-sync-theme`; app.js draws the toggle, but only where
     `CSS.supports('--x', '0')` holds.
+  - **User menu (4.0.9).** `.user-menu` in base.html is a div, not
+    `<details>`: IE8 cannot style unknown tags. Its base CSS is the old inline
+    layout (the name links to Account, Sign out beside it). app.js adds `.js`
+    and the dropdown look in `@supports` applies to `.user-menu.js` only.
+    `.topbar` has `overflow: visible` inside `@supports`; otherwise it would
+    clip the menu.
   - **Phones (4.0.9).** A `table.stack` becomes one small card per row below
     640px. Give its cells a role: `title` (the name, first line), `lead` (the
     status, right of the name), `wide` (a line of its own), or a `data-label`

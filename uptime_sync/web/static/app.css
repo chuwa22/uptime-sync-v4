@@ -57,6 +57,19 @@ h2 { font-size: 15.75px; margin: 0 0 12px; }
   background: #f4f6f9; background: var(--bg); text-decoration: none; }
 .topbar .nav a.active { color: #2f6fe4; color: var(--accent); font-weight: 600;
   background: #e8f0fd; background: rgba(47, 111, 228, .12); text-decoration: none; }
+.brand .ver { margin-left: 7.5px; padding: 0 6.75px; font-size: 11.25px; font-weight: 600; line-height: 18px;
+  border-radius: 999px; color: #6b7686; color: var(--muted); background: #f0f3f7; background: var(--code);
+  border: 1px solid #e2e7ee; border: 1px solid var(--line); }
+
+/* User menu. Without app.js (IE, no JS) the name is a link to Account and
+   Sign out sits next to it; the dropdown look is .user-menu.js, in @supports. */
+.user-menu { display: inline; }
+.user-menu .caret, .user-menu .who, .topbar .user-menu .acct { display: none; }   /* .acct: beats .topbar .nav a */
+.user-menu .menu, .user-menu .menu form { display: inline; margin: 0; }
+.user-menu .menu button { display: inline-block; margin: 0 0 0 3px; padding: 5.25px 9.75px; border: 0;
+  border-radius: 6px; background: none; font: inherit; text-align: left; cursor: pointer;
+  color: #6b7686; color: var(--muted); }
+.user-menu .menu button:hover { color: #1b2330; color: var(--text); background: #f4f6f9; background: var(--bg); }
 
 .page { display: block; max-width: 1180px; margin: 21px auto; padding: 0 18px; }
 .narrow { display: block; max-width: 440px; margin: 45px auto; padding: 0 18px; }
@@ -204,10 +217,30 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
 
 /* Modern layout. IE (every version) does not know @supports and skips it. */
 @supports (display: grid) {
-  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap; }
+  /* overflow: visible -- the float clearing (IE) would clip the user menu. */
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap;
+    overflow: visible; }
   .brand { display: flex; align-items: center; padding: 0; }
   .topbar .nav { display: flex; align-items: center; gap: 4.5px; flex-wrap: wrap; }
   .topbar .nav a { margin-left: 0; }
+  .brand .ver { display: inline-block; }
+  .user-menu.js { position: relative; display: block; }
+  .user-menu.js .caret { display: inline-block; width: 0; height: 0; margin-left: 6px; vertical-align: middle;
+    border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid; }
+  .user-menu.js.open .menu-btn { color: #1b2330; color: var(--text); background: #f4f6f9; background: var(--bg); }
+  .user-menu.js .menu { display: none; position: absolute; right: 0; top: 100%; z-index: 20; margin-top: 6px;
+    min-width: 200px; padding: 6px; border-radius: 9px;
+    background: #ffffff; background: var(--card); border: 1px solid #e2e7ee; border: 1px solid var(--line);
+    box-shadow: 0 8px 24px rgba(16, 24, 40, .14); }
+  .user-menu.js.open .menu { display: block; }
+  .user-menu.js.align-left .menu { right: auto; left: 0; }   /* app.js: right-aligned would leave the screen */
+  .user-menu.js .menu form { display: block; }
+  .user-menu.js .who { display: block; padding: 6px 9.75px 9px; margin-bottom: 4.5px; font-size: 12px; white-space: nowrap;
+    color: #6b7686; color: var(--muted); border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line); }
+  .topbar .user-menu.js .menu a, .user-menu.js .menu button { display: block; width: 100%; margin: 0;
+    padding: 7.5px 9.75px; font-size: 13.8px; color: #1b2330; color: var(--text); font-weight: 400; background: none; }
+  .topbar .user-menu.js .menu a:hover, .user-menu.js .menu button:hover { background: #f4f6f9; background: var(--bg);
+    text-decoration: none; }
   .head { display: flex; justify-content: space-between; align-items: center; gap: 10.5px 15px; flex-wrap: wrap; }
   .head h1 { margin: 0; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 13.5px; }

@@ -197,6 +197,38 @@
     }
   }
 
+  // User menu: the name opens a dropdown (Account, Sign out). Only where the
+  // dropdown CSS applies (same test as the theme toggle); elsewhere the name
+  // stays a plain link to Account with Sign out beside it.
+  each($all('[data-user-menu]'), function (menu) {
+    var btn = $all('[data-user-menu] .menu-btn')[0];
+    var list = $all('[data-user-menu] .menu')[0];
+    if (!hasVars || !btn || !list || !list.getBoundingClientRect) { return; }
+    var base = menu.className + ' js';
+    menu.className = base;
+    btn.setAttribute('aria-haspopup', 'true');
+    btn.setAttribute('aria-expanded', 'false');
+    function isOpen() { return (' ' + menu.className + ' ').indexOf(' open ') >= 0; }
+    function setOpen(open) {
+      menu.className = open ? base + ' open' : base;
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      // Right-aligned under the name, unless that runs off the left edge
+      // (narrow window: the top bar wraps and the name starts a line).
+      if (open && list.getBoundingClientRect().left < 0) { menu.className += ' align-left'; }
+    }
+    on(btn, 'click', function (e) {
+      setOpen(!isOpen());
+      return cancel(e);
+    });
+    on(document, 'click', function (e) {
+      var t = e.target || e.srcElement;
+      if (isOpen() && t && !menu.contains(t)) { setOpen(false); }
+    });
+    on(document, 'keydown', function (e) {
+      if (isOpen() && e.keyCode === 27) { setOpen(false); btn.focus(); }
+    });
+  });
+
   // Monitor form: show only the fields that apply to the chosen type, and
   // swap placeholders from data-ph="PING=...|DNS=...|TCP=..." (keyed by the
   // type's first word). IE8/9 have no placeholder; the hints say the same.
