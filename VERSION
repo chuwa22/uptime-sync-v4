@@ -6,6 +6,10 @@
   - The Local URL must point to this network: localhost, a private, link-local or CGNAT address, or a name that resolves only to such addresses. The heartbeat checks this again on every beat, so a name that later points to the internet gets its certificate checked again, with a warning.
   - The same rule applies to the update download from the server, which is still off unless `update.allow_server_download` is set. GitHub's certificate is always checked. The reply-signing latch follows the host of the chosen URL.
   - urllib3's "unverified HTTPS request" warning is turned off. It went to the engine's stderr log on every request to a server or monitor that was set not to verify.
+- Feature (web): a sun/moon button switches between light and dark mode. It is in the top bar, and in the top-right corner of the sign-in and setup pages.
+  - The choice is kept in this browser only (localStorage). With no choice saved, the page follows the system setting, as before.
+  - static/theme.js applies the saved choice in <head>, before the page is drawn, so the page never flashes the other theme. It is a file because the CSP allows no inline script.
+  - The button is not shown in IE8-11: they have no CSS variables and always show light mode.
 - Improvement (web, phones and tablets): the UI now fits small screens.
   - Below 640px, each row of the Dashboard, Monitors, Logs and monitor-examples tables shows as a small card: name and status on the first line, the other values below with small labels, buttons on a line of their own. Before, these tables scrolled sideways, so the Edit/Pause/Delete buttons were off-screen.
   - The dashboard tiles show 2 per row on a phone and 4 on a tablet.

@@ -140,6 +140,63 @@
     each(pwds, function (el) { if (!el.disabled) { addReveal(el); } });
   }
 
+  // Light/dark toggle in the top bar (and the sign-in corner). Only where the
+  // browser has CSS variables: IE cannot show dark mode, so no button there.
+  // The choice lives in this browser only (localStorage, read by theme.js);
+  // nothing saved means the page follows the system setting.
+  var THEME_KEY = 'uptime-sync-theme';
+  var root = document.documentElement;
+  var darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function themeNow() {
+    var t = root.getAttribute('data-theme');
+    if (t === 'light' || t === 'dark') { return t; }
+    return darkQuery && darkQuery.matches ? 'dark' : 'light';
+  }
+  function themeIcon(dark) {
+    var svg = svgEl('svg', {viewBox: '0 0 24 24', width: '18', height: '18', fill: 'none',
+      stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round',
+      'stroke-linejoin': 'round', 'aria-hidden': 'true', focusable: 'false'});
+    if (dark) {   // sun: click for light
+      svg.appendChild(svgEl('circle', {cx: '12', cy: '12', r: '4'}));
+      svg.appendChild(svgEl('path', {d: 'M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4' +
+        'M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4'}));
+    } else {      // moon: click for dark
+      svg.appendChild(svgEl('path', {d: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'}));
+    }
+    return svg;
+  }
+  function drawToggle(btn) {
+    var dark = themeNow() === 'dark';
+    var label = dark ? 'Switch to light mode' : 'Switch to dark mode';
+    while (btn.firstChild) { btn.removeChild(btn.firstChild); }
+    btn.appendChild(themeIcon(dark));
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', label);
+  }
+  var toggles = $all('[data-theme-toggle]');
+  var hasVars = window.CSS && window.CSS.supports && window.CSS.supports('--x', '0');
+  if (toggles.length && hasVars && document.createElementNS) {
+    each(toggles, function (btn) {
+      drawToggle(btn);
+      setHidden(btn, false);
+      on(btn, 'click', function () {
+        var next = themeNow() === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        try { window.localStorage.setItem(THEME_KEY, next); } catch (err) { /* this page only */ }
+        each(toggles, drawToggle);
+      });
+    });
+    // No saved choice: the page follows the system, so the icon must too.
+    if (darkQuery) {
+      var redraw = function () { each(toggles, drawToggle); };
+      if (darkQuery.addEventListener) {
+        darkQuery.addEventListener('change', redraw);
+      } else if (darkQuery.addListener) {
+        darkQuery.addListener(redraw);
+      }
+    }
+  }
+
   // Monitor form: show only the fields that apply to the chosen type, and
   // swap placeholders from data-ph="PING=...|DNS=...|TCP=..." (keyed by the
   // type's first word). IE8/9 have no placeholder; the hints say the same.

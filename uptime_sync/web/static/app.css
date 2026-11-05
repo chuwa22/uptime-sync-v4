@@ -18,12 +18,20 @@
   --radius: 10px; --shadow: 0 1px 2px rgba(16, 24, 40, .06);
   color-scheme: light dark;   /* dark scrollbars and form controls in dark mode */
 }
+/* Dark: the system's choice, unless the toggle (app.js, saved by theme.js as
+   html[data-theme]) picked one. IE has no var() and stays light. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #11151c; --card: #1a2029; --text: #e5e9f0; --muted: #8e99a8; --line: #2a323e;
     --accent: #5b8ff0; --field: #141920; --code: #141920; --shadow: none;
   }
 }
+:root[data-theme="dark"] {
+  --bg: #11151c; --card: #1a2029; --text: #e5e9f0; --muted: #8e99a8; --line: #2a323e;
+  --accent: #5b8ff0; --field: #141920; --code: #141920; --shadow: none;
+  color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; }
 html { font-size: 15px; }
 body { margin: 0; background: #f4f6f9; background: var(--bg); color: #1b2330; color: var(--text);
@@ -161,6 +169,12 @@ button.small { padding: 3px 8.25px; font-size: 12px; }
 button.danger { color: #d64545; color: var(--down); }
 button.link { border: 0; background: none; color: #6b7686; color: var(--muted); padding: 5.25px 9.75px; }
 button.link:hover { color: #1b2330; color: var(--text); }
+/* Light/dark toggle (app.js adds the icon; it stays hidden in IE). */
+button.theme-toggle { border: 0; background: none; padding: 5.25px 7.5px; line-height: 0; border-radius: 6px;
+  color: #6b7686; color: var(--muted); }
+button.theme-toggle:hover { color: #1b2330; color: var(--text); background: #f4f6f9; background: var(--bg); }
+button.theme-toggle svg { display: inline-block; vertical-align: middle; }
+.theme-corner { position: absolute; top: 12px; right: 16px; }
 
 pre.log { margin: 0; padding: 15px; font-size: 12px; max-height: 70vh; overflow: auto;
   background: #f0f3f7; background: var(--code); border-radius: 10px; border-radius: var(--radius);

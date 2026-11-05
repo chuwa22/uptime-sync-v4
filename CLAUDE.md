@@ -162,6 +162,12 @@ README.md covers usage. This file covers the rules for changing the code.
   - In templates, never write `x.update`, `x.items`, `x.keys` and the like for a dict
     key. Jinja finds the dict method first. Write `x['update']`
     (`DictMethodNameTests` enforces this).
+  - **Light/dark (4.0.9).** Dark colours are defined twice in app.css: under
+    `prefers-color-scheme: dark` as `:root:not([data-theme="light"])`, and as
+    `:root[data-theme="dark"]`. Change a colour in both (`ThemeToggleTests`).
+    `static/theme.js` (in `<head>`) sets `html[data-theme]` from localStorage
+    `uptime-sync-theme`; app.js draws the toggle, but only where
+    `CSS.supports('--x', '0')` holds.
   - **Phones (4.0.9).** A `table.stack` becomes one small card per row below
     640px. Give its cells a role: `title` (the name, first line), `lead` (the
     status, right of the name), `wide` (a line of its own), or a `data-label`

@@ -326,11 +326,12 @@ class OldBrowserTests(unittest.TestCase):
         self.assertIn('<meta http-equiv="X-UA-Compatible" content="IE=edge">', _read('templates', 'base.html'))
 
     def test_app_js_is_es3(self):
-        js = re.sub(r'/\*.*?\*/|//[^\n]*', '', _read('static', 'app.js'), flags=re.S)
-        for token in ('=>', 'const ', 'let ', '`', 'fetch(', '.forEach(', 'classList', '.closest(',
-                      '.matches(', '.filter(', '.map(', 'Object.assign', 'replaceChildren',
-                      '.innerHTML'):
-            self.assertNotIn(token, js, token)
+        for name in ('app.js', 'theme.js'):
+            js = re.sub(r'/\*.*?\*/|//[^\n]*', '', _read('static', name), flags=re.S)
+            for token in ('=>', 'const ', 'let ', '`', 'fetch(', '.forEach(', 'classList', '.closest(',
+                          '.matches(', '.filter(', '.map(', 'Object.assign', 'replaceChildren',
+                          '.innerHTML'):
+                self.assertNotIn(token, js, '%s: %s' % (name, token))
 
 
 if __name__ == '__main__':
@@ -472,3 +473,38 @@ class PhoneLayoutTests(unittest.TestCase):
         outside, inside = _supports_split(css)
         self.assertIn('@media (max-width: 640px)', inside)
         self.assertNotIn('max-width: 640px', outside)
+
+
+class ThemeToggleTests(unittest.TestCase):
+    """The light/dark button: a choice saved in this browser, else the system."""
+
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        auth._attempts.clear()
+        self.app = create_app()
+        self.app.testing = True
+        self.c = self.app.test_client()
+
+    def test_choice_is_applied_in_head_before_the_page_is_drawn(self):
+        html = self.c.get('/setup').get_data(as_text=True)   # no user yet: signed out
+        head = html.split('</head>')[0]
+        self.assertIn('/static/theme.js', head)   # a file: the CSP allows no inline script
+        self.assertLess(head.index('app.css'), head.index('theme.js'))
+        self.assertIn('data-theme-toggle', html.split('</head>')[1])   # signed out: corner button
+        WebTests.setup_admin(self)
+        self.assertIn('data-theme-toggle', self.c.get('/').get_data(as_text=True))
+
+    def test_css_has_both_forced_themes(self):
+        css = _read('static', 'app.css')
+        self.assertIn(':root:not([data-theme="light"])', css)   # system dark, unless light was picked
+        self.assertIn(':root[data-theme="dark"]', css)
+        dark_vars = re.findall(r'--bg: #11151c[^}]*', css)
+        self.assertEqual(len(dark_vars), 2)
+        def norm(text):
+            return ' '.join(text.split()).rstrip(';')
+        self.assertEqual(norm(dark_vars[0].split('}')[0]), norm(dark_vars[1].split('color-scheme')[0]))
+
+    def test_both_scripts_use_the_same_key(self):
+        self.assertIn("'uptime-sync-theme'", _read('static', 'theme.js'))
+        self.assertIn("'uptime-sync-theme'", _read('static', 'app.js'))
