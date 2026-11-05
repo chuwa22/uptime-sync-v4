@@ -16,7 +16,7 @@ import requests
 
 from . import __version__, heartbeat, log as logsetup, loglevel, monitors, paths, procs, settings, updater
 from .checks import Checker
-from .util import (USER_AGENT, atomic_write_json, is_newer, iso_now, read_json, redact, uptime_pct,
+from .util import (atomic_write_json, get_following, http_session, is_newer, iso_now, read_json, redact, uptime_pct,
                    remove_quietly, url_host)
 
 log = logging.getLogger('engine')
@@ -40,8 +40,7 @@ class Engine:
         self.start_time = time.time()        # timestamp, reported to the server
         self._start_mono = time.monotonic()  # durations: immune to clock steps
         self.checker = Checker()
-        self.session = requests.Session()
-        self.session.headers['User-Agent'] = USER_AGENT
+        self.session = http_session()
         # One pooled connection per worker thread: with the default pool of
         # 10, workers above 10 open and drop a TLS connection per push.
         pool = max(10, int(self.settings.get('max_workers', 10)))
@@ -336,7 +335,10 @@ class Engine:
                   'ping': ms, 'dns_ping': dns_ms}
         error = ''
         try:
-            r = self.session.get(monitors.push_base_url(m['push_url']), params=params, timeout=10)
+            # Only the status matters: no body is read, on a redirect either
+            # (util.http_session / get_following).
+            r = get_following(self.session, monitors.push_base_url(m['push_url']), params=params,
+                              timeout=10)
             code = r.status_code
             r.close()
         except requests.RequestException as e:

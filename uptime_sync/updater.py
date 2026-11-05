@@ -33,8 +33,9 @@ from urllib.parse import urljoin, urlparse
 
 from . import __version__, paths, procs
 from .signing import sign
-from .util import (MIN_FREE_BYTES, USER_AGENT, atomic_write_json, is_newer, is_version, iso_now,
-                   read_json, redact, remove_quietly, server_tls_verify, sha256_file, active_server_url)
+from .util import (MIN_FREE_BYTES, BodyTooLarge, atomic_write_json, http_session, is_newer, is_version,
+                   iso_now, iter_body, read_json, redact, remove_quietly, server_tls_verify, sha256_file,
+                   active_server_url)
 
 log = logging.getLogger('update')
 
@@ -119,13 +120,14 @@ def signed_server_url(url, api_key, secret_key):
 # -- download + stage (runs in the engine) ----------------------------------
 
 def _open(url, kind, remote_url, verify=True):
-    import requests   # here, not at the top: the supervisor imports this module
     hop = url
     for _ in range(MAX_REDIRECTS + 1):
         # verify=False only for a Local reporting server (server_tls_verify);
         # GitHub is always checked.
-        r = requests.get(hop, timeout=60, stream=True, allow_redirects=False,
-                         headers={'User-Agent': USER_AGENT}, verify=verify if kind == 'server' else True)
+        # http_session(): requests.get() would read a redirect's body
+        r = http_session().get(hop, timeout=60, stream=True, allow_redirects=False,
+                               headers={'Accept-Encoding': 'identity'},
+                               verify=verify if kind == 'server' else True)
         if not r.is_redirect:
             r.raise_for_status()
             return r
@@ -203,11 +205,12 @@ def download_and_stage(url, version, sha256, settings):
             r = _open(url, kind, server_url, server_tls_verify(remote))
             size = 0
             with open(part, 'wb') as f:
-                for chunk in r.iter_content(65536):
-                    size += len(chunk)
-                    if size > MAX_ZIP_BYTES:
-                        raise UpdateRefused('download is larger than %d MB' % (MAX_ZIP_BYTES // 2 ** 20))
-                    f.write(chunk)
+                try:
+                    for chunk in iter_body(r, MAX_ZIP_BYTES):
+                        size += len(chunk)
+                        f.write(chunk)
+                except BodyTooLarge:
+                    raise UpdateRefused('download is larger than %d MB' % (MAX_ZIP_BYTES // 2 ** 20))
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(part, zip_path)

@@ -21,7 +21,7 @@ import certifi
 import requests
 
 from . import procs
-from .util import USER_AGENT
+from .util import get_following, http_session
 
 DNS_METHODS = ('auto', 'query', 'ping')
 DNS_DEFAULT_QUERY_NAME = 'google.com'
@@ -104,9 +104,7 @@ class Checker:
     _HTTP_MAX_REDIRECTS = 5
 
     def __init__(self):
-        self.session = requests.Session()
-        self.session.headers['User-Agent'] = USER_AGENT
-        self.session.max_redirects = self._HTTP_MAX_REDIRECTS
+        self.session = http_session()
         self._lock = threading.Lock()
         self._dns_failures = {}        # host -> (count, opened_at, probing)
         self._errors_logged = set()
@@ -336,8 +334,10 @@ class Checker:
         """Up = any 2xx/3xx after at most 5 redirects."""
         start = time.monotonic()
         try:
-            r = self.session.get(url, timeout=timeout, headers=headers or {}, verify=verify,
-                                 allow_redirects=True, stream=True)
+            # util.get_following: no redirect body is read, and the target
+            # is any site a monitor names
+            r = get_following(self.session, url, self._HTTP_MAX_REDIRECTS, headers, timeout=timeout,
+                              verify=verify)
             r.close()
         except Exception as e:   # noqa: BLE001 -- a bad header value raises UnicodeEncodeError
             # Never the URL or the raw error: an expanded ${NAME} from data/.env

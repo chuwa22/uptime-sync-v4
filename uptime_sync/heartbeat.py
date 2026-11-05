@@ -20,8 +20,8 @@ import requests
 import urllib3
 
 from . import __version__, paths, signing, updater
-from .util import (MIN_FREE_BYTES, USER_AGENT, active_server_url, free_bytes, is_local_server, iso_now,
-                   redact, server_tls_verify, url_host)
+from .util import (MIN_FREE_BYTES, BodyTooLarge, active_server_url, free_bytes, http_session,
+                   is_local_server, iso_now, iter_body, redact, server_tls_verify, url_host)
 
 # verify=False is used only where the admin chose it (a Local server, a
 # monitor with ssl_verify off); urllib3 would otherwise write a warning
@@ -98,8 +98,7 @@ class Heartbeat:
         self.last_error = ''
         # One keep-alive connection to the server instead of a new TCP + TLS
         # handshake every beat.
-        self.session = requests.Session()
-        self.session.headers['User-Agent'] = USER_AGENT
+        self.session = http_session()   # never reads a redirect's body
         self._tls_note = None
 
     def interval(self, settings):
@@ -230,14 +229,15 @@ class Heartbeat:
 def _read_body(r):
     """The reply body, or None when it is over MAX_REPLY or takes longer
     than READ_DEADLINE. Always releases the connection."""
-    chunks, size = [], 0
+    chunks = []
     deadline = time.monotonic() + READ_DEADLINE
     try:
-        for chunk in r.iter_content(16384):
-            size += len(chunk)
-            if size > MAX_REPLY or time.monotonic() > deadline:
+        for chunk in iter_body(r, MAX_REPLY, 16384):
+            if time.monotonic() > deadline:
                 return None
             chunks.append(chunk)
+    except BodyTooLarge:
+        return None
     finally:
         r.close()
     return b''.join(chunks)

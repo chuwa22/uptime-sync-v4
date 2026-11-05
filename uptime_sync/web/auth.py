@@ -69,7 +69,9 @@ def load_users():
 
 
 def save_users(users):
-    atomic_write_json(paths.USERS_FILE, users, private=True, backup=True)
+    # mirror: .bak never holds an old password hash, a deleted user or the
+    # epoch before a sign-out-everywhere (util.atomic_write_json)
+    atomic_write_json(paths.USERS_FILE, users, private=True, backup='mirror')
 
 
 def has_users():

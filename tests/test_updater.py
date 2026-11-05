@@ -7,6 +7,8 @@ import unittest
 import zipfile
 from unittest import mock
 
+import urllib3
+
 from uptime_sync import __version__, paths, updater
 from uptime_sync.updater import UpdateRefused
 
@@ -70,12 +72,13 @@ def make_zip(version, extra=None):
 
 
 class FakeResponse:
-    def __init__(self, data):
+    def __init__(self, data, headers=None):
         self.data = data
+        self.headers = headers or {}
+        self.raw = urllib3.HTTPResponse(body=io.BytesIO(data), headers=self.headers, preload_content=False)
 
-    def iter_content(self, n):
-        for i in range(0, len(self.data), n):
-            yield self.data[i:i + n]
+    def close(self):
+        pass
 
 
 class StageAndApplyTests(unittest.TestCase):

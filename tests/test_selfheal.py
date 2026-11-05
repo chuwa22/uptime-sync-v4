@@ -3,6 +3,7 @@ settings coercion, update recovery, and the security fixes."""
 
 from tests import _env  # noqa: F401  (must be first)
 
+import io
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ import unittest
 from unittest import mock
 
 import requests
+import urllib3
 
 from uptime_sync import (__version__, autostart, checks, engine, heartbeat, log as logsetup, logstore,
                          loglevel, monitors, paths, perms, procs, settings, supervisor, updater, util)
@@ -398,13 +400,12 @@ class FakeReply:
         self.status_code = status
         self.content = body
         self.headers = headers or {}
+        # a real urllib3 response over the bytes: util.iter_body reads raw
+        self.raw = urllib3.HTTPResponse(body=io.BytesIO(body), headers=self.headers, status=status,
+                                        preload_content=False)
 
     def json(self):
         return json.loads(self.content.decode('utf-8'))
-
-    def iter_content(self, n):
-        for i in range(0, len(self.content), n):
-            yield self.content[i:i + n]
 
     def close(self):
         self.closed = True
@@ -570,7 +571,7 @@ class EngineTests(unittest.TestCase):
         self.assertNotIn(TOKEN, text)
 
     def test_steady_pushes_log_at_debug(self):
-        r = mock.Mock(status_code=200)
+        r = mock.Mock(status_code=200, is_redirect=False)
         with mock.patch.object(self.e.session, 'get', return_value=r):
             with self.assertLogs('engine', 'DEBUG') as cm:
                 self.e._push(self.m, True, 5, 0)

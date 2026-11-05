@@ -299,6 +299,23 @@ README.md covers usage. This file covers the rules for changing the code.
   unchanged logs at DEBUG, with a WARNING reminder every
   `PUSH_REMINDER_SECONDS` (`engine._log_push`). One line per push. Keep it
   that way for new per-cycle messages.
+- **Packages (4.0.9).** requirements.txt is in pip's hash-checking mode:
+  every package pinned with `==` and its hashes, including platform-only ones
+  (colorama on Windows). Three tiers: 3.8, 3.9, 3.10+. The OLD agent runs
+  pip during an update (`updater.apply()`), so a pin must install with a plain
+  `pip install -r` on every tier: never a pin that needs a pip flag.
+  Python 3.8 keeps releases with open CVEs, so:
+  - Every outbound request uses `util.http_session()`. requests reads a
+    redirect's body even with allow_redirects=False; this Session never does.
+    Follow redirects with `util.get_following()`. Never call `requests.get`.
+  - Read a body only through `util.iter_body(r, limit)` (raw bytes, our own
+    bounded inflate). Never `iter_content()`, `.content`, `.text` or
+    `.json()` on a response from the network.
+  - `web/hardening.py`: Windows device names in a URL get 404, waitress 3.0.0
+    gets the 3.0.1 channel fix, and `SERVE_OPTIONS` keeps
+    `channel_request_lookahead` at 0.
+- **users.json** is written with `backup='mirror'`: its .bak is the current
+  file, never the previous one (an old hash, a deleted user, an old epoch).
 - **VERSION is prepend-only.** Never edit or remove older entries.
 
 ## Testing
@@ -307,6 +324,10 @@ README.md covers usage. This file covers the rules for changing the code.
   them on a current Python). `tests/_env.py` points `UPTIME_SYNC_ROOT` at a temp
   copy. Import it first in every test module.
 - **Lint:** `python -m pyflakes uptime_sync tests main.py install.py tools`.
+- **Packages:** after changing a pin in requirements.txt, run
+  `python tools/pin-hashes.py` (hashes) and `python tools/pin-hashes.py --check`
+  (needs uv; resolves Windows / Linux / macOS on 3.8-3.14). Then install it into
+  fresh 3.8, 3.9 and current venvs and run the tests on each.
 - **End-to-end:**
   1. Copy the shipped files to a scratch folder.
   2. Point `remote.url` at a local fake server that signs replies.

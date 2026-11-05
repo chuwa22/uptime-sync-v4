@@ -13,11 +13,11 @@ import os
 import threading
 import time
 
-from flask import Flask, request
+from flask import Flask, abort, request
 
 from .. import __version__, log as logsetup, loglevel, paths, procs, settings
 from ..util import remove_quietly
-from . import auth, icons
+from . import auth, hardening, icons
 
 log = logging.getLogger('web')
 
@@ -51,6 +51,8 @@ def create_app():
 
     @app.before_request
     def csrf_guard():
+        if hardening.names_a_device(request.path):
+            abort(404)
         if request.method == 'POST':
             auth.check_csrf()
 
@@ -69,6 +71,9 @@ def create_app():
             resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
         elif not request.path.startswith('/static/'):
             resp.headers['Cache-Control'] = 'no-store'
+            # Flask 3.1.3 (CVE-2026-27205) adds this when the session is
+            # read; Flask 2.3 (Python 3.8) does not. Every page depends on it.
+            resp.vary.add('Cookie')
         return resp
 
     from . import views
@@ -100,5 +105,6 @@ def main(parent_pid=0):
     app = create_app()
     log.info('Web UI %s listening on http://%s:%d', __version__, host, port)
     from waitress import serve
-    serve(app, host=host, port=port, threads=6, ident='UptimeSync')
+    hardening.patch_waitress()
+    serve(app, host=host, port=port, **hardening.SERVE_OPTIONS)
     return 0

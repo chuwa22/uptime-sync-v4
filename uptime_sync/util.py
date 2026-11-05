@@ -12,7 +12,8 @@ import shutil
 import socket
 import tempfile
 import time
-from urllib.parse import urlparse
+import zlib
+from urllib.parse import urljoin, urlparse
 
 from . import __version__
 
@@ -69,14 +70,23 @@ def _replace(src, dst, attempts=5):
 def atomic_write_json(path, data, private=False, backup=False, compact=False):
     """backup=True first copies the current file to <path>.bak -- only when
     it parses, so a corrupt file never replaces the last good backup.
+    backup='mirror': <path>.bak gets what was just written instead. For
+    users.json, where the previous version is the old password hash, a
+    deleted user, an old role, or the epoch that revoked sessions: healing
+    from it brought those back.
     compact=True: no indentation (history.json: written often, read by code)."""
-    if backup:
+    if backup is True:
         _keep_backup(path)
     if compact:
         text = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
     else:
         text = json.dumps(data, indent=2, ensure_ascii=False)
     atomic_write_text(path, text + '\n', private)
+    if backup == 'mirror':
+        try:
+            atomic_write_text(path + '.bak', text + '\n', private=True)
+        except OSError as e:
+            log.warning('Could not back up %s: %s', os.path.basename(path), e)
 
 
 def _keep_backup(path):
@@ -339,3 +349,110 @@ def uptime_pct(history):
     if not history:
         return None
     return round(100.0 * sum(1 for h in history if h[1]) / len(history), 1)
+
+
+_session_class = None
+
+
+def http_session():
+    """The requests.Session every outbound request uses. requests reads,
+    and decompresses, the whole body of a redirect reply even with
+    allow_redirects=False (Session.send() fills Response.next through
+    resolve_redirects()), so a hostile server answering 302 with a gzip bomb
+    took 128 MB from one small reply. This Session never resolves redirects:
+    callers that follow them use get_following()."""
+    global _session_class
+    import requests
+    if _session_class is None:
+        class Session(requests.Session):
+            def resolve_redirects(self, resp, req, **kwargs):
+                return iter(())
+        _session_class = Session
+    s = _session_class()
+    s.headers['User-Agent'] = USER_AGENT
+    return s
+
+
+def get_following(session, url, max_redirects=5, headers=None, params=None, **kw):
+    """GET through http_session(), following up to max_redirects redirects
+    here without reading any hop's body. Like requests, Authorization is
+    dropped when a redirect changes host or leaves https. `params` go on the
+    first request only (a Location URL is used as given). Returns the
+    final response, unread (stream=True): close it."""
+    import requests
+    headers = dict(headers or {})
+    for _ in range(max_redirects + 1):
+        r = session.get(url, headers=headers, params=params, allow_redirects=False, stream=True, **kw)
+        params = None
+        location = session.get_redirect_target(r)
+        if not location:
+            return r
+        r.close()
+        nxt = urljoin(r.url or url, location)
+        if session.should_strip_auth(r.url or url, nxt):
+            headers = {k: v for k, v in headers.items() if k.lower() != 'authorization'}
+        url = nxt
+    raise requests.TooManyRedirects('more than %d redirects' % max_redirects)
+
+
+class BodyTooLarge(ValueError):
+    """A response body (after decompression) over the caller's limit."""
+
+
+def iter_body(r, limit, chunk_size=65536):
+    """The body of a `stream=True` requests response, decoded, in chunks,
+    never more than `limit` bytes in all (BodyTooLarge). Every response body
+    the agent reads goes through here.
+
+    It reads r.raw with decode_content=False, so urllib3 neither decompresses
+    nor parses chunked framing: Python's http.client does the framing (with
+    its 64 KB line limit) and zlib here inflates at most `limit` bytes. The
+    urllib3 releases that still install on Python 3.8 (Windows 7) have no
+    fix for the 2025-2026 decompression-bomb and chunk-size-line bugs
+    (CVE-2025-66471, CVE-2025-66418, CVE-2026-21441, CVE-2026-44432,
+    CVE-2026-97689), and a hostile server could otherwise run a 32-bit box
+    out of memory with a few KB. Network errors come out as
+    requests.ConnectionError, as from iter_content()."""
+    import http.client
+    import requests
+    import urllib3
+    enc = (r.headers.get('Content-Encoding') or '').strip().lower()
+    if enc in ('', 'identity'):
+        inflate = None
+    elif enc in ('gzip', 'x-gzip'):
+        inflate = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    elif enc == 'deflate':
+        inflate = zlib.decompressobj()
+    else:
+        raise requests.exceptions.ContentDecodingError('unsupported Content-Encoding %r' % enc[:40])
+    total = 0
+    try:
+        while True:
+            try:
+                data = r.raw.read(chunk_size, decode_content=False)
+            except (urllib3.exceptions.HTTPError, http.client.HTTPException, OSError) as e:
+                raise requests.ConnectionError(e)
+            if not data:
+                break
+            if inflate is not None:
+                try:
+                    # max_length > 0 always: total <= limit here
+                    data = inflate.decompress(data, limit + 1 - total)
+                except zlib.error as e:
+                    raise requests.exceptions.ContentDecodingError(e)
+                if inflate.unconsumed_tail:
+                    raise BodyTooLarge('over %d bytes' % limit)
+            total += len(data)
+            if total > limit:
+                raise BodyTooLarge('over %d bytes' % limit)
+            if data:
+                yield data
+        if inflate is not None:
+            data = inflate.flush()
+            if total + len(data) > limit:
+                raise BodyTooLarge('over %d bytes' % limit)
+            if data:
+                yield data
+    finally:
+        r.close()
+

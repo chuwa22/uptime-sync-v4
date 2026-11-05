@@ -711,3 +711,41 @@ class PushLogTests(unittest.TestCase):
             with self.assertLogs('engine', 'DEBUG') as cm:
                 self.e._push(self.m, True, 5, 0)
         self.assertEqual(len(cm.output), 1)
+
+
+class UsersBackupTests(unittest.TestCase):
+    """users.json.bak is the current users.json, never the one before."""
+
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        from uptime_sync.web import auth
+        self.auth = auth
+        auth.create_user('admin', 'first password 1')
+        auth.create_user('bob', 'bob password 12', role='viewer')
+
+    def bak(self):
+        return util.read_json(paths.USERS_FILE + '.bak', heal=False)
+
+    def test_bak_never_holds_an_old_hash_or_a_deleted_user(self):
+        old_hash = self.auth.load_users()['admin']['password']
+        self.auth.set_password('admin', 'second password 2')
+        self.auth.revoke_sessions('admin')           # epoch + 1: old cookies dead
+        users = self.auth.load_users()
+        del users['bob']
+        self.auth.save_users(users)
+        bak = self.bak()
+        self.assertNotIn('bob', bak)
+        self.assertEqual(bak['admin']['epoch'], users['admin']['epoch'])
+        self.assertNotEqual(bak['admin']['password'], old_hash)
+        self.assertNotIn(old_hash, open(paths.USERS_FILE + '.bak').read())
+        self.assertEqual(bak, util.read_json(paths.USERS_FILE))
+
+    def test_healing_restores_the_current_state(self):
+        self.auth.set_password('admin', 'second password 2')
+        with open(paths.USERS_FILE, 'w') as f:
+            f.write('{broken')
+        with self.assertLogs('heal', 'CRITICAL'):
+            users = self.auth.load_users()
+        self.assertTrue(self.auth.check_password('second password 2', users['admin']['password']))
+        self.assertFalse(self.auth.check_password('first password 1', users['admin']['password']))

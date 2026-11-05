@@ -79,6 +79,17 @@
 - Performance (Logs page): a text search reads at most 100,000 lines per page, and Older searches the next 100,000. LIKE cannot use an index, so a rare word read the whole of logs.db every time (about 0.1 s per million lines here, seconds on a Win7 disk); now about 10 ms.
 - Fix (logs): a push that fails is one WARNING line, with the host and the error. The same failure again is DEBUG, with a reminder once an hour ("still failing: N in a row"), and the first push that works again says after how many failures. Before, every failed push wrote an ERROR and a WARNING line on every cycle: 5 monitors whose Uptime Kuma was down wrote about 29,000 lines a day.
 - Fix (logs): a Local server on plain http logs "plain http, not encrypted" instead of "a self-signed certificate is accepted".
+- Security (packages): requirements.txt carries the SHA-256 of every file of every pinned package, so pip installs in hash-checking mode: a package changed on PyPI, a mirror or a proxy is refused instead of installed and run as SYSTEM. `tools/pin-hashes.py` rewrites the hashes after a pin changes, and `--check` resolves the set for Windows, Linux and macOS on Python 3.8 to 3.14 and fails on any package that is not pinned.
+- Fix (packages): colorama is pinned on Windows. click needs it there; before, Windows boxes got whatever colorama was newest on the day they installed.
+- Security (packages): Python 3.10 and newer get requests 2.34.2 and urllib3 2.8.0; Python 3.9 and newer get Flask 3.1.3, Werkzeug 3.1.9 and waitress 3.0.2. These fix the 2025-2026 CVEs in urllib3 (decompression bombs, chunked responses, proxies), Werkzeug (Windows device names in safe_join), Flask (Vary: Cookie) and requests.
+- Security (Python 3.8 / Windows 7): the fixed releases do not install on 3.8, so the agent defends itself.
+  - Response bodies (heartbeat reply, update download) are read without urllib3's decompression or chunked-response parser, and inflated up to a fixed limit. Kuma pushes and HTTP checks read no body at all.
+  - Redirects are followed by the agent and their bodies are never read. requests read, and inflated, the whole body of a redirect even with allow_redirects=False: one 302 with a 64 KB gzip body took 128 MB.
+  - The web UI answers 404 to a URL naming a Windows device (NUL, CON, COM1.txt, ...), which on Windows hung a thread reading it (the Werkzeug fix).
+  - waitress 3.0.0 gets the 3.0.1 fix for CVE-2024-49769: a client closing its connection early no longer leaves a socket in a busy loop. CVE-2024-49768 needs request lookahead, which stays off.
+  - Every page sends Vary: Cookie (the Flask fix).
+  - requests' CVE-2026-25645 applies only when requests runs from a zip file, which the agent does not.
+- Security (users): users.json.bak is now a copy of the current users.json. Before, it was the version before the last change, so after a password change it still held the old password hash, and healing a corrupt users.json from it restored the old password, deleted users and sessions that had been signed out. On a box updated to 4.0.9 the backup is refreshed at the next sign-in.
 - Performance (logs): each process's log writer wakes every 5 s when idle instead of twice a second. Closing it is still immediate.
 4.0.8
 2026-11-05
