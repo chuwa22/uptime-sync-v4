@@ -92,18 +92,24 @@ def _keep_backup(path):
         log.warning('Could not back up %s: %s', os.path.basename(path), e)
 
 
-def read_json(path, default=None, heal=True):
+def read_json(path, default=None, heal=True, strict=False):
     """Parsed JSON from path; `default` (deep-copied) if it is missing.
 
     A file that exists but does not parse is not silently treated as
     missing (heal=True): it is moved to <path>.corrupt-<ts>, a CRITICAL line
     is logged, and <path>.bak is restored when it parses. heal=False only
     for files this agent must not move (3.x files being imported, the
-    shipped defaults)."""
+    shipped defaults). strict=True: only a MISSING file gives `default`; any
+    other read error (a file an antivirus or backup tool holds for a moment)
+    raises OSError, so the caller can keep what it had instead of "empty"."""
     try:
         with open(path, 'r', encoding='utf-8-sig') as f:
             text = f.read()
+    except FileNotFoundError:
+        return copy.deepcopy(default)
     except OSError:
+        if strict:
+            raise
         return copy.deepcopy(default)
     try:
         return json.loads(text)
@@ -324,3 +330,12 @@ def remove_quietly(path):
         return True
     except OSError:
         return False
+
+
+def uptime_pct(history):
+    """Percent of [time, ok, ms] entries that were up, one decimal; None
+    when there are none. The engine puts it in run/status.json and the web
+    uses it only when an older engine's status has no 'uptime'."""
+    if not history:
+        return None
+    return round(100.0 * sum(1 for h in history if h[1]) / len(history), 1)

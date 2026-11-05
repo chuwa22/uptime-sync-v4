@@ -311,6 +311,37 @@ class LogQueryTests(unittest.TestCase):
                              for p in plan), 3)
 
 
+    def walk(self, min_level, text, limit, span):
+        """Every id the Logs page shows following Older to the end."""
+        got, before, windows = [], None, 0
+        while True:
+            rows, before, window = logstore.page(min_level, '', text, before, limit, span)
+            got += [r['id'] for r in rows]
+            windows += window
+            self.assertLessEqual(len(rows), limit)
+            if before is None:
+                return got, windows
+
+    def test_text_search_pages_in_windows_and_misses_nothing(self):
+        for min_level in (0, 30):
+            for text, limit in (('9', 20), ('nothing', 20), ('', 50)):
+                got, windows = self.walk(min_level, text, limit, span=100)
+                self.assertEqual(got, self.naive(min_level, '', text, limit=10000), (min_level, text))
+                if text == 'nothing':
+                    self.assertEqual(windows, 6)        # 700 rows / 100: one window per page
+                if not text:
+                    self.assertEqual(windows, 0)        # no text: plain paging
+
+    def test_id_range_does_not_scan(self):
+        conn = logstore.connect()
+        try:
+            plan = [r[3] for r in conn.execute('EXPLAIN QUERY PLAN ' + logstore._ID_RANGE_SQL)]
+        finally:
+            conn.close()
+        self.assertNotIn('SCAN logs', plan)
+        self.assertEqual(plan.count('SEARCH logs'), 2)
+        self.assertEqual(logstore._id_range(), (1, 700))
+
 class HttpDnsTests(unittest.TestCase):
     def setUp(self):
         self.c = checks.Checker()
@@ -482,3 +513,151 @@ class NumericBoundsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EngineWatchTests(unittest.TestCase):
+    """Group 3: a stuck heartbeat, the install click, monitors.json held open."""
+
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        self.e = engine.Engine(supervised=True)
+
+    def test_stuck_heartbeat_restarts_the_engine(self):
+        self.e._hb_busy_since = time.monotonic() - engine.HEARTBEAT_STUCK_SECONDS - 5
+        with self.assertLogs('engine', 'ERROR'):
+            self.e._watch()          # returns once stop() set the event
+        self.assertEqual(self.e.exit_code, updater.EXIT_STUCK)
+
+    def test_beat_in_flight_for_a_while_is_left_alone(self):
+        self.e._hb_busy_since = time.monotonic() - 30
+        t = threading.Timer(1.5, self.e.stop)
+        t.start()
+        self.e._watch()
+        t.join()
+        self.assertFalse(self.e.exit_code)
+
+    def test_install_click_runs_off_the_watch_thread(self):
+        util.touch(paths.INSTALL_TRIGGER)
+        p = {'version': '99.0.0', 'url': 'https://mon.example.com/u.zip', 'sha256': 'ab' * 32}
+        with mock.patch.object(updater, 'pending', return_value=p), \
+                mock.patch.object(self.e, '_start_install', side_effect=lambda *a: self.e.stop()) as start, \
+                mock.patch.object(self.e, '_install') as install:
+            self.e._watch()
+        start.assert_called_once_with(p['url'], '99.0.0', p['sha256'])
+        install.assert_not_called()            # not inline: _watch must keep watching
+        self.assertFalse(os.path.exists(paths.INSTALL_TRIGGER))
+
+    def test_unreadable_monitors_file_keeps_the_monitors(self):
+        monitors.save([monitors.normalize({'name': 'a', 'type': 'PING', 'target': '192.0.2.1'})])
+        self.e._reload_monitors(force=True)
+        self.assertEqual(len(self.e.monitors), 1)
+        with mock.patch.object(monitors, 'load', side_effect=PermissionError(13, 'in use')):
+            with self.assertLogs('engine', 'WARNING') as cm:
+                self.e._reload_monitors(force=True)
+                self.e._reload_monitors(force=True)
+        self.assertEqual(len(cm.output), 1)      # once, not every cycle
+        self.assertEqual(len(self.e.monitors), 1)
+        self.e._monitor_stamp = None
+        self.e._reload_monitors()                # readable again: reloads
+        self.assertIsNone(self.e._monitor_read_error)
+
+    def test_read_json_strict_raises_only_for_unreadable(self):
+        missing = os.path.join(paths.DATA_DIR, 'nope.json')
+        self.assertEqual(util.read_json(missing, {'d': 1}, strict=True), {'d': 1})
+        with mock.patch('uptime_sync.util.open', create=True, side_effect=PermissionError(13, 'in use')):
+            with self.assertRaises(OSError):
+                util.read_json(paths.MONITORS_FILE, [], strict=True)
+            self.assertEqual(util.read_json(paths.MONITORS_FILE, [], heal=False), [])
+
+    def test_status_carries_uptime_from_memory(self):
+        a = monitors.normalize({'name': 'a', 'type': 'PING', 'target': '192.0.2.1'})
+        self.e.results = {a['id']: {'ok': True}, 'new': {'ok': False}}
+        self.e.history = {a['id']: [[1, 1, 5], [2, 1, 5], [3, 0, 0], [4, 1, 5]]}
+        self.e._write_status()
+        st = util.read_json(paths.STATUS_FILE)
+        self.assertEqual(st['monitors'][a['id']]['uptime'], 75.0)
+        self.assertIsNone(st['monitors']['new']['uptime'])
+        self.assertEqual(util.uptime_pct([]), None)
+
+
+class AttemptLimitTests(unittest.TestCase):
+    def setUp(self):
+        from uptime_sync.web import auth
+        self.auth = auth
+        auth._attempts.clear()
+
+    def tearDown(self):
+        self.auth._attempts.clear()
+
+    def test_parallel_attempts_cannot_all_get_in(self):
+        # Counted before the hash: 30 requests at once, only MAX_ATTEMPTS pass.
+        ok, go = [], threading.Event()
+
+        def attempt():
+            go.wait(2)
+            ok.append(self.auth.begin_attempt('203.0.113.9'))
+        threads = [threading.Thread(target=attempt) for _ in range(30)]
+        for t in threads:
+            t.start()
+        go.set()
+        for t in threads:
+            t.join()
+        self.assertEqual(ok.count(True), self.auth.MAX_ATTEMPTS)
+        self.auth.clear_failures('203.0.113.9')
+        self.assertTrue(self.auth.begin_attempt('203.0.113.9'))
+
+    def test_tracked_keys_are_bounded(self):
+        with mock.patch.object(self.auth, 'MAX_TRACKED', 50):
+            for i in range(200):
+                self.auth.begin_attempt('2001:db8::%x' % i)
+            self.assertLessEqual(len(self.auth._attempts), 50)
+            self.assertIn('2001:db8::c7', self.auth._attempts)     # the newest stay
+
+    def test_absurd_iterations_are_refused_fast(self):
+        stored = 'salt$%d$00' % (100 * self.auth.ITERATIONS)
+        t = time.monotonic()
+        self.assertFalse(self.auth.check_password('x' * 12, stored))
+        self.assertLess(time.monotonic() - t, 0.1)
+        self.assertFalse(self.auth.check_password('x' * 12, 'salt$0$00'))
+
+
+class FilterValueTests(unittest.TestCase):
+    def test_filter_value(self):
+        self.assertEqual(loglevel.filter_value('critical'), logging.CRITICAL)
+        self.assertEqual(loglevel.filter_value('warn'), logging.WARNING)
+        self.assertEqual(loglevel.filter_value('nonsense'), logging.INFO)
+        self.assertEqual(loglevel.filter_value(None, 'ERROR'), logging.ERROR)
+
+
+class LogWriterStopTests(unittest.TestCase):
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        logstore.init_db()
+
+    def count(self):
+        conn = logstore.connect()
+        try:
+            return conn.execute("SELECT count(*) FROM logs WHERE logger = 'stoptest'").fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_close_is_prompt_and_keeps_every_row(self):
+        h = logstore.SQLiteHandler('engine')
+        time.sleep(0.2)              # the writer is now in its long idle wait
+        for i in range(700):         # more than one batch, sentinel lands mid-drain
+            h.emit(logging.LogRecord('stoptest', logging.INFO, __file__, 1, 'row %d', (i,), None))
+        t = time.monotonic()
+        h.close()
+        self.assertLess(time.monotonic() - t, 2.0)   # not WRITER_IDLE_SECONDS
+        self.assertFalse(h._thread.is_alive())
+        self.assertEqual(self.count(), 700)
+
+    def test_idle_close_is_prompt(self):
+        h = logstore.SQLiteHandler('engine')
+        time.sleep(0.2)
+        t = time.monotonic()
+        h.close()
+        self.assertLess(time.monotonic() - t, 2.0)
+        self.assertFalse(h._thread.is_alive())

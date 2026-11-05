@@ -16,7 +16,7 @@ import requests
 
 from . import __version__, heartbeat, log as logsetup, loglevel, monitors, paths, procs, settings, updater
 from .checks import Checker
-from .util import (USER_AGENT, atomic_write_json, is_newer, iso_now, read_json, redact,
+from .util import (USER_AGENT, atomic_write_json, is_newer, iso_now, read_json, redact, uptime_pct,
                    remove_quietly, url_host)
 
 log = logging.getLogger('engine')
@@ -26,6 +26,7 @@ HISTORY_SAVE_EVERY = 10        # cycles; and always on stop
 UPDATE_GRACE_SECONDS = 180
 PUSH_WINDOW = 10
 STUCK_CYCLES = 3               # a check running this many intervals -> restart the engine
+HEARTBEAT_STUCK_SECONDS = 600  # one beat in flight this long -> restart the engine
 HOUSEKEEPING_SECONDS = 3600
 LOW_DISK_RETENTION_DAYS = 3
 
@@ -62,6 +63,8 @@ class Engine:
         self._skip_logged = None
         self._lock = threading.Lock()   # results + history: written by check threads
         self._inflight = {}             # monitor id -> monotonic start of its running check
+        self._hb_busy_since = None      # monotonic start of the beat in flight
+        self._monitor_read_error = None
         self._cycles = 0
         self._last_state = {}           # monitor id -> (ok, push code), to log only changes
         self._errors_logged = set()
@@ -109,7 +112,16 @@ class Engine:
         """Stop on run/engine.stop, on an install click, or when orphaned."""
         while not self.stop_event.wait(1.0):
             loglevel.refresh()
-            if os.path.exists(paths.child_stop_flag('engine')):
+            busy = self._hb_busy_since
+            if busy is not None and time.monotonic() - busy > HEARTBEAT_STUCK_SECONDS:
+                # requests' timeout is per read: a server that trickles its
+                # reply, or a hung TLS handshake, can hold the beat for ever,
+                # and with it every restart / update the server would send.
+                log.error('A heartbeat has been in flight for over %ds - restarting the engine',
+                          HEARTBEAT_STUCK_SECONDS)
+                self._hb_busy_since = None
+                self.stop(updater.EXIT_STUCK)
+            elif os.path.exists(paths.child_stop_flag('engine')):
                 log.info('Stop requested')
                 self.stop()
             elif self.parent_pid and not procs.pid_alive(self.parent_pid):
@@ -120,8 +132,7 @@ class Engine:
                 p = updater.pending()
                 if p:
                     log.info('[UPDATE] Install of v%s requested from the web UI', p['version'])
-                    threading.Thread(target=self._install, args=(p['url'], p['version'], p['sha256']),
-                                     daemon=True).start()
+                    self._start_install(p['url'], p['version'], p['sha256'])
 
     # -- monitors ------------------------------------------------------------
 
@@ -138,9 +149,20 @@ class Engine:
         stamp = self._stamp()
         if not force and stamp == self._monitor_stamp:
             return
+        try:
+            all_monitors = monitors.load(strict=True)
+        except OSError as e:
+            # Held by an antivirus or backup tool right now: keep checking
+            # what we have, and try again next cycle (the stamp is not
+            # stored, so the change is not lost).
+            if self._monitor_read_error != str(e):
+                self._monitor_read_error = str(e)
+                log.warning('Could not read monitors.json (%s) - keeping the %d monitor(s) loaded '
+                            'before, retrying next cycle', e, len(self.monitors))
+            return
+        self._monitor_read_error = None
         self._monitor_stamp = stamp
         env = settings.env_values()
-        all_monitors = monitors.load()
         self.monitors = [monitors.runtime_view(m, env) for m in all_monitors if m['enabled']]
         known = {m['id'] for m in all_monitors}
         urls = {m['push_url'] for m in self.monitors}
@@ -357,7 +379,12 @@ class Engine:
     def _write_status(self):
         hb = self.heartbeat
         with self._lock:
-            results = dict(self.results)
+            # uptime from the in-memory history: history.json is written only
+            # every HISTORY_SAVE_EVERY cycles, so the dashboard lagged by up to
+            # ten minutes when it read the file.
+            results = {}
+            for k, v in self.results.items():
+                results[k] = dict(v, uptime=uptime_pct(self.history.get(k)))
         try:
             atomic_write_json(paths.STATUS_FILE, {
                 'updated_at': iso_now(), 'version': __version__, 'pid': os.getpid(),
@@ -408,6 +435,7 @@ class Engine:
             except Exception:   # settings.load() fixes types; never let this thread die
                 enabled = False
             if enabled:
+                self._hb_busy_since = time.monotonic()
                 try:
                     reply = self.heartbeat.send(s, healthy=self._last_cycle_ok and heartbeat.free_disk_ok())
                     if reply:
@@ -416,6 +444,8 @@ class Engine:
                 except Exception as e:
                     log.error('Heartbeat handling failed: %s', e, exc_info=True)
                     wait = 60
+                finally:
+                    self._hb_busy_since = None
             else:
                 wait = 30
             self.stop_event.wait(wait)
@@ -472,7 +502,15 @@ class Engine:
             log.info('[UPDATE] v%s available - deferred to the %s-%s window', version,
                      window.get('start', '?'), window.get('end', '?'))
             return
-        self._install(url, version, sha)
+        self._start_install(url, version, sha)
+
+    def _start_install(self, url, version, sha):
+        """The download runs in its own thread: in the heartbeat thread a
+        slow 30 MB download held up every beat (and the stuck-beat check
+        would restart the engine in the middle of it)."""
+        t = threading.Thread(target=self._install, args=(url, version, sha), name='update', daemon=True)
+        t.start()
+        return t
 
     def _install(self, url, version, sha):
         if not self.supervised:

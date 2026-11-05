@@ -270,11 +270,6 @@
   var url = tiles.getAttribute('data-status-url');
 
   function field(name) { return $all('[data-field="' + name + '"]')[0]; }
-  function ago(epoch, now) {
-    if (!epoch) { return 'never'; }
-    var s = Math.max(0, Math.round(now - epoch));
-    return s < 90 ? s + ' s ago' : Math.round(s / 60) + ' min ago';
-  }
   function cell(text, cls, label) {
     var td = document.createElement('td');
     if (cls) { td.className = cls; }
@@ -289,16 +284,12 @@
       var tone = st.tones && st.tones[tiles[i].getAttribute('data-tile')];
       if (tone) { tiles[i].className = 'tile tone-' + tone; }
     }
-    setText(field('counts'), st.counts.up + ' / ' + st.counts.enabled);
-    setText(field('engine'), st.engine.running ? 'Running' : 'Stopped');
-    setText(field('engine_sub'), 'last cycle ' + (st.engine.updated_at ? st.engine.updated_at.slice(11, 19) : '-'));
-    var hb = st.heartbeat;
-    setText(field('heartbeat'), !hb.enabled ? 'Off' : hb.failures ? 'Failing' : hb.error ? 'Error' :
-      hb.last_ok ? 'OK' : 'Waiting');
-    setText(field('heartbeat_sub'), !hb.enabled ? 'reporting disabled' :
-      (hb.error ? hb.error + ' - ' : '') + 'last OK ' + ago(hb.last_ok, st.now));
-    setText(field('signing'), st.signing.state);
-    setText(field('signing_sub'), st.signing.since ? 'since ' + st.signing.since.slice(0, 10) : '');
+    // The words come from the server (views.tile_text), the same ones the
+    // first paint used.
+    var names = ['engine', 'engine_sub', 'counts', 'heartbeat', 'heartbeat_sub', 'signing', 'signing_sub'];
+    for (i = 0; i < names.length; i++) {
+      if (st.text && st.text[names[i]] !== undefined) { setText(field(names[i]), st.text[names[i]]); }
+    }
 
     var body = $all('[data-rows]')[0];
     if (!body) { return; }

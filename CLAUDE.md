@@ -197,11 +197,21 @@ README.md covers usage. This file covers the rules for changing the code.
     inside `@supports`, so IE keeps the plain table.
   - Every POST carries the `csrf` form field.
   - Admin-only routes use `@auth.admin_required`.
+  - Any form that checks a password calls `auth.begin_attempt(key)` before
+    hashing (sign-in: the IP; Account: `account:<name>`), and
+    `clear_failures(key)` on success.
+  - Dashboard tile words come from `views.tile_text()` (colours from
+    `tones()`), for the template and app.js alike. Never word them in JS.
   - A viewer never sees a push token. Use `mask_push_url`.
 - **Logs.**
   - Use `logging.getLogger(<name>)` everywhere. `log.setup(proc)` routes it to
     `logs/logs.db`, written from one thread per process in batches.
   - Never log from inside `logstore`'s writer path.
+  - The Logs page goes through `logstore.page()`: a text search reads at
+    most `SEARCH_SPAN` ids per page (LIKE cannot use an index). SQLite reads
+    `min(id)` or `max(id)` off the b-tree only when it is alone in a SELECT:
+    together they scan (see `_ID_RANGE_SQL`). Check a new query with
+    EXPLAIN QUERY PLAN on a million rows.
   - Do not use `app.logger`: Flask gives it its own stderr handler.
   - **Levels (4.0.9) live in `loglevel.py` only.** `log_level` is the global
     level; `log_levels` = `{part: level}` overrides it per part, where a part
@@ -259,6 +269,12 @@ README.md covers usage. This file covers the rules for changing the code.
   - `log.setup()` sets `threading.excepthook`, so a dying thread is logged.
   - `time.monotonic()` can start near 0 in a new process: never use 0.0 as
     "long ago" in a throttle; use None.
+  - The engine restarts itself (EXIT_STUCK) when one heartbeat has been in
+    flight for `HEARTBEAT_STUCK_SECONDS`. So nothing slow may run on the
+    heartbeat or watch thread: an install goes through `_start_install()`.
+  - `monitors.load(strict=True)` raises on a file that exists but cannot be
+    read; the engine then keeps its monitors. Use `read_json(strict=True)`
+    wherever "unreadable for a moment" must not mean "empty".
 - **Reporting server URL (4.0.9).** `remote.url` is the Public URL and
   `remote.local_url` is the Local one. Always read the URL in use through
   `util.active_server_url(remote)`: heartbeat, signing latch and updater all do.

@@ -26,9 +26,13 @@ MIN_PASSWORD = 12
 ROLES = ('admin', 'viewer')
 
 _lock = threading.Lock()
-_attempts = {}            # ip -> [timestamps]
+_attempts = {}            # key (ip, or 'account:<user>') -> [timestamps]
 MAX_ATTEMPTS = 10
 ATTEMPT_WINDOW = 300
+MAX_TRACKED = 2000        # keys kept; IPv6 makes new source addresses cheap
+# 600k PBKDF2 rounds cost about 0.5 s of CPU each (more on a Win7 Atom):
+# at most two at a time, whatever the number of waitress threads.
+_hash_slots = threading.BoundedSemaphore(2)
 
 
 def hash_password(password, iterations=ITERATIONS):
@@ -50,7 +54,10 @@ def check_password(password, stored):
         iterations = int(iterations)
     except ValueError:
         return False
-    digest = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), iterations)
+    if not 1 <= iterations <= 10 * ITERATIONS:
+        return False     # a hand-edited users.json must not hang the web UI
+    with _hash_slots:
+        digest = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), iterations)
     return hmac.compare_digest(digest.hex(), expected)
 
 
@@ -169,6 +176,37 @@ def rate_limited(ip):
 def note_failure(ip):
     with _lock:
         _attempts.setdefault(ip, []).append(time.time())
+        _trim()
+
+
+def begin_attempt(key):
+    """Count a password attempt BEFORE the hash is checked; False when
+    `key` is over the limit. Counting afterwards (rate_limited, then
+    note_failure) let parallel requests that all passed the check through
+    together. A successful sign-in calls clear_failures(key)."""
+    now = time.time()
+    with _lock:
+        recent = [t for t in _attempts.get(key, []) if now - t < ATTEMPT_WINDOW]
+        if len(recent) >= MAX_ATTEMPTS:
+            _attempts[key] = recent
+            return False
+        recent.append(now)
+        _attempts[key] = recent
+        _trim()
+        return True
+
+
+def _trim():
+    """Keep _attempts bounded (caller holds _lock): expired keys first,
+    then the ones whose last attempt is oldest."""
+    if len(_attempts) <= MAX_TRACKED:
+        return
+    now = time.time()
+    for key in [k for k, v in _attempts.items() if not v or now - v[-1] >= ATTEMPT_WINDOW]:
+        del _attempts[key]
+    if len(_attempts) > MAX_TRACKED:
+        for key in sorted(_attempts, key=lambda k: _attempts[k][-1])[:len(_attempts) - MAX_TRACKED]:
+            del _attempts[key]
 
 
 def clear_failures(ip):

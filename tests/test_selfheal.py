@@ -730,6 +730,21 @@ class PermsTests(unittest.TestCase):
                          ' junk'])
         self.assertEqual(perms.broad_writers(out), ['Authenticated Users', 'Everyone'])
         self.assertEqual(perms.broad_writers('S-1-5-32-545 1179817'), [])
+        # A per-user Python: one user SID with full control, and the owner.
+        per_user = '\n'.join(['S-1-5-18 2032127', 'S-1-5-32-544 2032127',
+                               'S-1-5-21-1-2-3-1001 2032127', 'S-1-3-0 268435456',
+                               'OWNER S-1-5-21-1-2-3-1001'])
+        self.assertEqual(perms.broad_writers(per_user),
+                         ['S-1-5-21-1-2-3-1001', 'its owner S-1-5-21-1-2-3-1001'])
+        self.assertEqual(perms.broad_writers('S-1-5-18 2032127\nOWNER S-1-5-32-544'), [])
+
+    def test_under_user_profile(self):
+        import ntpath
+        with mock.patch.object(perms.os, 'path', ntpath), mock.patch.object(perms.os, 'sep', '\\'):
+            self.assertTrue(perms.under_user_profile(
+                'C:\\Users\\lab\\AppData\\Local\\Programs\\Python\\Python38-32', 'C:'))
+            self.assertFalse(perms.under_user_profile('C:\\Python38', 'C:'))
+            self.assertFalse(perms.under_user_profile('C:\\UsersX\\Python', 'C:'))
 
     def test_acl_ps_command_quotes(self):
         cmd = perms.acl_ps_command("C:\\Py'38")

@@ -37,6 +37,8 @@ LOG_DB_TARGET_BYTES = 150 * 1024 * 1024
 CORRUPT_KEEP = 1               # quarantined copies kept (they can be large)
 RECOVER_GAP_SECONDS = 600      # writer: at most one quarantine attempt per 10 min
 DELETE_CHUNK = 10000           # rows per prune transaction (bounded WAL growth, short locks)
+WRITER_IDLE_SECONDS = 5.0      # writer wakeups with nothing to write (close() wakes it at once)
+SEARCH_SPAN = 100000           # rows one Logs-page text search reads (see page())
 # Written when a corrupt logs.db cannot be moved because other processes
 # have it open (Windows): each writer that sees it closes its connection
 # and tries the move itself, so the last one to let go succeeds.
@@ -192,6 +194,9 @@ def quarantine(why='', expect=None):
     return True
 
 
+_STOP = object()     # close() -> writer: the rows before me are the last ones
+
+
 class SQLiteHandler(logging.Handler):
     def __init__(self, proc):
         super().__init__()
@@ -215,7 +220,7 @@ class SQLiteHandler(logging.Handler):
 
     def _drain(self, first=None):
         rows = [first] if first else []
-        while len(rows) < BATCH_MAX:
+        while len(rows) < BATCH_MAX and rows[-1:] != [_STOP]:
             try:
                 rows.append(self.q.get_nowait())
             except queue.Empty:
@@ -247,14 +252,20 @@ class SQLiteHandler(logging.Handler):
     def _writer(self):
         conn = conn_id = None
         last_recover = None
-        while True:
+        done = False
+        while not done:
             try:
-                first = self.q.get(timeout=0.5)
+                first = self.q.get(timeout=WRITER_IDLE_SECONDS)
             except queue.Empty:
                 if self._stop.is_set():
-                    break
+                    break      # the queue was full when close() ran: no sentinel
                 continue
             rows = self._drain(first)
+            if rows[-1] is _STOP:
+                rows.pop()
+                done = True
+                if not rows and not self.dropped:
+                    break
             if self.dropped:
                 rows.append((time.time(), self.proc, logging.WARNING, 'log',
                              '%d log line(s) dropped: logging queue was full' % self.dropped))
@@ -290,8 +301,12 @@ class SQLiteHandler(logging.Handler):
 
     def close(self):
         self._stop.set()
+        try:
+            self.q.put_nowait(_STOP)
+        except queue.Full:
+            pass       # the writer is busy and finds _stop on its next idle wait
         self._thread.join(10)
-        rest = self._drain()
+        rest = [r for r in self._drain() if r is not _STOP]
         if rest:
             write_fallback(rest, 'written at shutdown')
         super().close()
@@ -316,7 +331,7 @@ def write_fallback(rows, why):
 
 # -- reading (web UI, CLI) ---------------------------------------------------
 
-def _select(min_level, proc, text, before_id, limit):
+def _select(min_level, proc, text, before_id, limit, floor=None):
     """SQL + args for query(). Every branch reads rows in id order from an
     index, so LIMIT stops the scan early and nothing is sorted:
 
@@ -337,6 +352,9 @@ def _select(min_level, proc, text, before_id, limit):
     if before_id:
         where.append('id < ?')
         args.append(int(before_id))
+    if floor:
+        where.append('id >= ?')
+        args.append(int(floor))
     cols = 'SELECT id, ts, proc, level, logger, msg FROM logs'
     min_level = int(min_level)
     if min_level < LEVELS['WARNING']:
@@ -352,10 +370,11 @@ def _select(min_level, proc, text, before_id, limit):
     return ' UNION ALL '.join(parts) + ' ORDER BY id DESC LIMIT ?', all_args + [limit]
 
 
-def query(min_level=0, proc='', text='', before_id=None, limit=200):
-    """Newest-first rows as dicts. Read-only connection per call."""
+def query(min_level=0, proc='', text='', before_id=None, limit=200, floor=None):
+    """Newest-first rows as dicts, ids >= floor when given. Read-only
+    connection per call."""
     limit = max(1, min(int(limit), 1000))
-    sql, args = _select(min_level, proc, text, before_id, limit)
+    sql, args = _select(min_level, proc, text, before_id, limit, floor)
     if not os.path.exists(DB_FILE):
         return []
     conn = connect()
@@ -377,6 +396,51 @@ def query(min_level=0, proc='', text='', before_id=None, limit=200):
     return [{'id': r[0], 'time': datetime.datetime.fromtimestamp(r[1]).strftime('%Y-%m-%d %H:%M:%S'),
              'proc': r[2], 'level': logging.getLevelName(r[3]), 'logger': r[4], 'msg': r[5]}
             for r in rows]
+
+
+# Two subqueries: SQLite reads min() or max() straight off the b-tree only
+# when it is alone; SELECT min(id), max(id) scans the whole table.
+_ID_RANGE_SQL = 'SELECT (SELECT min(id) FROM logs), (SELECT max(id) FROM logs)'
+
+
+def _id_range():
+    """(min id, max id) of logs.db, (None, None) when empty or unreadable."""
+    if not os.path.exists(DB_FILE):
+        return None, None
+    try:
+        conn = connect()
+        try:
+            return tuple(conn.execute(_ID_RANGE_SQL).fetchone())
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError:
+        return None, None
+
+
+def page(min_level=0, proc='', text='', before_id=None, limit=200, span=SEARCH_SPAN):
+    """One Logs page: (rows, older, window).
+
+    rows: up to `limit`, newest first. older: the before_id of the next
+    page, None at the end. window: True when a text search stopped at
+    `span` rows back before the page filled -- LIKE '%x%' cannot use an
+    index, so a rare word read all of logs.db (about 0.2 s per million
+    rows here, seconds on a Win7 disk) every time the page was opened.
+    Following `older` searches the next `span` rows."""
+    floor = None
+    if text:
+        low, high = _id_range()
+        if high is None:
+            return [], None, False
+        top = min(int(before_id), high + 1) if before_id else high + 1
+        floor = top - span
+        if floor <= low:
+            floor = None          # the window reaches the oldest row anyway
+    rows = query(min_level, proc, text, before_id, limit + 1, floor)
+    if len(rows) > limit:
+        return rows[:limit], rows[limit - 1]['id'], False
+    if floor is not None:
+        return rows, floor, True
+    return rows, None, False
 
 
 def _used_bytes(conn):

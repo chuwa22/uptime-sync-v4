@@ -22,7 +22,7 @@ from . import loglevel, logstore, paths
 
 FORMAT = '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s'
 DATEFMT = '%Y-%m-%d %H:%M:%S'
-PROCS = ('supervisor', 'engine', 'web', 'cli')
+PROCS = ('supervisor', 'engine', 'web')   # processes that write logs.db (CLI commands print instead)
 
 
 def _settings():

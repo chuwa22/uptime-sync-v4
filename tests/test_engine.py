@@ -20,20 +20,20 @@ class ConsiderUpdateTests(unittest.TestCase):
         self.s = {'update': {'enabled': True}}
 
     def test_installs_when_auto(self):
-        with mock.patch.object(self.e, '_install') as inst:
+        with mock.patch.object(self.e, '_start_install') as inst:
             self.e._consider_update(dict(REPLY), self.s)
         inst.assert_called_once()
 
     def test_failed_version_not_retried_unless_forced(self):
         updater.set_state(status='Failed', version='99.0.0', detail='rolled back')
-        with mock.patch.object(self.e, '_install') as inst:
+        with mock.patch.object(self.e, '_start_install') as inst:
             self.e._consider_update(dict(REPLY), self.s)
             inst.assert_not_called()
             self.e._consider_update(dict(REPLY, force_install=True), self.s)
             inst.assert_called_once()
 
     def test_grace_manual_and_kill_switch(self):
-        with mock.patch.object(self.e, '_install') as inst:
+        with mock.patch.object(self.e, '_start_install') as inst:
             self.e._consider_update(dict(REPLY), {'update': {'enabled': False}})
             self.e._consider_update(dict(REPLY, update_mode='manual'), self.s)
             self.assertEqual(updater.pending()['version'], '99.0.0')

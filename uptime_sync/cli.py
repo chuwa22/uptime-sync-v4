@@ -214,8 +214,12 @@ def cmd_install(a):
         _say('[WARN] %s can be changed by %s. The agent runs as SYSTEM on the Python in that '
              'folder, so any local user could run code as SYSTEM. Fix (as administrator):'
              % (home, ' / '.join(writers)))
-        _say('       icacls "%s" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F '
-             '*S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX /Q' % home)
+        if perms.under_user_profile(home):
+            _say('       install Python "for all users" (C:\\Program Files), then run '
+                 '`py -3 install.py` again so .venv is rebuilt on it')
+        else:
+            _say('       icacls "%s" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F '
+                 '*S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX /Q' % home)
     if a.no_autostart:
         _say('[INFO] Autostart skipped (--no-autostart). Start with `main.py run`.')
         return 0
@@ -294,8 +298,8 @@ def cmd_check(a):
 
 def cmd_logs(a):
     from . import loglevel, logstore
-    rows = logstore.query(min_level=loglevel.VALUES.get(a.level.upper(), loglevel.VALUES['INFO']),
-                          proc=a.proc or '', text=a.grep or '', limit=a.lines)
+    rows = logstore.query(min_level=loglevel.filter_value(a.level), proc=a.proc or '',
+                          text=a.grep or '', limit=a.lines)
     for r in reversed(rows):
         _say('[%s] [%s] [%s/%s] %s' % (r['time'], r['level'], r['proc'], r['logger'], r['msg']))
     return 0

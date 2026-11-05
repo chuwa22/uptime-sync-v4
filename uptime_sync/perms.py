@@ -242,27 +242,55 @@ def acl_ps_command(path):
     script = ("$a = Get-Acl -LiteralPath '%s'; foreach ($r in $a.Access) { "
               "if ($r.AccessControlType -eq 'Allow') { "
               "try { $s = $r.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } "
-              "catch { $s = '' }; '{0} {1}' -f $s, [int]$r.FileSystemRights } }" % lit)
+              "catch { $s = '' }; '{0} {1}' -f $s, [int]$r.FileSystemRights } }; "
+              "try { 'OWNER {0}' -f $a.GetOwner([System.Security.Principal.SecurityIdentifier]).Value } "
+              "catch { }" % lit)
     return ['powershell', '-NoProfile', '-NonInteractive', '-Command', script]
 
 
+# May write the base Python without that being a way up to SYSTEM.
+_TRUSTED_SIDS = frozenset((SID_SYSTEM.lstrip('*'), SID_ADMINS.lstrip('*'),
+                           'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464',  # TrustedInstaller
+                           'S-1-3-0'))   # CREATOR OWNER: a template for new files, not a grant
+
+
 def broad_writers(acl_lines):
-    """Which of Users / Authenticated Users / Everyone may write, from the
-    output of acl_ps_command (pure: unit-tested)."""
+    """Who other than SYSTEM / Administrators / TrustedInstaller may write
+    (or, as the owner, may give itself the right to write), from the output
+    of acl_ps_command (pure: unit-tested). A per-user Python install is
+    owned and writable by that one user: it is not a broad group, but the
+    SYSTEM task loading it lets that user run code as SYSTEM all the same."""
     names = {SID_USERS.lstrip('*'): 'Users', SID_AUTH_USERS: 'Authenticated Users',
              SID_EVERYONE: 'Everyone'}
     found = []
     for line in acl_lines.splitlines():
         parts = line.split()
-        if len(parts) != 2 or parts[0] not in names:
+        if len(parts) != 2:
+            continue
+        if parts[0] == 'OWNER':
+            sid = parts[1]
+            if sid not in _TRUSTED_SIDS:
+                label = 'its owner %s' % names.get(sid, sid)
+                if label not in found:
+                    found.append(label)
+            continue
+        if parts[0] in _TRUSTED_SIDS or not parts[0].startswith('S-1-'):
             continue
         try:
             rights = int(parts[1])
         except ValueError:
             continue
-        if rights & _WRITE_BITS and names[parts[0]] not in found:
-            found.append(names[parts[0]])
+        label = names.get(parts[0], parts[0])
+        if rights & _WRITE_BITS and label not in found:
+            found.append(label)
     return found
+
+
+def under_user_profile(path, system_drive=None):
+    """True for a folder inside C:\\Users\\<name> (a per-user Python install)."""
+    drive = system_drive or os.environ.get('SystemDrive') or 'C:'
+    profiles = os.path.normcase(os.path.join(drive + os.sep, 'Users')) + os.sep
+    return os.path.normcase(os.path.abspath(path)).startswith(profiles)
 
 
 def base_python_writable():
@@ -273,7 +301,10 @@ def base_python_writable():
     if not IS_WINDOWS or not home or not os.path.isdir(home):
         return home, []
     code, out = _run(acl_ps_command(home), timeout=60)
-    return home, broad_writers(out) if code == 0 else []
+    found = broad_writers(out) if code == 0 else []
+    if under_user_profile(home) and not found:
+        found = ['the user whose profile it is in (a per-user Python install)']
+    return home, found
 
 
 # -- public --------------------------------------------------------------------

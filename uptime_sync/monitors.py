@@ -174,8 +174,10 @@ def _fix_ids(items):
     return items
 
 
-def load():
-    data = read_json(paths.MONITORS_FILE, {'monitors': []})
+def load(strict=False):
+    """strict=True raises OSError when the file exists but cannot be read
+    (see util.read_json); otherwise that reads as no monitors."""
+    data = read_json(paths.MONITORS_FILE, {'monitors': []}, strict=strict)
     if isinstance(data, list):
         data = {'monitors': data}
     items = data.get('monitors') if isinstance(data, dict) else None

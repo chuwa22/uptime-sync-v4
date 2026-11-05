@@ -32,6 +32,7 @@
 </div>
 <p class="muted small">
   Newest first, {{ rows | length }} shown.
+  {% if window %}A search reads {{ '{:,}'.format(span) }} lines at a time; Older searches the next ones.{% endif %}
   {% if paged %}<a href="{{ url_for('logs', level=level, proc=proc or None, q=q or None) }}">Newest</a>{% endif %}
   {% if older %}<a href="{{ older }}">Older &rarr;</a>{% endif %}
   &middot; logs.db: {{ stats.rows }} rows, {{ (stats.bytes / 1048576) | round(1) }} MB

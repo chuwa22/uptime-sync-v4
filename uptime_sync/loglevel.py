@@ -74,6 +74,14 @@ def normalize(value):
     return name if name in LEVELS else None
 
 
+def filter_value(name, default='INFO'):
+    """Number for a "this level and up" filter (Logs page, `main.py logs
+    --level`). Unlike a setting, CRITICAL is allowed here."""
+    key = str(name or '').strip().upper()
+    key = ALIASES.get(key, key)
+    return VALUES.get(key, VALUES[default])
+
+
 def coerce(merged, warn):
     """Make merged['log_level'] / ['log_levels'] valid in place (used by
     settings.load(), so every reader sees clean values). warn(name, raw,

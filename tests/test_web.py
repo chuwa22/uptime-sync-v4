@@ -4,6 +4,7 @@ import json
 import os
 import re
 import unittest
+from unittest import mock
 
 from uptime_sync import monitors, paths, settings, util
 from uptime_sync.web import auth, create_app
@@ -244,6 +245,55 @@ class WebTests(unittest.TestCase):
         self.assertEqual(tones(payload(hb_on=True, last_ok=1, failures=2))['heartbeat'], 'bad')
         self.assertEqual(tones(payload(hb_on=True, sign='enforced'))['signing'], 'ok')
         self.assertEqual(tones(payload(hb_on=True, sign='off'))['signing'], 'warn')
+
+    def test_tile_text(self):
+        from uptime_sync.web.views import tile_text
+
+        def payload(hb_on=True, failures=0, last_ok=None, error='', since='', updated=''):
+            return {'engine': {'running': True, 'updated_at': updated}, 'counts': {'up': 2, 'enabled': 3},
+                    'heartbeat': {'enabled': hb_on, 'failures': failures, 'last_ok': last_ok, 'error': error},
+                    'signing': {'state': 'not-yet', 'since': since}, 'now': 1000}
+        t = tile_text(payload(hb_on=False))
+        self.assertEqual((t['heartbeat'], t['heartbeat_sub']), ('Off', 'reporting disabled'))
+        self.assertEqual((t['engine'], t['engine_sub'], t['counts']), ('Running', 'last cycle -', '2 / 3'))
+        self.assertEqual(tile_text(payload())['heartbeat'], 'Waiting')
+        self.assertEqual(tile_text(payload(last_ok=990))['heartbeat_sub'], 'last OK 10 s ago')
+        self.assertEqual(tile_text(payload(last_ok=700))['heartbeat_sub'], 'last OK 5 min ago')
+        t = tile_text(payload(failures=2, error='HTTP 401', last_ok=None))
+        self.assertEqual((t['heartbeat'], t['heartbeat_sub']), ('Failing', 'HTTP 401 - last OK never'))
+        t = tile_text(payload(since='2026-11-05T10:00:00+07:00', updated='2026-11-05T10:11:12+07:00'))
+        self.assertEqual((t['signing_sub'], t['engine_sub']), ('since 2026-11-05', 'last cycle 10:11:12'))
+
+    def test_first_paint_and_refresh_say_the_same(self):
+        # dashboard.html prints st.text and app.js re-renders /api/status's
+        # text: one wording, so the tiles no longer change on the first refresh.
+        self.setup_admin()
+        html = self.c.get('/').get_data(as_text=True)
+        st = json.loads(self.c.get('/api/status').get_data(as_text=True))
+        for key, value in st['text'].items():
+            self.assertIn('data-field="%s">%s<' % (key, value), html)
+
+    def test_uptime_comes_from_status_then_history(self):
+        self.setup_admin()
+        a = monitors.normalize({'name': 'a', 'type': 'PING', 'target': '192.0.2.1'})
+        b = monitors.normalize({'name': 'b', 'type': 'PING', 'target': '192.0.2.2'})
+        monitors.save([a, b])
+        util.atomic_write_json(paths.STATUS_FILE, {'updated_at': 'x', 'monitors': {
+            a['id']: {'ok': True, 'uptime': 99.5},     # this engine
+            b['id']: {'ok': False}}})                  # an engine before 4.0.9
+        util.atomic_write_json(paths.HISTORY_FILE, {a['id']: [[1, 0, 0]], b['id']: [[1, 1, 0], [2, 0, 0]]})
+        rows = {r['name']: r for r in json.loads(self.c.get('/api/status').get_data(as_text=True))['monitors']}
+        self.assertEqual((rows['a']['uptime'], rows['b']['uptime']), (99.5, 50.0))
+
+    def test_account_password_tries_are_limited(self):
+        self.setup_admin()
+        token = self.csrf('/account')
+        with mock.patch.object(auth, 'check_password', return_value=False) as check:
+            for _ in range(auth.MAX_ATTEMPTS + 2):
+                html = self.c.post('/account', data={'csrf': token, 'current': 'x' * 12, 'password': 'y' * 12,
+                                                     'confirm': 'y' * 12}).get_data(as_text=True)
+        self.assertEqual(check.call_count, auth.MAX_ATTEMPTS)   # no hash once over the limit
+        self.assertIn('Too many wrong passwords', html)
 
     def test_dashboard_tiles_carry_tones(self):
         self.setup_admin()
@@ -648,6 +698,28 @@ class IconTests(unittest.TestCase):
             self.assertIn('<svg class="ic"', html, url)
             self.assertIn('ic8-dashboard', html, url)
 
+
+    def test_icons_chosen_at_render_time(self):
+        # test_templates_name_only_known_icons sees only icon('literal'):
+        # the row buttons (icon(ic)) and the flash icon pick theirs while
+        # rendering, so render them, enabled and paused, with every category.
+        _env.reset()
+        paths.ensure_dirs()
+        auth._attempts.clear()
+        self.app = create_app()
+        self.app.testing = True
+        self.c = self.app.test_client()
+        WebTests.setup_admin(self)
+        on = monitors.normalize({'name': 'on', 'type': 'PING', 'target': '192.0.2.1'})
+        off = monitors.normalize({'name': 'off', 'type': 'PING', 'target': '192.0.2.2', 'enabled': False})
+        monitors.save([on, off])
+        with self.c.session_transaction() as sess:
+            sess['_flashes'] = [('ok', 'a'), ('warn', 'b'), ('info', 'c')]
+        r = self.c.get('/monitors')
+        self.assertEqual(r.status_code, 200)
+        html = r.get_data(as_text=True)
+        for name in ('zap', 'pause', 'play', 'copy', 'trash', 'check', 'alert', 'info'):
+            self.assertIn('ic8-%s"' % name, html, name)
 
 if __name__ == '__main__':
     unittest.main()

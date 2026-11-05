@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 
 from .. import __version__, log as logsetup, loglevel, logstore, monitors, paths, procs, settings, signing, updater
-from ..util import active_server_url, deep_merge, is_local_host, is_local_server, read_json, touch
+from ..util import active_server_url, deep_merge, is_local_host, is_local_server, read_json, touch, uptime_pct
 from . import auth
 
 log = logging.getLogger('web')
@@ -23,12 +23,6 @@ def _engine_state():
     pid = procs.read_pid(paths.child_pid_file('engine'))
     alive = procs.pid_alive(pid)
     return status, alive
-
-
-def _uptime(history):
-    if not history:
-        return None
-    return round(100.0 * sum(1 for h in history if h[1]) / len(history), 1)
 
 
 def mask_push_url(url):
@@ -69,20 +63,55 @@ def tones(p):
     }
 
 
+def _ago(epoch, now):
+    if not epoch:
+        return 'never'
+    s = max(0, int(round(now - epoch)))
+    return '%d s ago' % s if s < 90 else '%d min ago' % int(round(s / 60.0))
+
+
+def tile_text(p):
+    """Every dashboard tile's words, for the first paint and for app.js's
+    15 s refresh alike (they used to word it differently)."""
+    hb = p['heartbeat']
+    updated = p['engine']['updated_at']
+    since = p['signing']['since']
+    if not hb['enabled']:
+        hb_value, hb_sub = 'Off', 'reporting disabled'
+    else:
+        hb_value = ('Failing' if hb['failures'] else 'Error' if hb.get('error') else
+                    'OK' if hb['last_ok'] else 'Waiting')
+        hb_sub = (hb['error'] + ' - ' if hb.get('error') else '') + 'last OK ' + _ago(hb['last_ok'], p['now'])
+    return {
+        'engine': 'Running' if p['engine']['running'] else 'Stopped',
+        'engine_sub': 'last cycle ' + (updated[11:19] if updated else '-'),
+        'counts': '%d / %d' % (p['counts']['up'], p['counts']['enabled']),
+        'heartbeat': hb_value, 'heartbeat_sub': hb_sub,
+        'signing': p['signing']['state'],
+        'signing_sub': 'since ' + since[:10] if since else '',
+    }
+
+
 def _status_payload():
     status, alive = _engine_state()
-    history = read_json(paths.HISTORY_FILE, {}) or {}
     results = status.get('monitors', {})
+    history = None     # history.json only for an engine that predates status 'uptime'
     rows = []
     for m in monitors.load():
         r = results.get(m['id'], {})
+        if 'uptime' in r:
+            uptime = r['uptime']
+        else:
+            if history is None:
+                history = read_json(paths.HISTORY_FILE, {}) or {}
+            uptime = uptime_pct(history.get(m['id'], []))
         rows.append({
             'id': m['id'], 'name': m['name'], 'type': m['type'], 'target': m['target'],
             'enabled': m['enabled'],
             'state': ('paused' if not m['enabled'] else
                       'unknown' if 'ok' not in r else 'up' if r['ok'] else 'down'),
             'ms': r.get('ms'), 'checked_at': r.get('checked_at', ''),
-            'uptime': _uptime(history.get(m['id'], [])),
+            'uptime': uptime,
         })
     s = settings.load()
     hb = status.get('heartbeat', {})
@@ -104,6 +133,7 @@ def _status_payload():
         'now': int(time.time()),
     }
     p['tones'] = tones(p)
+    p['text'] = tile_text(p)
     return p
 
 
@@ -177,7 +207,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                      'On the agent computer run: main.py reset-password')
         elif request.method == 'POST':
             ip = auth.client_ip()
-            if auth.rate_limited(ip):
+            if not auth.begin_attempt(ip):
                 error = 'Too many failed attempts. Wait a few minutes and try again.'
             else:
                 name = auth.canonical_name(request.form.get('username', '').strip())
@@ -186,7 +216,6 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                     auth.clear_failures(ip)
                     auth.login(name, user)
                     return redirect(safe_next(request.args.get('next', '')) or url_for('dashboard'))
-                auth.note_failure(ip)
                 log.warning('Failed login for %r from %s', name[:40], ip)
                 error = 'Wrong username or password.'
         # After a failed attempt, keep the user name typed (escaped by Jinja).
@@ -474,9 +503,15 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         name, user = auth.current_user()
         error = ''
         if request.method == 'POST':
-            if not auth.check_password(request.form.get('current', ''), user.get('password')):
+            # Same limit as sign-in, per account: a stolen session cookie
+            # must not become an unlimited password oracle.
+            key = 'account:' + name
+            if not auth.begin_attempt(key):
+                error = 'Too many wrong passwords. Wait a few minutes and try again.'
+            elif not auth.check_password(request.form.get('current', ''), user.get('password')):
                 error = 'Current password is wrong.'
             else:
+                auth.clear_failures(key)
                 error = auth.password_problem(request.form.get('password', ''),
                                               request.form.get('confirm', ''))
             if not error:
@@ -500,14 +535,13 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         before = request.args.get('before', type=int)
         if before is not None and not 0 < before < 2 ** 63:
             before = None    # sqlite integers are 64-bit; bigger raises OverflowError
-        rows = logstore.query(min_level=LOG_LEVELS[level], proc=proc, text=text,
-                              before_id=before, limit=LOG_PAGE + 1)
-        more = len(rows) > LOG_PAGE
-        rows = rows[:LOG_PAGE]
+        rows, older_id, window = logstore.page(min_level=LOG_LEVELS[level], proc=proc, text=text,
+                                               before_id=before, limit=LOG_PAGE)
         older = url_for('logs', level=level, proc=proc or None, q=text or None,
-                        before=rows[-1]['id']) if more else None
+                        before=older_id) if older_id else None
         return render_template('logs.html', rows=rows, level=level, proc=proc, q=text,
                                levels=list(LOG_LEVELS), procs=logsetup.PROCS, older=older,
+                               window=window, span=logstore.SEARCH_SPAN,
                                recording=loglevel.describe(settings.load()),
                                paged=bool(before), stats=logstore.stats(),
                                files=logsetup.text_files())
