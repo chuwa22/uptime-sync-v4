@@ -6,16 +6,16 @@
   <a class="button primary" href="{{ url_for('monitor_new') }}">Add monitor</a>
 </div>
 <div class="card flush">
-  <table class="grid">
+  <table class="grid stack">
     <thead><tr><th>Name</th><th>Type</th><th>Target</th><th>Push URL</th><th>State</th><th></th></tr></thead>
     <tbody>
     {% for m in items %}
       <tr>
-        <td><a href="{{ url_for('monitor_edit', mid=m.id) }}">{{ m.name }}</a></td>
-        <td>{{ m.type }}</td>
-        <td class="mono">{{ m.target }}{% if m.port %}:{{ m.port }}{% endif %}</td>
-        <td class="mono small">{{ m.push_display }}</td>
-        <td><span class="pill {{ 'up' if m.enabled else 'paused' }}">{{ 'enabled' if m.enabled else 'paused' }}</span></td>
+        <td class="title"><a href="{{ url_for('monitor_edit', mid=m.id) }}">{{ m.name }}</a></td>
+        <td data-label="Type">{{ m.type }}</td>
+        <td class="mono" data-label="Target">{{ m.target }}{% if m.port %}:{{ m.port }}{% endif %}</td>
+        <td class="mono small push wide" data-label="Push">{{ m.push_display }}</td>
+        <td class="lead"><span class="pill {{ 'up' if m.enabled else 'paused' }}">{{ 'enabled' if m.enabled else 'paused' }}</span></td>
         <td class="row-actions">
           {% for action, label, confirm in [('monitor_test', 'Test', ''), ('monitor_toggle', 'Pause' if m.enabled else 'Enable', ''), ('monitor_clone', 'Clone', ''), ('monitor_delete', 'Delete', 'Delete ' ~ m.name ~ '?')] %}
           <form method="post" action="{{ url_for(action, mid=m.id) }}" class="inline">

@@ -16,6 +16,7 @@
   --accent: #2f6fe4; --accent-text: #ffffff; --up: #1f9d55; --down: #d64545; --warn: #c98a12;
   --paused: #8a94a3; --field: #ffffff; --code: #f0f3f7;
   --radius: 10px; --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+  color-scheme: light dark;   /* dark scrollbars and form controls in dark mode */
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -182,8 +183,8 @@ ul.plain { list-style: none; padding: 0; }
 input::placeholder, textarea::placeholder { color: #9aa4b2; opacity: 1; }
 input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
 .examples table.grid th, .examples table.grid td { font-size: 12.75px; padding: 6.75px 13.5px; }
-/* On a phone the description column would shrink to a word per line; keep it
-   readable and let the card scroll sideways instead (.card.flush overflow). */
+/* Below the phone breakpoint the rows stack (table.stack); between it and a
+   wide screen, keep the description readable and let the card scroll. */
 .examples table.grid td:last-child { min-width: 220px; }
 .examples table.grid td { white-space: normal; }
 
@@ -193,9 +194,9 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
   .brand { display: flex; align-items: center; padding: 0; }
   .topbar .nav { display: flex; align-items: center; gap: 4.5px; flex-wrap: wrap; }
   .topbar .nav a { margin-left: 0; }
-  .head { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 10.5px 15px; flex-wrap: wrap; }
   .head h1 { margin: 0; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 13.5px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 13.5px; }
   .tile { width: auto; min-width: 0; margin: 0; }
   .banner { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
   .banner > span { padding: 0; }
@@ -211,4 +212,31 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
   .actions > * { margin-right: 0; }
   form.filters { display: flex; flex-wrap: wrap; gap: 7.5px; align-items: center; }
   form.filters select, form.filters input, form.filters button { margin: 0; }
+
+  /* Tablets: a push URL has no break points and the four row buttons stay on
+     one line, so the Monitors table needs about 1050px. Let both wrap. */
+  @media (max-width: 1000px) {
+    table.grid td.push { word-break: break-all; min-width: 150px; }
+    table.grid td.row-actions { white-space: normal; min-width: 135px; }   /* two buttons a line */
+  }
+  /* Phones: each row of a table.stack becomes a small card. The name
+     (td.title) leads, the status (td.lead) sits at its right, the other
+     cells flow below with their data-label, td.wide takes a line of its own. */
+  @media (max-width: 640px) {
+    table.stack thead { display: none; }
+    table.stack, table.stack tbody { display: block; }
+    table.stack tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4.5px 13.5px;
+      padding: 10.5px 13.5px; border-bottom: 1px solid #e2e7ee; border-bottom: 1px solid var(--line); }
+    table.stack tr:last-child { border-bottom: 0; }
+    table.stack td { display: block; padding: 0; border: 0; text-align: left; }
+    /* 55% leaves room for the status only, so the next cell starts a new line. */
+    table.stack td.title { order: -2; flex: 1 1 55%; min-width: 0; font-weight: 600; }
+    table.stack td.lead { order: -1; }
+    table.stack td.wide, table.stack td.empty, table.stack td.row-actions { flex-basis: 100%; }
+    table.stack td.empty { text-align: center; }
+    table.stack td.row-actions { text-align: left; white-space: normal; }
+    table.stack td[data-label]::before { content: attr(data-label); margin-right: 6px;
+      font-family: -apple-system, "Segoe UI", Roboto, Tahoma, sans-serif; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .04em; color: #6b7686; color: var(--muted); }
+  }
 }

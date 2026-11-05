@@ -6,6 +6,13 @@
   - The Local URL must point to this network: localhost, a private, link-local or CGNAT address, or a name that resolves only to such addresses. The heartbeat checks this again on every beat, so a name that later points to the internet gets its certificate checked again, with a warning.
   - The same rule applies to the update download from the server, which is still off unless `update.allow_server_download` is set. GitHub's certificate is always checked. The reply-signing latch follows the host of the chosen URL.
   - urllib3's "unverified HTTPS request" warning is turned off. It went to the engine's stderr log on every request to a server or monitor that was set not to verify.
+- Improvement (web, phones and tablets): the UI now fits small screens.
+  - Below 640px, each row of the Dashboard, Monitors, Logs and monitor-examples tables shows as a small card: name and status on the first line, the other values below with small labels, buttons on a line of their own. Before, these tables scrolled sideways, so the Edit/Pause/Delete buttons were off-screen.
+  - The dashboard tiles show 2 per row on a phone and 4 on a tablet.
+  - Up to 1000px, the Push URL and the row buttons wrap, so the Monitors table fits a tablet without scrolling.
+  - On the Logs page, the filters move under the title when they do not fit beside it.
+  - Scrollbars and form controls follow dark mode.
+  - IE8-11 keep the plain tables: these rules are inside @supports.
 - Fix (web, since 4.0.0): in the templates, `s.update` was Jinja's lookup of the dict method `update`, not the setting.
   - The "Install updates offered by uptime-monitor" box always showed unticked, so saving the Settings page turned updates OFF on that box (`"update": {"enabled": false}` in data/settings.json).
   - The dashboard never showed the Install button for an update waiting for manual install.

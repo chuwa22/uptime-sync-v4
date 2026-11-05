@@ -58,14 +58,14 @@
 </form>
 
 <div class="card flush examples">
-  <table class="grid">
+  <table class="grid stack">
     <thead><tr><th>Example</th><th>Type</th><th>Target</th><th>Port</th><th>What it tells you</th></tr></thead>
     <tbody>
-      <tr><td>Router</td><td>PING</td><td class="mono">192.168.1.1</td><td>-</td><td>the LAN gateway answers</td></tr>
-      <tr><td>WAN via DNS</td><td>DNS</td><td class="mono">1.1.1.1</td><td>-</td><td>the internet line works, even where the ISP drops ping (probe: auto)</td></tr>
-      <tr><td>Server port</td><td>TCP PORT</td><td class="mono">192.168.1.10</td><td>3389</td><td>a service is listening: RDP 3389, SQL 1433, SMTP 25</td></tr>
-      <tr><td>Intranet page</td><td>HTTP</td><td class="mono">intranet.local</td><td>8080</td><td>the web app answers with HTTP 200-399</td></tr>
-      <tr><td>Web site</td><td>HTTPS</td><td class="mono">example.com</td><td>-</td><td>the site answers over TLS (200-399); with Verify TLS on, warns before the certificate expires</td></tr>
+      <tr><td class="title">Router</td><td data-label="Type">PING</td><td class="mono" data-label="Target">192.168.1.1</td><td data-label="Port">-</td><td class="wide">the LAN gateway answers</td></tr>
+      <tr><td class="title">WAN via DNS</td><td data-label="Type">DNS</td><td class="mono" data-label="Target">1.1.1.1</td><td data-label="Port">-</td><td class="wide">the internet line works, even where the ISP drops ping (probe: auto)</td></tr>
+      <tr><td class="title">Server port</td><td data-label="Type">TCP PORT</td><td class="mono" data-label="Target">192.168.1.10</td><td data-label="Port">3389</td><td class="wide">a service is listening: RDP 3389, SQL 1433, SMTP 25</td></tr>
+      <tr><td class="title">Intranet page</td><td data-label="Type">HTTP</td><td class="mono" data-label="Target">intranet.local</td><td data-label="Port">8080</td><td class="wide">the web app answers with HTTP 200-399</td></tr>
+      <tr><td class="title">Web site</td><td data-label="Type">HTTPS</td><td class="mono" data-label="Target">example.com</td><td data-label="Port">-</td><td class="wide">the site answers over TLS (200-399); with Verify TLS on, warns before the certificate expires</td></tr>
     </tbody>
   </table>
 </div>

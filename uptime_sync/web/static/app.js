@@ -186,9 +186,10 @@
     var s = Math.max(0, Math.round(now - epoch));
     return s < 90 ? s + ' s ago' : Math.round(s / 60) + ' min ago';
   }
-  function cell(text, cls) {
+  function cell(text, cls, label) {
     var td = document.createElement('td');
     if (cls) { td.className = cls; }
+    if (label) { td.setAttribute('data-label', label); }
     setText(td, text);
     return td;
   }
@@ -227,16 +228,17 @@
       var tr = document.createElement('tr');
       var td = document.createElement('td');
       var pill = document.createElement('span');
+      td.className = 'lead';
       pill.className = 'pill ' + m.state;
       setText(pill, m.state);
       td.appendChild(pill);
       tr.appendChild(td);
-      tr.appendChild(cell(m.name));
-      tr.appendChild(cell(m.type));
-      tr.appendChild(cell(m.target, 'mono'));
-      tr.appendChild(cell(m.ms === null || m.ms === undefined ? '-' : m.ms + ' ms', 'num'));
-      tr.appendChild(cell(m.uptime === null || m.uptime === undefined ? '-' : m.uptime + '%', 'num'));
-      tr.appendChild(cell(m.checked_at ? m.checked_at.slice(11, 19) : '-', 'muted'));
+      tr.appendChild(cell(m.name, 'title'));
+      tr.appendChild(cell(m.type, '', 'Type'));
+      tr.appendChild(cell(m.target, 'mono', 'Target'));
+      tr.appendChild(cell(m.ms === null || m.ms === undefined ? '-' : m.ms + ' ms', 'num', 'Response'));
+      tr.appendChild(cell(m.uptime === null || m.uptime === undefined ? '-' : m.uptime + '%', 'num', 'Uptime'));
+      tr.appendChild(cell(m.checked_at ? m.checked_at.slice(11, 19) : '-', 'muted', 'Checked'));
       body.appendChild(tr);
     }
   }

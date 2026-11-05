@@ -162,6 +162,12 @@ README.md covers usage. This file covers the rules for changing the code.
   - In templates, never write `x.update`, `x.items`, `x.keys` and the like for a dict
     key. Jinja finds the dict method first. Write `x['update']`
     (`DictMethodNameTests` enforces this).
+  - **Phones (4.0.9).** A `table.stack` becomes one small card per row below
+    640px. Give its cells a role: `title` (the name, first line), `lead` (the
+    status, right of the name), `wide` (a line of its own), or a `data-label`
+    that is printed before the value. The dashboard rows that app.js redraws
+    need the same classes and labels (`PhoneLayoutTests`). These rules sit
+    inside `@supports`, so IE keeps the plain table.
   - Every POST carries the `csrf` form field.
   - Admin-only routes use `@auth.admin_required`.
   - A viewer never sees a push token. Use `mask_push_url`.

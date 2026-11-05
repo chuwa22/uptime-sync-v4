@@ -35,16 +35,16 @@
 {% endif %}
 
 <div class="card flush">
-  <table class="grid">
+  <table class="grid stack">
     <thead><tr><th>Status</th><th>Name</th><th>Type</th><th>Target</th><th class="num">Response</th><th class="num">Uptime</th><th>Checked</th></tr></thead>
     <tbody data-rows>
     {% for m in st.monitors %}
       <tr data-id="{{ m.id }}">
-        <td><span class="pill {{ m.state }}">{{ m.state }}</span></td>
-        <td>{{ m.name }}</td><td>{{ m.type }}</td><td class="mono">{{ m.target }}</td>
-        <td class="num">{{ m.ms if m.ms is not none else '-' }}{% if m.ms is not none %} ms{% endif %}</td>
-        <td class="num">{{ m.uptime if m.uptime is not none else '-' }}{% if m.uptime is not none %}%{% endif %}</td>
-        <td class="muted">{{ m.checked_at[11:19] if m.checked_at else '-' }}</td>
+        <td class="lead"><span class="pill {{ m.state }}">{{ m.state }}</span></td>
+        <td class="title">{{ m.name }}</td><td data-label="Type">{{ m.type }}</td><td class="mono" data-label="Target">{{ m.target }}</td>
+        <td class="num" data-label="Response">{{ m.ms if m.ms is not none else '-' }}{% if m.ms is not none %} ms{% endif %}</td>
+        <td class="num" data-label="Uptime">{{ m.uptime if m.uptime is not none else '-' }}{% if m.uptime is not none %}%{% endif %}</td>
+        <td class="muted" data-label="Checked">{{ m.checked_at[11:19] if m.checked_at else '-' }}</td>
       </tr>
     {% else %}
       <tr><td colspan="7" class="empty">No monitors yet.{% if is_admin %} <a href="{{ url_for('monitor_new') }}">Add one</a>.{% endif %}</td></tr>

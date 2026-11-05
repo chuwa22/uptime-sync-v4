@@ -428,3 +428,47 @@ class DictMethodNameTests(unittest.TestCase):
             with open(os.path.join(tdir, name), encoding='utf-8') as f:
                 for i, line in enumerate(f, 1):
                     self.assertIsNone(bad.search(line), '%s:%d %s' % (name, i, line.strip()))
+
+
+class PhoneLayoutTests(unittest.TestCase):
+    """Below 640px each row of a table.stack is shown as a small card: the
+    cell classes (title, lead, wide) and data-label carry that layout."""
+
+    ROLE = re.compile(r'\b(title|lead|wide|empty|row-actions)\b')
+
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        auth._attempts.clear()
+        self.app = create_app()
+        self.app.testing = True
+        self.c = self.app.test_client()
+        WebTests.setup_admin(self)
+        monitors.save([monitors.normalize({'name': 'g', 'type': 'PING', 'target': '1.1.1.1',
+                                           'push_url': 'https://kuma.example.com/api/push/abc'})])
+
+    def test_every_stacked_cell_has_a_role_or_label(self):
+        for path in ('/', '/monitors', '/monitors/new'):
+            html = self.c.get(path).get_data(as_text=True)
+            tables = re.findall(r'<table class="[^"]*\bstack\b[^"]*">(.*?)</table>', html, re.S)
+            self.assertTrue(tables, path)
+            for table in tables:
+                for td in re.findall(r'<td\b[^>]*>', table.split('</thead>')[-1]):
+                    self.assertTrue('data-label=' in td or self.ROLE.search(td), '%s %s' % (path, td))
+        # Log rows read fine without labels; the message takes its own line.
+        logs = _read('templates', 'logs.html')
+        self.assertIn('<table class="logtable stack">', logs)
+        self.assertIn('<td class="wide"><pre class="msg">', logs)
+
+    def test_live_dashboard_rows_keep_the_labels(self):
+        js = _read('static', 'app.js')
+        for label in ('Type', 'Target', 'Response', 'Uptime', 'Checked'):
+            self.assertIn("'%s')" % label, js)
+        self.assertIn("cell(m.name, 'title')", js)
+        self.assertIn("td.className = 'lead'", js)
+
+    def test_phone_rules_are_hidden_from_ie(self):
+        css = re.sub(r'/\*.*?\*/', '', _read('static', 'app.css'), flags=re.S)
+        outside, inside = _supports_split(css)
+        self.assertIn('@media (max-width: 640px)', inside)
+        self.assertNotIn('max-width: 640px', outside)

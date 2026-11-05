@@ -16,16 +16,16 @@
   </form>
 </div>
 <div class="card flush">
-  <table class="logtable">
+  <table class="logtable stack">
     <thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Message</th></tr></thead>
     <tbody>
     {% for r in rows %}
       <tr class="{{ 'l-err' if r.level in ('ERROR', 'CRITICAL') else 'l-warn' if r.level == 'WARNING' else '' }}">
         <td class="nowrap">{{ r.time }}</td><td>{{ r.level }}</td>
-        <td class="nowrap">{{ r.proc }}/{{ r.logger }}</td><td><pre class="msg">{{ r.msg }}</pre></td>
+        <td class="nowrap">{{ r.proc }}/{{ r.logger }}</td><td class="wide"><pre class="msg">{{ r.msg }}</pre></td>
       </tr>
     {% else %}
-      <tr><td colspan="4" class="muted">No log lines match.</td></tr>
+      <tr><td colspan="4" class="muted wide">No log lines match.</td></tr>
     {% endfor %}
     </tbody>
   </table>
