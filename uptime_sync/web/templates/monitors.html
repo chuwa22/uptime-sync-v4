@@ -18,13 +18,16 @@
         <td class="mono" data-label="Target">{{ m.target }}{% if m.port %}:{{ m.port }}{% endif %}</td>
         <td class="mono small push wide" data-label="Push">{{ m.push_display }}</td>
         <td class="lead"><span class="pill {{ 'up' if m.enabled else 'paused' }}">{{ 'enabled' if m.enabled else 'paused' }}</span></td>
+        {#- Icon-only buttons: title is the tooltip, aria-label names the
+            action and the monitor for screen readers. #}
         <td class="row-actions">
-          {% for action, label, ic, confirm in [('monitor_test', 'Test', 'zap', ''), ('monitor_toggle', 'Pause' if m.enabled else 'Enable', 'pause' if m.enabled else 'play', ''), ('monitor_clone', 'Clone', 'copy', ''), ('monitor_delete', 'Delete', 'trash', 'Delete ' ~ m.name ~ '?')] %}
+          <a class="button icon-btn first" href="{{ url_for('monitor_edit', mid=m.id) }}" title="Edit" aria-label="Edit {{ m.name }}">{{ icon('edit', 15) }}</a>
+          {%- for action, label, ic, confirm in [('monitor_test', 'Test now', 'zap', ''), ('monitor_toggle', 'Pause' if m.enabled else 'Enable', 'pause' if m.enabled else 'play', ''), ('monitor_clone', 'Clone', 'copy', ''), ('monitor_delete', 'Delete', 'trash', 'Delete ' ~ m.name ~ '?')] %}
           <form method="post" action="{{ url_for(action, mid=m.id) }}" class="inline">
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <button class="small{{ ' danger' if action == 'monitor_delete' }}"{% if confirm %} data-confirm="{{ confirm }}"{% endif %}>{{ icon(ic, 14) }}{{ label }}</button>
+            <button class="icon-btn{{ ' danger' if action == 'monitor_delete' }}" title="{{ label }}" aria-label="{{ label }} {{ m.name }}"{% if confirm %} data-confirm="{{ confirm }}"{% endif %}>{{ icon(ic, 15) }}</button>
           </form>
-          {% endfor %}
+          {%- endfor %}
         </td>
       </tr>
     {% else %}

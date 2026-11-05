@@ -718,8 +718,25 @@ class IconTests(unittest.TestCase):
         r = self.c.get('/monitors')
         self.assertEqual(r.status_code, 200)
         html = r.get_data(as_text=True)
-        for name in ('zap', 'pause', 'play', 'copy', 'trash', 'check', 'alert', 'info'):
+        for name in ('edit', 'zap', 'pause', 'play', 'copy', 'trash', 'check', 'alert', 'info'):
             self.assertIn('ic8-%s"' % name, html, name)
+
+    def test_row_actions_are_icon_only_with_names(self):
+        """Each Monitors row: an Edit link plus Test / Pause / Clone / Delete,
+        icon only, each with a tooltip and an aria-label naming the monitor."""
+        self.test_icons_chosen_at_render_time()
+        html = self.c.get('/monitors').get_data(as_text=True)
+        cells = re.findall(r'<td class="row-actions">(.*?)</td>', html, re.S)
+        self.assertEqual(len(cells), 2)
+        mid = monitors.load()[0]['id']
+        self.assertIn('href="/monitors/%s/edit"' % mid, cells[0])
+        for label in ('Edit on', 'Test now on', 'Pause on', 'Clone on', 'Delete on'):
+            self.assertIn('aria-label="%s"' % label, cells[0], label)
+        self.assertIn('aria-label="Enable off"', cells[1])
+        for cell in cells:
+            # nothing but markup between the tags: no visible label text
+            text = re.sub(r'<!--.*?-->|<[^>]+>', '', cell, flags=re.S)
+            self.assertEqual(text.strip(), '', text)
 
 if __name__ == '__main__':
     unittest.main()

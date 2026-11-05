@@ -34,6 +34,7 @@
 - Feature (web, top bar): the version shows after the site name, for example "v4.0.9".
 - Feature (web, top bar): the user name opens a menu that shows "Signed in as <name> (<role>)", with Account and Sign out. Click outside it or press Escape to close it. On a narrow screen it opens to the right so it stays on screen.
   - Without JavaScript, and in IE8-11, the name links to Account and Sign out sits next to it, as before. The menu is a div, not <details>, because IE8 cannot style unknown tags.
+- Improvement (web, Monitors): each row's buttons are icons only (Edit, Test now, Pause/Enable, Clone, Delete), so the five fit on one line, also on a tablet. The name of each shows as a tooltip and is read out by screen readers with the monitor's name. Edit is new: before, only the monitor's name led to its form.
 - Feature (web): a sun/moon button switches between light and dark mode. It is the last item in the top bar, and in the top-right corner of the sign-in and setup pages.
   - The choice is kept in this browser only (localStorage). With no choice saved, the page follows the system setting, as before.
   - static/theme.js applies the saved choice in <head>, before the page is drawn, so the page never flashes the other theme. It is a file because the CSP allows no inline script.
