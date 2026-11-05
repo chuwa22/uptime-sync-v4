@@ -123,6 +123,9 @@ README.md covers usage. This file covers the rules for changing the code.
   - `require_signed_response` can be true, false or "auto". With "auto", once a
     reply has been signed, unsigned replies are refused.
   - The latch fingerprint format is shared with 3.6.22 so an import keeps it.
+  - Nothing from a reply that `may_act()` refuses is used, not even
+    `next_check_in`. Replies are read with `stream=True`, at most
+    `heartbeat.MAX_REPLY` decoded bytes and `READ_DEADLINE` seconds.
 - **Update policy (`updater.resolve` / `check_redirect`).**
   - A GitHub URL must equal `github_url(repo, version)` exactly.
   - A GitHub redirect may only go to https `github.com` or
@@ -203,7 +206,9 @@ README.md covers usage. This file covers the rules for changing the code.
   - **Levels (4.0.9) live in `loglevel.py` only.** `log_level` is the global
     level; `log_levels` = `{part: level}` overrides it per part, where a part
     is a logger name from `loglevel.COMPONENTS` (`libraries` = urllib3,
-    waitress, werkzeug, WARNING unless set). A new `getLogger('x')` needs an
+    waitress, werkzeug, WARNING unless set, and never below INFO:
+    urllib3's DEBUG line is the request URL with the push token in it;
+    `loglevel.choices(part)` is what a part may be set to). A new `getLogger('x')` needs an
     entry in COMPONENTS, or `LogLevelTests` fails. Never write a list of
     level names elsewhere: use `loglevel.LEVELS` / `normalize()` / `VALUES`.
   - `settings.load()` cleans both keys (`loglevel.coerce`), so readers see
@@ -231,8 +236,22 @@ README.md covers usage. This file covers the rules for changing the code.
     `updater.recover_interrupted()` runs at every supervisor start, right after
     the lock. Every move out happens before any move in. Keep that order, because
     recovery relies on it to tell old files from new ones.
-  - The supervisor restarts an engine whose `run/status.json` is older than
-    3 x check_interval + 60 s. The engine must keep writing it every cycle.
+  - The supervisor restarts an engine whose `run/status.json` has not changed
+    for 3 x check_interval + 60 s, timed by `time.monotonic()` (never compare
+    an mtime with `time.time()`: w32time steps the clock). The engine must keep
+    writing it every cycle, and touches it when the write fails (full disk).
+  - EXIT_STUCK (5) is the engine curing a hung check: restart in 1 s, no
+    crash count, no backoff.
+  - The supervisor loop body is `_tick()`, wrapped so one exception is logged
+    (at most once a minute) and the loop goes on: the supervisor exiting
+    stops every healthy child. Children are started by `_tick()`, and a
+    failed Popen gets the normal backoff.
+  - A new version is rolled back after `UPDATE_MAX_CRASHES` engine crashes,
+    or when its supervisor starts more than that many times while the state
+    is still `Applied` (`supervisor_starts`, reset by `apply()`).
+  - `log.setup()` sets `threading.excepthook`, so a dying thread is logged.
+  - `time.monotonic()` can start near 0 in a new process: never use 0.0 as
+    "long ago" in a throttle; use None.
 - **Reporting server URL (4.0.9).** `remote.url` is the Public URL and
   `remote.local_url` is the Local one. Always read the URL in use through
   `util.active_server_url(remote)`: heartbeat, signing latch and updater all do.

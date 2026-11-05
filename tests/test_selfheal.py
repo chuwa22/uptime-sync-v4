@@ -402,6 +402,13 @@ class FakeReply:
     def json(self):
         return json.loads(self.content.decode('utf-8'))
 
+    def iter_content(self, n):
+        for i in range(0, len(self.content), n):
+            yield self.content[i:i + n]
+
+    def close(self):
+        self.closed = True
+
 
 class HeartbeatSendTests(unittest.TestCase):
     def setUp(self):
@@ -678,10 +685,17 @@ class SupervisorTests(unittest.TestCase):
         util.touch(paths.STATUS_FILE, '{}')
         sup._check_pulse()
         child.stop.assert_not_called()                 # fresh status file
+        # The wall clock stepped back 10000 s (w32time): the file's mtime now
+        # looks ancient, but it CHANGED, so the engine is alive.
         old = time.time() - 10000
         os.utime(paths.STATUS_FILE, (old, old))
-        with self.assertLogs('supervisor', 'ERROR'):
-            sup._check_pulse()
+        sup._check_pulse()
+        child.stop.assert_not_called()
+        # Unchanged for longer than 3 intervals + 60 s of monotonic time: stalled.
+        later = time.monotonic() + 3 * settings.load()['check_interval'] + 61
+        with mock.patch.object(supervisor.time, 'monotonic', return_value=later):
+            with self.assertLogs('supervisor', 'ERROR'):
+                sup._check_pulse()
         child.stop.assert_called_once_with()
 
 

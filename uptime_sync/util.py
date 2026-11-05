@@ -43,13 +43,27 @@ def atomic_write_text(path, text, private=False):
             os.fsync(f.fileno())
         if private and os.name != 'nt':
             os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
+        _replace(tmp, path)
     except BaseException:
         try:
             os.remove(tmp)
         except OSError:
             pass
         raise
+
+
+def _replace(src, dst, attempts=5):
+    """os.replace, retried on Windows: it fails with a sharing violation
+    while another process has `dst` open for a moment (the web reading
+    status.json or update_state.json; an antivirus scan)."""
+    for i in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if os.name != 'nt' or i == attempts - 1:
+                raise
+            time.sleep(0.05 * (i + 1))
 
 
 def atomic_write_json(path, data, private=False, backup=False, compact=False):

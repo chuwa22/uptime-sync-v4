@@ -38,7 +38,7 @@
           <td class="wide muted">{{ what }}</td>
           <td class="lead"><select name="level_{{ part }}" aria-label="Level for {{ part }}" title="Level for {{ part }}">
             <option value="">{{ 'Default (' ~ library_default ~ ')' if part == 'libraries' else 'Same as Log level' }}</option>
-            {% for l in log_levels %}<option{{ ' selected' if l == own }}>{{ l }}</option>{% endfor %}
+            {% for l in level_choices(part) %}<option{{ ' selected' if l == own }}>{{ l }}</option>{% endfor %}
           </select></td>
         </tr>
       {% endfor %}

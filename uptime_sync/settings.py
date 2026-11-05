@@ -151,6 +151,41 @@ def _coerce(merged, base):
         node[path[-1]] = value
 
 
+# Defaults whose type is mixed on purpose (auto / true / false).
+_ANY_TYPE = frozenset({'remote.require_signed_response'})
+
+
+def _fix_types(merged, base, prefix=''):
+    """A value whose type differs from its default is replaced by the
+    default, with one warning: `"web": null` in a hand-edited file made the
+    supervisor raise on every start (so no engine ran at all), and
+    `"remote": null` killed the heartbeat thread. NUMERIC values are left to
+    _coerce(), which converts "60" instead of discarding it."""
+    numeric = {'.'.join(p) for p, _k, _lo, _hi in NUMERIC}
+    for key, dflt in base.items():
+        name = prefix + key
+        if key not in merged or name in _ANY_TYPE or name in numeric:
+            continue
+        value = merged[key]
+        if isinstance(dflt, dict):
+            if isinstance(value, dict):
+                _fix_types(value, dflt, name + '.')
+                continue
+        elif isinstance(dflt, bool):
+            if isinstance(value, bool):
+                continue
+        elif isinstance(dflt, str):
+            if isinstance(value, str):
+                continue
+        else:
+            continue
+        if (name, repr(value)) not in _warned:
+            _warned.add((name, repr(value)))
+            log.warning('Setting %s = %r has the wrong type (%s expected) - using the default %r',
+                        name, value, type(dflt).__name__, dflt)
+        merged[key] = copy.deepcopy(dflt)
+
+
 def _warn_once(name, raw, used):
     if (name, repr(raw)) not in _warned:
         _warned.add((name, repr(raw)))
@@ -168,6 +203,7 @@ def load():
     """Merged settings with .env credentials applied. A fresh copy."""
     base = defaults()
     merged = deep_merge(base, load_site())
+    _fix_types(merged, base)
     _coerce(merged, base)
     loglevel.coerce(merged, _warn_once)
     env = env_values()

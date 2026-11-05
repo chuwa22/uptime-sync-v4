@@ -169,7 +169,7 @@ class Engine:
             return
         interval = self.settings['check_interval']
         workers = max(1, min(self.settings['max_workers'], len(self.monitors)))
-        budget = max(10, interval * 0.9)
+        budget = self._cycle_budget(interval)
         self._warn_budget(workers, budget)
         # A check that overran the last budget is still running in its old
         # pool thread: do not start a second copy of it alongside.
@@ -208,14 +208,32 @@ class Engine:
         for f in done:
             if f.exception():
                 log.error('Check of %s crashed: %s', futures[f]['name'], f.exception())
+        skipped = []
         for f in not_done:
-            log.warning('Check of %s did not finish within %ds', futures[f]['name'], budget)
+            m = futures[f]
+            # Never started (all workers busy): cancel it. Left queued, the
+            # old pool started it late, next to the next cycle's pool -- more
+            # threads than max_workers, and a false DOWN then UP in Kuma.
+            if f.cancel():
+                with self._lock:
+                    self._inflight.pop(m['id'], None)
+                skipped.append(m['name'])
+            else:
+                log.warning('Check of %s did not finish within %ds', m['name'], budget)
+        if skipped:
+            log.warning('%d check(s) not started within %ds (all %d workers busy) - skipped this '
+                        'cycle: %s', len(skipped), budget, workers, ', '.join(skipped[:10]))
         pool.shutdown(wait=False)
-        self._last_cycle_ok = not not_done and not busy
+        self._last_cycle_ok = not not_done and not busy   # a skipped check is not ok either
         self._cycles += 1
         if self._cycles % HISTORY_SAVE_EVERY == 0:
             self._save_history()
         self._write_status()
+
+    @staticmethod
+    def _cycle_budget(interval):
+        """Seconds the checks of one cycle may take."""
+        return max(10, interval * 0.9)
 
     def _warn_budget(self, workers, budget):
         """Once per configuration: warn when the worst case of the checks
@@ -348,7 +366,13 @@ class Engine:
             })
             self._status_warned = False
         except OSError as e:
-            # The supervisor reads this file's age as the engine's pulse.
+            # The supervisor reads this file's age as the engine's pulse:
+            # on a full disk the write fails while the engine is healthy,
+            # and touching the mtime needs no free blocks.
+            try:
+                os.utime(paths.STATUS_FILE, None)
+            except OSError:
+                pass
             if not self._status_warned:
                 self._status_warned = True
                 log.warning('Could not write run/status.json: %s', e)
@@ -379,7 +403,11 @@ class Engine:
         self.stop_event.wait(3)
         while not self.stop_event.is_set():
             s = self.settings
-            if s.get('remote', {}).get('enabled'):
+            try:
+                enabled = bool(s.get('remote', {}).get('enabled'))
+            except Exception:   # settings.load() fixes types; never let this thread die
+                enabled = False
+            if enabled:
                 try:
                     reply = self.heartbeat.send(s, healthy=self._last_cycle_ok and heartbeat.free_disk_ok())
                     if reply:
@@ -394,11 +422,14 @@ class Engine:
 
     def _act_on(self, reply, s):
         # The server sets the global level only; per-part log_levels stay.
+        # Compared with the file, not self.settings (reloaded once per check
+        # cycle): otherwise every beat in between would write it again.
         level = loglevel.normalize((reply.get('settings') or {}).get('log_level'))
-        if level and level != loglevel.normalize(s.get('log_level')):
-            log.warning('Log level set by server: %s -> %s', s.get('log_level'), level)
+        current = settings.load()
+        if level and level != current.get('log_level'):
+            log.warning('Log level set by server: %s -> %s', current.get('log_level'), level)
             settings.update({'log_level': level})
-            loglevel.apply(dict(s, log_level=level))
+            loglevel.apply(dict(current, log_level=level))
         if reply.get('restart_requested'):
             log.warning('[RESTART] Requested by the server')
             self.stop(updater.EXIT_RESTART)

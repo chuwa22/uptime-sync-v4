@@ -15,6 +15,7 @@ import glob
 import logging
 import os
 import sys
+import threading
 import time
 
 from . import loglevel, logstore, paths
@@ -54,6 +55,16 @@ def setup(proc, s=None, console=None):
     def excepthook(kind, value, tb):
         logging.getLogger(proc).critical('Unhandled exception', exc_info=(kind, value, tb))
     sys.excepthook = excepthook
+
+    def thread_excepthook(args):
+        # A dead watch/heartbeat thread otherwise leaves no trace: pythonw
+        # has no stderr, and the default hook only prints there.
+        if args.exc_type is SystemExit:
+            return
+        name = args.thread.name if args.thread is not None else '?'
+        logging.getLogger(proc).critical('Thread %s died', name,
+                                         exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+    threading.excepthook = thread_excepthook
     return logging.getLogger(proc)
 
 

@@ -31,6 +31,7 @@ UPDATE_MAX_CRASHES = 3
 STOP_GRACE_SECONDS = 20        # above a check's worst attempt (ping timeout + 2 s)
 RESTART_MIN_GAP = 60          # server-requested restarts closer than this are delayed
 PULSE_CHECK_SECONDS = 30      # how often the engine's run/status.json age is checked
+LOOP_ERROR_LOG_SECONDS = 60   # a repeating loop error is logged at most this often
 MAIN_PY = os.path.join(paths.ROOT, 'main.py')
 
 
@@ -45,6 +46,7 @@ class Child:
 
     def start(self):
         remove_quietly(paths.child_stop_flag(self.name))
+        self.started = time.monotonic()   # a failed Popen still counts for the backoff
         kw = procs.child_popen_kwargs()
         err = self._stderr_file()
         if err is not None:
@@ -112,6 +114,8 @@ class Supervisor:
         self.children = {}
         self.stopping = False
         self._last_restart = None
+        self._pulse_mtime = None
+        self._pulse_seen = 0.0
 
     def _argv(self, role):
         py = procs.background_python()
@@ -135,6 +139,8 @@ class Supervisor:
             paths.ensure_dirs()
             logsetup.setup('supervisor')
             if updater.recover_interrupted():
+                return self._reexec()
+            if self._count_start_after_update():
                 return self._reexec()
             procs.write_pid(paths.SUPERVISOR_PID)
             remove_quietly(paths.SHUTDOWN_FLAG)
@@ -176,13 +182,20 @@ class Supervisor:
             return
         interval = settings.load()['check_interval']
         limit = 3 * interval + 60
-        if time.monotonic() - engine.started < limit:
-            return
+        now = time.monotonic()
+        # Age by the monotonic clock since the mtime last CHANGED, not by
+        # time.time() - mtime: w32time stepping the clock (a dead CMOS
+        # battery) would otherwise kill a healthy engine, or hide a stall.
         try:
-            age = time.time() - os.path.getmtime(paths.STATUS_FILE)
+            mtime = os.path.getmtime(paths.STATUS_FILE)
         except OSError:
-            age = None
-        if age is None or age > limit:
+            mtime = None
+        if mtime != self._pulse_mtime:
+            self._pulse_mtime, self._pulse_seen = mtime, now
+        if now - engine.started < limit:
+            return
+        age = now - max(self._pulse_seen, engine.started)
+        if age > limit:
             log.error('Engine (pid %d) has not finished a check cycle for over %ds - restarting it',
                       engine.proc.pid, limit)
             engine.stop()
@@ -191,66 +204,88 @@ class Supervisor:
 
     def _loop(self):
         for role in self._wanted():
-            self.children[role] = Child(role, self._argv(role))
-            self.children[role].start()
+            self.children[role] = Child(role, self._argv(role))   # started by _tick()
         next_pulse = time.monotonic() + PULSE_CHECK_SECONDS
+        last_error = None    # monotonic() may start near 0: no "0.0 = long ago"
         while True:
             time.sleep(0.5)
-            loglevel.refresh()
-            if time.monotonic() >= next_pulse:
-                next_pulse = time.monotonic() + PULSE_CHECK_SECONDS
-                self._check_pulse()
-            if self.stopping or os.path.exists(paths.SHUTDOWN_FLAG):
-                remove_quietly(paths.SHUTDOWN_FLAG)
-                log.info('Shutting down')
-                return 0
-            if os.path.exists(paths.RESTART_FLAG):
-                remove_quietly(paths.RESTART_FLAG)
-                log.info('Restart requested - restarting children')
-                self._restart_children()
-            self._check_update_trial()
-            # By role, looking each child up afresh: _restart_children()
-            # replaces the Child objects, and a stale one started here would
-            # be a second, untracked process.
-            for role in list(self.children):
-                child = self.children.get(role)
-                if child is None:
+            # One bad iteration (a full disk, a file Windows has locked, a
+            # Popen that fails on a box out of memory) must not end the
+            # supervisor: its exit would stop every healthy child with it.
+            try:
+                loglevel.refresh()
+                if time.monotonic() >= next_pulse:
+                    next_pulse = time.monotonic() + PULSE_CHECK_SECONDS
+                    self._check_pulse()
+                code = self._tick()
+            except Exception as e:
+                code = None
+                if last_error is None or time.monotonic() - last_error >= LOOP_ERROR_LOG_SECONDS:
+                    last_error = time.monotonic()
+                    log.error('Supervisor loop error (it keeps running): %s', e, exc_info=True)
+            if code is not None:
+                return code
+
+    def _tick(self):
+        """One pass of the loop. Returns an exit code to leave the loop."""
+        if self.stopping or os.path.exists(paths.SHUTDOWN_FLAG):
+            remove_quietly(paths.SHUTDOWN_FLAG)
+            log.info('Shutting down')
+            return 0
+        if os.path.exists(paths.RESTART_FLAG):
+            remove_quietly(paths.RESTART_FLAG)
+            log.info('Restart requested - restarting children')
+            self._restart_children()
+        self._check_update_trial()
+        # By role, looking each child up afresh: _restart_children()
+        # replaces the Child objects, and a stale one started here would
+        # be a second, untracked process.
+        for role in list(self.children):
+            child = self.children.get(role)
+            if child is None:
+                continue
+            if child.proc is not None and child.proc.poll() is not None:
+                code = child.proc.returncode
+                child.proc = None
+                if role == 'engine' and code == updater.EXIT_UPDATE:
+                    return self._apply_update()
+                if role == 'engine' and code == updater.EXIT_RESTART:
+                    now = time.monotonic()
+                    if self._last_restart is None or now - self._last_restart >= RESTART_MIN_GAP:
+                        self._last_restart = now
+                        log.warning('Engine asked for a restart')
+                        self._restart_children()
+                        break
+                    # The server keeps asking: restart only the engine, with backoff.
+                    log.warning('Engine asked for another restart within %ds - restarting '
+                                'the engine only, in %ds', RESTART_MIN_GAP, child.schedule_restart())
                     continue
-                if child.proc is not None and child.proc.poll() is not None:
-                    code = child.proc.returncode
-                    child.proc = None
-                    if role == 'engine' and code == updater.EXIT_UPDATE:
-                        return self._apply_update()
-                    if role == 'engine' and code == updater.EXIT_RESTART:
-                        now = time.monotonic()
-                        if self._last_restart is None or now - self._last_restart >= RESTART_MIN_GAP:
-                            self._last_restart = now
-                            log.warning('Engine asked for a restart')
-                            self._restart_children()
-                            break
-                        # The server keeps asking: restart only the engine, with backoff.
-                        log.warning('Engine asked for another restart within %ds - restarting '
-                                    'the engine only, in %ds', RESTART_MIN_GAP, child.schedule_restart())
-                        continue
-                    if code != 0:
-                        self._note_crash(role, code)
-                    delay = child.schedule_restart()
-                    if role == 'engine' and code == updater.EXIT_STUCK:
-                        log.warning('engine stopped itself: a check was hung - restarting in %ds', delay)
-                    else:
-                        log.warning('%s exited with code %s - restarting in %ds', role, code, delay)
-                if child.proc is None and time.monotonic() >= child.next_start:
-                    if self._check_rollback_needed():
-                        return self._reexec()
+                if role == 'engine' and code == updater.EXIT_STUCK:
+                    # Not a crash: the engine cured a hung check the only way
+                    # it can. Backoff here took every monitor dark for a
+                    # minute every few minutes while one target hung.
+                    child.next_start = time.monotonic() + 1
+                    log.warning('engine stopped itself: a check was hung - restarting in 1s')
+                    continue
+                if code != 0:
+                    self._note_crash(role, code)
+                delay = child.schedule_restart()
+                log.warning('%s exited with code %s - restarting in %ds', role, code, delay)
+            if child.proc is None and time.monotonic() >= child.next_start:
+                if self._check_rollback_needed():
+                    return self._reexec()
+                try:
                     child.start()
+                except OSError as e:
+                    log.error('Could not start %s: %s - retrying in %ds', role, e, child.schedule_restart())
+        return None
 
     def _restart_children(self):
         for child in self.children.values():
             child.stop()
         self.children = {}
         for role in self._wanted():
-            self.children[role] = Child(role, self._argv(role))
-            self.children[role].start()
+            self.children[role] = Child(role, self._argv(role))   # started by _tick()
 
     # -- updates -------------------------------------------------------------
 
@@ -271,6 +306,27 @@ class Supervisor:
             updater.set_state(crashes=crashes)
             log.error('[UPDATE] New v%s engine crashed (exit %s), %d/%d', s.get('version'),
                       code, crashes, UPDATE_MAX_CRASHES)
+
+    def _count_start_after_update(self):
+        """Roll back a new version whose SUPERVISOR keeps dying. Engine
+        crashes are counted in _note_crash(), but a supervisor that raises
+        before or while starting its children never gets there, and the OS
+        would restart it on the bad code forever. The first start after
+        apply() is the normal re-exec onto the new code."""
+        s = updater.state()
+        if s.get('status') != 'Applied':
+            return False
+        try:
+            starts = int(s.get('supervisor_starts') or 0) + 1
+            updater.set_state(supervisor_starts=starts)
+        except (TypeError, ValueError, OSError) as e:
+            log.warning('[UPDATE] Could not count this start of the new version: %s', e)
+            return False
+        if starts <= UPDATE_MAX_CRASHES:
+            return False
+        log.error('[UPDATE] v%s: the supervisor has started %d times without finishing its %ds '
+                  'trial', s.get('version'), starts, UPDATE_TRIAL_SECONDS)
+        return updater.rollback('the new supervisor stopped %d times during its trial' % (starts - 1))
 
     def _check_rollback_needed(self):
         s = updater.state()

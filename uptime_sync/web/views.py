@@ -399,7 +399,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
             levels = {}
             for part in loglevel.NAMES:
                 value = loglevel.normalize(f.get('level_' + part, ''))
-                if value:
+                if value in loglevel.choices(part):
                     levels[part] = value
             if new['remote']['require_signed_response'] not in ('auto', 'true', 'false'):
                 new['remote']['require_signed_response'] = 'auto'
@@ -452,6 +452,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                                has_secret=bool(s.get('remote', {}).get('secret_key')),
                                sign_state=sign_state, sign_since=sign_since,
                                log_levels=loglevel.LEVELS, log_parts=loglevel.COMPONENTS,
+                               level_choices=loglevel.choices,
                                library_default=loglevel.LIBRARY_DEFAULT)
 
     @app.route('/settings/new-secret', methods=['POST'])

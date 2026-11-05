@@ -88,6 +88,15 @@ def parse_ping(returncode, output, elapsed_ms):
     return round(elapsed_ms, 1)
 
 
+
+def _uses_proxy(url):
+    """True when requests would send this URL through a proxy (environment,
+    or the Windows Internet Options proxy that urllib reads)."""
+    try:
+        return bool(requests.utils.get_environ_proxies(url))
+    except Exception:
+        return False
+
 class Checker:
     _DNS_FAILURE_THRESHOLD = 3
     _DNS_CIRCUIT_OPEN_SECONDS = 60
@@ -129,8 +138,13 @@ class Checker:
                 url = 'https://' + url.split('://', 1)[-1]
             host = urlparse(url).hostname or target
             # Resolve first: afterwards the answer sits in the OS cache and
-            # dns_ping would always read ~0 ms.
-            _, dns_ms = self.check_dns(host, timeout) if not is_ip_literal(host) else (True, 0)
+            # dns_ping would always read ~0 ms. A name that does not resolve
+            # is down without asking requests to resolve it again (a second
+            # resolver wait, and one the DNS circuit breaker cannot cut short).
+            # Behind a proxy the proxy resolves the name, so try anyway.
+            dns_ok, dns_ms = self.check_dns(host, timeout) if not is_ip_literal(host) else (True, 0)
+            if not dns_ok and not _uses_proxy(url):
+                return False, 0, 0
             ok, ms = self.check_http(url, timeout, m.get('headers'), m.get('ssl_verify', True))
             if kind == 'HTTPS' and ok and m.get('ssl_verify', True):
                 self._warn_ssl_expiry(host, urlparse(url).port or 443, timeout)

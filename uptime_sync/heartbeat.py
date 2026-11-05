@@ -41,6 +41,11 @@ CAPABILITIES = (
 )
 BACKOFF = (30, 60, 120, 300, 600)
 TIMEOUT = 10
+# A reply is a few hundred bytes. The cap is on the decoded body, so a
+# gzip bomb from a hostile server (or a MITM on http / a Local server)
+# cannot fill the memory of a 32-bit box.
+MAX_REPLY = 256 * 1024
+READ_DEADLINE = 60   # whole body; TIMEOUT is per read, a trickle could last forever
 
 
 def arch():
@@ -112,7 +117,7 @@ class Heartbeat:
         if not url or not remote.get('api_key'):
             return None
         body = json.dumps(build_payload(settings, self.start_time, healthy)).encode('utf-8')
-        headers = {'Content-Type': 'application/json'}
+        headers = {'Content-Type': 'application/json', 'Accept-Encoding': 'identity'}
         sig = ''
         if secret:
             sig = signing.sign(secret, body)
@@ -120,9 +125,13 @@ class Heartbeat:
         verify = self._verify(remote)
         try:
             r = self.session.post(url, data=body, headers=headers, timeout=TIMEOUT,
-                                  allow_redirects=False, verify=verify)
+                                  allow_redirects=False, verify=verify, stream=True)
         except requests.RequestException as e:
             return self._fail('network error: %s' % redact(e))
+        try:
+            raw = _read_body(r)
+        except requests.RequestException as e:
+            return self._fail('network error reading the reply: %s' % redact(e))
         if 500 <= r.status_code < 600:
             return self._fail('server returned HTTP %d' % r.status_code)
         if r.status_code != 200:
@@ -130,8 +139,11 @@ class Heartbeat:
             log.warning('Heartbeat: server returned HTTP %d - check api_key / secret_key '
                         '(not backing off: the same request fails the same way)', r.status_code)
             return None
+        if raw is None:
+            return self._fail('reply too large or too slow (over %d KB / %ds)' % (MAX_REPLY // 1024,
+                                                                                 READ_DEADLINE))
         try:
-            data = r.json()
+            data = json.loads(raw.decode('utf-8'))
         except ValueError:
             return self._fail('reply is not JSON')
         if not isinstance(data, dict) or not data.get('success'):
@@ -141,13 +153,18 @@ class Heartbeat:
         self.failures = 0
         self.last_ok = time.time()
         self.last_error = ''
+        verdict = signing.verify_reply(r.headers.get('X-Response-Signature'), sig, raw, secret)
+        log.debug('Heartbeat OK (reply %s)', verdict)
+        if not self.may_act(verdict, remote):
+            # Nothing from a reply we may not trust: not even the next beat
+            # time (a MITM could set 3600 and make the agent look offline).
+            self.next_override = None
+            return {}
         nci = data.get('next_check_in')
         self.next_override = float(nci) if isinstance(nci, (int, float)) and 30 <= nci <= 3600 else None
         if data.get('deprecation_warning'):
-            log.warning('[PROTOCOL] Server says: %s', data.get('deprecation_warning'))
-        verdict = signing.verify_reply(r.headers.get('X-Response-Signature'), sig, r.content, secret)
-        log.debug('Heartbeat OK (reply %s)', verdict)
-        return data if self.may_act(verdict, remote) else {}
+            log.warning('[PROTOCOL] Server says: %s', _clean(data.get('deprecation_warning')))
+        return data
 
     def _verify(self, remote):
         verify = server_tls_verify(remote)
@@ -205,6 +222,28 @@ class Heartbeat:
         if verdict == 'invalid':
             return False
         return verdict == 'valid' or not require
+
+
+def _read_body(r):
+    """The reply body, or None when it is over MAX_REPLY or takes longer
+    than READ_DEADLINE. Always releases the connection."""
+    chunks, size = [], 0
+    deadline = time.monotonic() + READ_DEADLINE
+    try:
+        for chunk in r.iter_content(16384):
+            size += len(chunk)
+            if size > MAX_REPLY or time.monotonic() > deadline:
+                return None
+            chunks.append(chunk)
+    finally:
+        r.close()
+    return b''.join(chunks)
+
+
+def _clean(text, limit=300):
+    """Server text for a log line: ASCII, one line, bounded."""
+    text = ''.join(c if 32 <= ord(c) < 127 else ' ' for c in str(text))
+    return text[:limit] + ('...' if len(text) > limit else '')
 
 
 def free_disk_ok():

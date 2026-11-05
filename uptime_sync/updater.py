@@ -435,7 +435,8 @@ def apply():
         set_state(status='Failed', version=version, time=iso_now(), detail=str(e))
         return None
     set_state(status='Applied', version=version, previous=__version__, backup=backup,
-              installed=moved_in, time=iso_now(), applied_at=time.time(), crashes=0, detail='')
+              installed=moved_in, time=iso_now(), applied_at=time.time(), crashes=0, detail='',
+              supervisor_starts=0)
     shutil.rmtree(paths.STAGING_DIR, ignore_errors=True)
     _prune_backups()
     return version

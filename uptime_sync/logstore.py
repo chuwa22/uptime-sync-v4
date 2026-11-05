@@ -229,34 +229,46 @@ def write_fallback(rows, why):
 
 # -- reading (web UI, CLI) ---------------------------------------------------
 
-def _index_for(min_level, proc):
-    """Index that serves `ORDER BY id DESC` for this filter. WARNING+ rows are
-    rare, so walking the primary key for them reads the whole table; the
-    planner does not know that and has to be told."""
-    if int(min_level) >= LEVELS['WARNING']:
-        return 'logs_level_id'
+def _select(min_level, proc, text, before_id, limit):
+    """SQL + args for query(). Every branch reads rows in id order from an
+    index, so LIMIT stops the scan early and nothing is sorted:
+
+    - DEBUG/INFO and up: the primary key (most rows match), or
+      logs_proc_id when a process is chosen;
+    - WARNING and up: one `level = L` walk of logs_level_id per level,
+      merged. A single `level >= 30` range over that index comes out
+      ordered by level, not id, and made SQLite sort every WARNING+ row
+      (390 ms on 1M rows, seconds on a Win7 disk) -- during an outage,
+      exactly when the page is needed."""
+    where, args = [], []
     if proc:
-        return 'logs_proc_id'
-    return None
+        where.append('proc = ?')
+        args.append(proc)
+    if text:
+        where.append("msg LIKE ? ESCAPE '\\'")
+        args.append('%' + text.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%')
+    if before_id:
+        where.append('id < ?')
+        args.append(int(before_id))
+    cols = 'SELECT id, ts, proc, level, logger, msg FROM logs'
+    min_level = int(min_level)
+    if min_level < LEVELS['WARNING']:
+        index = ' INDEXED BY logs_proc_id' if proc else ''
+        cond = ['level >= ?'] + where
+        return ('%s%s WHERE %s ORDER BY id DESC LIMIT ?' % (cols, index, ' AND '.join(cond)),
+                [min_level] + args + [limit])
+    parts, all_args = [], []
+    for level in sorted(set(v for v in LEVELS.values() if v >= min_level)):
+        parts.append('SELECT * FROM (%s INDEXED BY logs_level_id WHERE %s ORDER BY id DESC LIMIT ?)'
+                     % (cols, ' AND '.join(['level = ?'] + where)))
+        all_args += [level] + args + [limit]
+    return ' UNION ALL '.join(parts) + ' ORDER BY id DESC LIMIT ?', all_args + [limit]
 
 
 def query(min_level=0, proc='', text='', before_id=None, limit=200):
     """Newest-first rows as dicts. Read-only connection per call."""
-    index = _index_for(min_level, proc)
-    sql = 'SELECT id, ts, proc, level, logger, msg FROM logs%s WHERE level >= ?' % (
-        ' INDEXED BY ' + index if index else '')
-    args = [int(min_level)]
-    if proc:
-        sql += ' AND proc = ?'
-        args.append(proc)
-    if text:
-        sql += " AND msg LIKE ? ESCAPE '\\'"
-        args.append('%' + text.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%')
-    if before_id:
-        sql += ' AND id < ?'
-        args.append(int(before_id))
-    sql += ' ORDER BY id DESC LIMIT ?'
-    args.append(max(1, min(int(limit), 1000)))
+    limit = max(1, min(int(limit), 1000))
+    sql, args = _select(min_level, proc, text, before_id, limit)
     if not os.path.exists(DB_FILE):
         return []
     conn = connect()
@@ -264,9 +276,11 @@ def query(min_level=0, proc='', text='', before_id=None, limit=200):
         try:
             rows = conn.execute(sql, args).fetchall()
         except sqlite3.OperationalError as e:
-            if not index or 'no such index' not in str(e):
+            if 'no such index' not in str(e):
                 raise
-            rows = conn.execute(sql.replace(' INDEXED BY ' + index, ''), args).fetchall()
+            # an old or rebuilt database without the index: same rows, slower
+            sql = sql.replace(' INDEXED BY logs_level_id', '').replace(' INDEXED BY logs_proc_id', '')
+            rows = conn.execute(sql, args).fetchall()
     except sqlite3.DatabaseError as e:
         if is_corrupt_error(e):
             return []    # the writer / engine quarantines it

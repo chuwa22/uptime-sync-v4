@@ -10,7 +10,9 @@ Settings:
 A part is a logger name (logging.getLogger('checks')), so a part keeps its
 level in every process it runs in. "libraries" (urllib3, waitress,
 werkzeug) is the exception: it stays at WARNING unless set, because their
-INFO lines are one per request.
+INFO lines are one per request, and it never goes below INFO: urllib3's
+DEBUG line is the full request URL, i.e. every Kuma push token (also the
+ones kept in data/.env) and the signed update URL, written into logs.db.
 
 Long-running processes call refresh() from a loop they already have: it
 stats data/settings.json and re-applies only when the file changed, so a
@@ -45,6 +47,14 @@ COMPONENTS = (
 NAMES = tuple(name for name, _ in COMPONENTS)
 LIBRARIES = ('urllib3', 'waitress', 'werkzeug')
 LIBRARY_DEFAULT = 'WARNING'
+LIBRARY_FLOOR = 'INFO'     # see the module docstring: DEBUG would log push tokens
+
+
+def choices(part):
+    """Levels a part may be set to (the Settings page offers these)."""
+    if part == 'libraries':
+        return tuple(l for l in LEVELS if VALUES[l] >= VALUES[LIBRARY_FLOOR])
+    return LEVELS
 
 log = logging.getLogger('log')
 
@@ -84,6 +94,9 @@ def coerce(merged, warn):
             if part not in NAMES or name is None:
                 warn('log_levels.%s' % part, value, 'ignored')
                 continue
+            if name not in choices(part):
+                warn('log_levels.%s' % part, value, LIBRARY_FLOOR)
+                name = LIBRARY_FLOOR
             out[part] = name
     elif raw not in (None, {}):
         warn('log_levels', raw, 'ignored')
@@ -95,7 +108,7 @@ def effective(s, part):
     """The level `part` logs at under settings `s` (a name)."""
     own = normalize((s.get('log_levels') or {}).get(part))
     if own:
-        return own
+        return own if own in choices(part) else LIBRARY_FLOOR
     if part == 'libraries':
         return LIBRARY_DEFAULT
     return normalize(s.get('log_level')) or DEFAULT
@@ -124,8 +137,9 @@ def apply(s):
         logging.getLogger().setLevel(VALUES[base])
         for part, level in sig[1]:
             if part == 'libraries':
+                value = max(VALUES[level or LIBRARY_DEFAULT], VALUES[LIBRARY_FLOOR])
                 for lib in LIBRARIES:
-                    logging.getLogger(lib).setLevel(VALUES[level or LIBRARY_DEFAULT])
+                    logging.getLogger(lib).setLevel(value)
             else:
                 # NOTSET: follow the root logger (the global level)
                 logging.getLogger(part).setLevel(VALUES[level] if level else logging.NOTSET)
