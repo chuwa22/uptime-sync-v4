@@ -389,10 +389,34 @@ class ServerTypeTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn('chosen server (Local network)', r.get_data(as_text=True))
 
+    def test_per_part_log_levels(self):
+        html = self.c.get('/settings').get_data(as_text=True)
+        self.assertIn('name="level_checks"', html)
+        self.assertIn('Default (WARNING)', html)          # libraries
+        token = WebTests.csrf(self, '/settings')
+        form = {'csrf': token, 'check_interval': '60', 'max_workers': '10', 'log_retention_days': '14',
+                'log_level': 'warn', 'web_port': '5000', 'heartbeat_interval': '60',
+                'require_signed': 'auto', 'server_type': 'public',
+                'level_checks': 'DEBUG', 'level_web': 'nonsense', 'level_engine': ''}
+        self.assertEqual(self.c.post('/settings', data=form).status_code, 302)
+        s = settings.load()
+        self.assertEqual((s['log_level'], s['log_levels']), ('WARNING', {'checks': 'DEBUG'}))
+        html = self.c.get('/settings').get_data(as_text=True)
+        self.assertRegex(html, r'name="level_checks"[^>]*>\s*<option value="">[^<]*</option>\s*'
+                               r'<option>DEBUG</option>|<option selected>DEBUG</option>')
+        self.assertIn('Log level: WARNING (checks=DEBUG)', self.c.get('/logs').get_data(as_text=True))
+        form['level_checks'] = ''                          # back to the global level
+        self.c.post('/settings', data=form)
+        self.assertNotIn('log_levels', read_json_site())
+
     def test_public_accepts_any_http_url(self):
         self.assertEqual(self.post('public', 'http://10.0.0.5/api/heartbeat.php').status_code, 302)
         self.assertEqual(self.post('bogus', 'https://mon.example.com/api/heartbeat.php').status_code, 302)
         self.assertEqual(settings.load()['remote']['server_type'], 'public')
+
+
+def read_json_site():
+    return util.read_json(paths.SETTINGS_FILE, {})
 
 
 class DictMethodNameTests(unittest.TestCase):

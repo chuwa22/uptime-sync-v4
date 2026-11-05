@@ -17,7 +17,7 @@ from unittest import mock
 import requests
 
 from uptime_sync import (__version__, autostart, checks, engine, heartbeat, log as logsetup, logstore,
-                         monitors, paths, perms, procs, settings, supervisor, updater, util)
+                         loglevel, monitors, paths, perms, procs, settings, supervisor, updater, util)
 from uptime_sync.web import auth, create_app
 from uptime_sync.web.views import mask_push_url
 from tests.test_updater import NEXT, REPO, FakeResponse, _read, make_zip
@@ -589,7 +589,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(self.e._push_codes, {})
 
     def test_act_on(self):
-        with mock.patch.object(settings, 'update') as upd, mock.patch.object(logsetup, 'set_level'):
+        with mock.patch.object(settings, 'update') as upd, mock.patch.object(loglevel, 'apply'):
             with self.assertLogs('engine', 'WARNING'):
                 self.e._act_on({'settings': {'log_level': 'debug'}}, self.e.settings)
         upd.assert_called_once_with({'log_level': 'DEBUG'})

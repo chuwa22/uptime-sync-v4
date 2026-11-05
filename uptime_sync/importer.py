@@ -21,7 +21,7 @@ import os
 import shutil
 import time
 
-from . import monitors, paths, settings
+from . import loglevel, monitors, paths, settings
 from .util import atomic_write_json, deep_merge, read_json
 
 # (3.x dotted path, v4 dotted path)
@@ -94,7 +94,9 @@ def map_settings(old_defaults, old_local):
             except (TypeError, ValueError):
                 continue
         if dst == 'log_level':
-            value = str(value).upper()
+            value = loglevel.normalize(str(value))
+            if value is None:
+                continue
         _set(new, dst, value)
     return new
 

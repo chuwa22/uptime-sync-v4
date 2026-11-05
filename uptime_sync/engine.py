@@ -14,7 +14,7 @@ import time
 
 import requests
 
-from . import __version__, heartbeat, log as logsetup, monitors, paths, procs, settings, updater
+from . import __version__, heartbeat, log as logsetup, loglevel, monitors, paths, procs, settings, updater
 from .checks import Checker
 from .util import (USER_AGENT, atomic_write_json, is_newer, iso_now, read_json, redact,
                    remove_quietly, url_host)
@@ -71,7 +71,7 @@ class Engine:
     # -- lifecycle -----------------------------------------------------------
 
     def run(self):
-        logsetup.setup('engine', self.settings.get('log_level'))
+        logsetup.setup('engine', self.settings)
         procs.write_pid(paths.child_pid_file('engine'))
         remove_quietly(paths.child_stop_flag('engine'))
         log.info('Uptime Sync %s engine starting (pid %d)', __version__, os.getpid())
@@ -83,7 +83,7 @@ class Engine:
             while not self.stop_event.is_set():
                 started = time.monotonic()
                 self.settings = settings.load()
-                logsetup.set_level(self.settings.get('log_level'))
+                loglevel.apply(self.settings)
                 self._reload_monitors()
                 self._run_cycle()
                 self._housekeeping()
@@ -108,6 +108,7 @@ class Engine:
     def _watch(self):
         """Stop on run/engine.stop, on an install click, or when orphaned."""
         while not self.stop_event.wait(1.0):
+            loglevel.refresh()
             if os.path.exists(paths.child_stop_flag('engine')):
                 log.info('Stop requested')
                 self.stop()
@@ -392,12 +393,12 @@ class Engine:
             self.stop_event.wait(wait)
 
     def _act_on(self, reply, s):
-        level = (reply.get('settings') or {}).get('log_level')
-        if isinstance(level, str) and level.upper() in ('DEBUG', 'INFO', 'WARNING', 'ERROR') \
-                and level.upper() != str(s.get('log_level', 'INFO')).upper():
-            log.warning('Log level set by server: %s -> %s', s.get('log_level'), level.upper())
-            settings.update({'log_level': level.upper()})
-            logsetup.set_level(level)
+        # The server sets the global level only; per-part log_levels stay.
+        level = loglevel.normalize((reply.get('settings') or {}).get('log_level'))
+        if level and level != loglevel.normalize(s.get('log_level')):
+            log.warning('Log level set by server: %s -> %s', s.get('log_level'), level)
+            settings.update({'log_level': level})
+            loglevel.apply(dict(s, log_level=level))
         if reply.get('restart_requested'):
             log.warning('[RESTART] Requested by the server')
             self.stop(updater.EXIT_RESTART)

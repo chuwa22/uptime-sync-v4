@@ -4,6 +4,9 @@ plain-text files exist only as fallbacks:
     logs/fallback-<date>.log   lines the database could not take
     logs/<proc>-stderr.log     a child's stderr (crashes before logging starts)
 
+Levels come from loglevel.py (log_level plus per-part log_levels); setup()
+applies them and loglevel.refresh() keeps them current while running.
+
 Messages must be ASCII: the Windows console is cp1252 and pythonw has no
 console at all, so a stray em-dash or emoji either raises or vanishes.
 """
@@ -14,15 +17,24 @@ import os
 import sys
 import time
 
-from . import logstore, paths
+from . import loglevel, logstore, paths
 
 FORMAT = '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s'
 DATEFMT = '%Y-%m-%d %H:%M:%S'
 PROCS = ('supervisor', 'engine', 'web', 'cli')
 
 
-def setup(proc, level='INFO', console=None):
-    """Configure the root logger for process `proc` and return its logger."""
+def _settings():
+    try:
+        from . import settings
+        return settings.load()
+    except Exception:
+        return {}
+
+
+def setup(proc, s=None, console=None):
+    """Configure the root logger for process `proc` and return its logger.
+    `s` = settings (loaded here when None); their levels are applied."""
     root = logging.getLogger()
     for h in list(root.handlers):
         root.removeHandler(h)
@@ -34,9 +46,10 @@ def setup(proc, level='INFO', console=None):
         sh = logging.StreamHandler(sys.stdout)
         sh.setFormatter(logging.Formatter(FORMAT, DATEFMT))
         root.addHandler(sh)
-    set_level(level)
-    for noisy in ('urllib3', 'waitress', 'werkzeug'):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    if isinstance(s, str):
+        s = {'log_level': s}
+    loglevel.reset()
+    loglevel.apply(_settings() if s is None else s)
 
     def excepthook(kind, value, tb):
         logging.getLogger(proc).critical('Unhandled exception', exc_info=(kind, value, tb))
@@ -64,9 +77,17 @@ def _store_handler(proc):
     return fh
 
 
-def set_level(level):
-    value = getattr(logging, str(level or 'INFO').upper(), None)
-    logging.getLogger().setLevel(value if isinstance(value, int) else logging.INFO)
+def setup_console(s=None):
+    """CLI commands: log lines go to stderr (not logs.db, which a CLI run by
+    another user may not be allowed to write), at the same levels."""
+    root = logging.getLogger()
+    if not any(getattr(h, '_uptime_console', False) for h in root.handlers):
+        sh = logging.StreamHandler(sys.stderr) if sys.stderr else logging.NullHandler()
+        sh.setFormatter(logging.Formatter(FORMAT, DATEFMT))
+        sh._uptime_console = True
+        root.addHandler(sh)
+    loglevel.reset()
+    loglevel.apply(_settings() if s is None else s)
 
 
 def prune(retention_days):

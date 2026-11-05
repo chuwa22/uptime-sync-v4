@@ -2,7 +2,7 @@
 {% block title %}Logs{% endblock %}
 {% block content %}
 <div class="head">
-  <div class="head-title"><h1>Logs</h1><p class="sub">Engine, web and supervisor, from logs/logs.db</p></div>
+  <div class="head-title"><h1>Logs</h1><p class="sub">Engine, web and supervisor, from logs/logs.db. Log level: {{ recording }} - <a href="{{ url_for('settings_page') }}">change</a></p></div>
   <form method="get" class="filters">
     <select name="level" data-autosubmit>
       {% for l in levels %}<option value="{{ l }}"{{ ' selected' if l == level }}>{{ l }}+</option>{% endfor %}

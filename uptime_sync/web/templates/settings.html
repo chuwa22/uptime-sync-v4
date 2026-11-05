@@ -10,20 +10,40 @@
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <div class="card">
     <h2>{{ icon('monitor') }}Site and checks</h2>
+    <label>Site name <small class="muted">shown in the top bar, e.g. Head office - server room</small>
+      <input name="site_name" value="{{ s.site_name }}" maxlength="100" placeholder="Head office - server room"></label>
     <div class="cols">
-      <label>Site name <small class="muted">shown in the top bar, e.g. Head office - server room</small>
-        <input name="site_name" value="{{ s.site_name }}" maxlength="100" placeholder="Head office - server room"></label>
       <label>Check every (s) <small class="muted">10-3600, usually 60</small>
         <input name="check_interval" type="number" min="10" max="3600" value="{{ s.check_interval }}" placeholder="60"></label>
-    </div>
-    <div class="cols">
       <label>Parallel checks <small class="muted">monitors checked at once, 1-50</small>
         <input name="max_workers" type="number" min="1" max="50" value="{{ s.max_workers }}" placeholder="10"></label>
-      <label>Log level
-        <select name="log_level">{% for l in ['DEBUG', 'INFO', 'WARNING', 'ERROR'] %}<option{{ ' selected' if l == s.log_level }}>{{ l }}</option>{% endfor %}</select></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>{{ icon('logs') }}Logging</h2>
+    <div class="cols">
+      <label>Log level <small class="muted">every part, unless it has its own below</small>
+        <select name="log_level">{% for l in log_levels %}<option{{ ' selected' if l == s.log_level }}>{{ l }}</option>{% endfor %}</select></label>
       <label>Keep logs (days) <small class="muted">1-365</small>
         <input name="log_retention_days" type="number" min="1" max="365" value="{{ s.log_retention_days }}" placeholder="14"></label>
     </div>
+    <p class="note">Give one part its own level, e.g. checks at DEBUG while you look into one monitor, without filling logs.db with the rest. The engine, web and supervisor pick up a change within a few seconds, no restart.</p>
+    <table class="grid stack levels">
+      <thead><tr><th>Part</th><th>What it logs</th><th>Level</th></tr></thead>
+      <tbody>
+      {% for part, what in log_parts %}{% set own = s.log_levels.get(part, '') if s.log_levels else '' %}
+        <tr>
+          <td class="title mono">{{ part }}</td>
+          <td class="wide muted">{{ what }}</td>
+          <td class="lead"><select name="level_{{ part }}" aria-label="Level for {{ part }}" title="Level for {{ part }}">
+            <option value="">{{ 'Default (' ~ library_default ~ ')' if part == 'libraries' else 'Same as Log level' }}</option>
+            {% for l in log_levels %}<option{{ ' selected' if l == own }}>{{ l }}</option>{% endfor %}
+          </select></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </div>
 
   <div class="card">

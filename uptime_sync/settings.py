@@ -16,7 +16,7 @@ import os
 import re
 import threading
 
-from . import paths
+from . import loglevel, paths
 from .util import atomic_write_json, deep_merge, diff_from, read_json
 
 # setting path -> environment variable that overrides it
@@ -151,6 +151,13 @@ def _coerce(merged, base):
         node[path[-1]] = value
 
 
+def _warn_once(name, raw, used):
+    if (name, repr(raw)) not in _warned:
+        _warned.add((name, repr(raw)))
+        log.warning('Setting %s = %r is not valid (%s) - using %s',
+                    name, raw, '/'.join(loglevel.LEVELS), used)
+
+
 def load_site():
     """data/settings.json only (what this site changed)."""
     data = read_json(paths.SETTINGS_FILE, {})
@@ -162,6 +169,7 @@ def load():
     base = defaults()
     merged = deep_merge(base, load_site())
     _coerce(merged, base)
+    loglevel.coerce(merged, _warn_once)
     env = env_values()
     for path, name in ENV_SETTINGS:
         if env.get(name):

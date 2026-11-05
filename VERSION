@@ -11,6 +11,15 @@
   - The version shows just under the card ("Uptime Sync v4.0.9") instead of at the bottom of the page.
   - Sign in / Create admin is a full-width button, and the card sits lower on tall screens.
   - After a wrong password, the user name stays filled in and the password field gets the focus.
+- Feature (logging): one log level system for every part of the agent (uptime_sync/loglevel.py).
+  - `log_level` is still the level for everything. New: `log_levels` gives one part its own level, e.g. `{"checks": "DEBUG"}` to see every probe detail of the checks while the rest stays at INFO.
+  - Parts: engine, checks, heartbeat, update, supervisor, web, heal, settings, log, and libraries (urllib3, waitress, werkzeug; WARNING unless set).
+  - Settings > Logging has the global level, Keep logs, and one row per part ("Same as Log level" or its own level).
+  - A change now reaches the supervisor, engine and web within a few seconds, without a restart. Before, only the engine picked it up; the web and supervisor kept their start-up level until restarted. Each process logs "Log levels now ...".
+  - CLI commands (`main.py check`, `import`, ...) print log lines to the console at the same levels. Before, only warnings came out, unformatted.
+  - A wrong value in data/settings.json (`"log_level": "loud"`, an unknown part) is replaced by INFO or ignored, with one warning. Before, it fell back to INFO silently.
+  - The server can still set the global level (`settings.log_level` in the heartbeat reply); per-part levels stay as they are.
+  - The Logs page shows the levels in force, with a link to change them.
 - Improvement (web): new look for the other pages.
   - Every page has a header: title, one line under it, and its main button on the right (Restart service on the Dashboard, Add monitor, back buttons on the forms).
   - Dashboard tiles have an icon and a coloured edge. Status pills are tinted, with a dot.

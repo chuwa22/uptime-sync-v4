@@ -9,12 +9,12 @@ from urllib.parse import urlparse
 
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 
-from .. import __version__, log as logsetup, logstore, monitors, paths, procs, settings, signing, updater
+from .. import __version__, log as logsetup, loglevel, logstore, monitors, paths, procs, settings, signing, updater
 from ..util import active_server_url, deep_merge, is_local_host, is_local_server, read_json, touch
 from . import auth
 
 log = logging.getLogger('web')
-LOG_LEVELS = logstore.LEVELS
+LOG_LEVELS = loglevel.VALUES
 LOG_PAGE = 300
 
 
@@ -394,8 +394,13 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                 except ValueError:
                     errors.append('Web listens on must be an IP address: 0.0.0.0 (every network), '
                                   '127.0.0.1 (this PC only) or one of this PC\'s addresses.')
-            if new['log_level'] not in ('DEBUG', 'INFO', 'WARNING', 'ERROR'):
-                new['log_level'] = 'INFO'
+            new['log_level'] = loglevel.normalize(new['log_level']) or loglevel.DEFAULT
+            # '' = same as log_level; anything else must be a level
+            levels = {}
+            for part in loglevel.NAMES:
+                value = loglevel.normalize(f.get('level_' + part, ''))
+                if value:
+                    levels[part] = value
             if new['remote']['require_signed_response'] not in ('auto', 'true', 'false'):
                 new['remote']['require_signed_response'] = 'auto'
             rs = new['remote']['require_signed_response']
@@ -434,15 +439,20 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                                (new['web']['host'] or s['web'].get('host')) != s['web'].get('host'))
                 if not new['web']['host']:
                     del new['web']['host']
-                settings.update(new)
+                merged = deep_merge(settings.load(), new)
+                merged['log_levels'] = levels   # replaced, not merged: '' removes an override
+                settings.save(merged)
                 flash('Settings saved.' + (' Restart the service for the new web address to take '
                                            'effect.' if restart_web else ''), 'ok')
                 return redirect(url_for('settings_page'))
             s = deep_merge(s, new)
+            s['log_levels'] = levels
         sign_state, sign_since = signing.status(s.get('remote', {}))
         return render_template('settings.html', s=s, managed=managed, errors=errors,
                                has_secret=bool(s.get('remote', {}).get('secret_key')),
-                               sign_state=sign_state, sign_since=sign_since)
+                               sign_state=sign_state, sign_since=sign_since,
+                               log_levels=loglevel.LEVELS, log_parts=loglevel.COMPONENTS,
+                               library_default=loglevel.LIBRARY_DEFAULT)
 
     @app.route('/settings/new-secret', methods=['POST'])
     @auth.admin_required
@@ -496,6 +506,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                         before=rows[-1]['id']) if more else None
         return render_template('logs.html', rows=rows, level=level, proc=proc, q=text,
                                levels=list(LOG_LEVELS), procs=logsetup.PROCS, older=older,
+                               recording=loglevel.describe(settings.load()),
                                paged=bool(before), stats=logstore.stats(),
                                files=logsetup.text_files())
 

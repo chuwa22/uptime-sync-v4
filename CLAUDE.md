@@ -200,6 +200,20 @@ README.md covers usage. This file covers the rules for changing the code.
     `logs/logs.db`, written from one thread per process in batches.
   - Never log from inside `logstore`'s writer path.
   - Do not use `app.logger`: Flask gives it its own stderr handler.
+  - **Levels (4.0.9) live in `loglevel.py` only.** `log_level` is the global
+    level; `log_levels` = `{part: level}` overrides it per part, where a part
+    is a logger name from `loglevel.COMPONENTS` (`libraries` = urllib3,
+    waitress, werkzeug, WARNING unless set). A new `getLogger('x')` needs an
+    entry in COMPONENTS, or `LogLevelTests` fails. Never write a list of
+    level names elsewhere: use `loglevel.LEVELS` / `normalize()` / `VALUES`.
+  - `settings.load()` cleans both keys (`loglevel.coerce`), so readers see
+    valid values. Every process applies them with `loglevel.apply()` via
+    `log.setup()`, CLI commands via `log.setup_console()` (stderr, not
+    logs.db). Long-running loops call `loglevel.refresh()`, which stats
+    settings.json at most every 2 s, so a saved level reaches the supervisor,
+    engine and web without a restart. The Settings page replaces
+    `log_levels` whole (`settings.update` merges and could never drop an
+    override). The server's `settings.log_level` sets the global level only.
 - **Self-healing (4.0.8).**
   - `util.read_json()` heals by default: a file that exists but does not parse
     is moved to `<file>.corrupt-<ts>` (3 kept), logged CRITICAL, and restored

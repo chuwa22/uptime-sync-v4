@@ -15,7 +15,7 @@ import time
 
 from flask import Flask, request
 
-from .. import __version__, log as logsetup, paths, procs, settings
+from .. import __version__, log as logsetup, loglevel, paths, procs, settings
 from ..util import remove_quietly
 from . import auth, icons
 
@@ -80,6 +80,7 @@ def _watch(parent_pid):
     flag = paths.child_stop_flag('web')
     while True:
         time.sleep(1)
+        loglevel.refresh()
         if os.path.exists(flag) or (parent_pid and not procs.pid_alive(parent_pid)):
             log.info('Web UI stopping')
             remove_quietly(paths.child_pid_file('web'))
@@ -90,7 +91,7 @@ def _watch(parent_pid):
 def main(parent_pid=0):
     paths.ensure_dirs()
     s = settings.load()
-    logsetup.setup('web', s.get('log_level'))
+    logsetup.setup('web', s)
     host = s.get('web', {}).get('host', '0.0.0.0')
     port = int(s.get('web', {}).get('port', 5000))
     procs.write_pid(paths.child_pid_file('web'))

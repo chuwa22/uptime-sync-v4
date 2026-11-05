@@ -293,9 +293,9 @@ def cmd_check(a):
 
 
 def cmd_logs(a):
-    from . import logstore
-    rows = logstore.query(min_level=logstore.LEVELS.get(a.level.upper(), 20), proc=a.proc or '',
-                          text=a.grep or '', limit=a.lines)
+    from . import loglevel, logstore
+    rows = logstore.query(min_level=loglevel.VALUES.get(a.level.upper(), loglevel.VALUES['INFO']),
+                          proc=a.proc or '', text=a.grep or '', limit=a.lines)
     for r in reversed(rows):
         _say('[%s] [%s] [%s/%s] %s' % (r['time'], r['level'], r['proc'], r['logger'], r['msg']))
     return 0
@@ -358,6 +358,8 @@ def main(argv=None):
     if not getattr(a, 'fn', None):
         parser.print_help()
         return 2
+    if a.fn not in (cmd_run, cmd_engine, cmd_web):   # those set up their own logging
+        logsetup.setup_console()
     try:
         return a.fn(a) or 0
     except KeyboardInterrupt:

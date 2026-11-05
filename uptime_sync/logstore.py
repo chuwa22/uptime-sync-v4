@@ -26,10 +26,10 @@ import sqlite3
 import threading
 import time
 
-from . import paths
+from . import loglevel, paths
 
 DB_FILE = os.path.join(paths.LOG_DIR, 'logs.db')
-LEVELS = {'DEBUG': 10, 'INFO': 20, 'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50}
+LEVELS = loglevel.VALUES   # name -> number, for filtering
 QUEUE_MAX = 20000
 BATCH_MAX = 500
 LOG_DB_MAX_BYTES = 200 * 1024 * 1024

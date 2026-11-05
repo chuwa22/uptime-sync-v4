@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 
-from . import __version__, log as logsetup, paths, perms, procs, settings, updater
+from . import __version__, log as logsetup, loglevel, paths, perms, procs, settings, updater
 from .util import remove_quietly, touch
 
 log = logging.getLogger('supervisor')
@@ -133,7 +133,7 @@ class Supervisor:
             if os.path.exists(paths.STOPPED_FLAG):
                 return 0   # stopped by `main.py stop`; `main.py start` resumes
             paths.ensure_dirs()
-            logsetup.setup('supervisor', settings.load().get('log_level'))
+            logsetup.setup('supervisor')
             if updater.recover_interrupted():
                 return self._reexec()
             procs.write_pid(paths.SUPERVISOR_PID)
@@ -196,6 +196,7 @@ class Supervisor:
         next_pulse = time.monotonic() + PULSE_CHECK_SECONDS
         while True:
             time.sleep(0.5)
+            loglevel.refresh()
             if time.monotonic() >= next_pulse:
                 next_pulse = time.monotonic() + PULSE_CHECK_SECONDS
                 self._check_pulse()
