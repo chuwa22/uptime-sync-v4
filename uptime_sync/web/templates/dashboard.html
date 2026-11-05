@@ -1,23 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
+<div class="head">
+  <div class="head-title"><h1>Dashboard</h1><p class="sub">Live status of this agent, refreshed every 15 s</p></div>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('service_restart') }}" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button data-confirm="Restart the engine and the web UI?">{{ icon('refresh') }}Restart service</button>
+  </form>
+  {% endif %}
+</div>
 <div class="tiles" data-status-url="{{ url_for('api_status') }}">
   <div class="tile tone-{{ st.tones.engine }}" data-tile="engine">
+    <span class="tile-ic">{{ icon('server', 18) }}</span>
     <div class="label">Engine</div>
     <div class="value" data-field="engine">{{ 'Running' if st.engine.running else 'Stopped' }}</div>
     <div class="sub muted" data-field="engine_sub">last cycle {{ st.engine.updated_at or '-' }}</div>
   </div>
   <div class="tile tone-{{ st.tones.monitors }}" data-tile="monitors">
+    <span class="tile-ic">{{ icon('activity', 18) }}</span>
     <div class="label">Monitors</div>
     <div class="value" data-field="counts">{{ st.counts.up }} / {{ st.counts.enabled }}</div>
     <div class="sub muted">up / total enabled</div>
   </div>
   <div class="tile tone-{{ st.tones.heartbeat }}" data-tile="heartbeat">
+    <span class="tile-ic">{{ icon('heart', 18) }}</span>
     <div class="label">Heartbeat</div>
     <div class="value" data-field="heartbeat">{{ 'On' if st.heartbeat.enabled else 'Off' }}</div>
     <div class="sub muted" data-field="heartbeat_sub"></div>
   </div>
   <div class="tile tone-{{ st.tones.signing }}" data-tile="signing">
+    <span class="tile-ic">{{ icon('shield', 18) }}</span>
     <div class="label">Reply signing</div>
     <div class="value" data-field="signing">{{ st.signing.state }}</div>
     <div class="sub muted" data-field="signing_sub">{{ st.signing.since }}</div>
@@ -26,10 +39,10 @@
 
 {% if st['update'].pending and is_admin %}
 <div class="banner">
-  <span>Version <b>{{ st['update'].pending }}</b> is ready to install.</span>
+  <span>{{ icon('download') }}Version <b>{{ st['update'].pending }}</b> is ready to install.</span>
   <form method="post" action="{{ url_for('update_install') }}" class="inline">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <button class="primary" data-confirm="Install version {{ st['update'].pending }} now? The agent restarts.">Install</button>
+    <button class="primary" data-confirm="Install version {{ st['update'].pending }} now? The agent restarts.">{{ icon('download') }}Install</button>
   </form>
 </div>
 {% endif %}
@@ -53,10 +66,4 @@
   </table>
 </div>
 
-{% if is_admin %}
-<form method="post" action="{{ url_for('service_restart') }}" class="actions">
-  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-  <button data-confirm="Restart the engine and the web UI?">Restart service</button>
-</form>
-{% endif %}
 {% endblock %}

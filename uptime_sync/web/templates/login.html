@@ -4,7 +4,7 @@
 {% block content %}
 <div class="card">
   {% with title = site_name, subtitle = 'Sign in to continue' %}{% include "_auth_head.html" %}{% endwith %}
-  {% if error %}<div class="flash warn">{{ error }}</div>{% endif %}
+  {% if error %}<div class="flash warn">{{ icon('alert') }}<span>{{ error }}</span></div>{% endif %}
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>User name <input name="username" value="{{ username }}" required{{ '' if username else ' autofocus' }} autocomplete="username" placeholder="admin"></label>

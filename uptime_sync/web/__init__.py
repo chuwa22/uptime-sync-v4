@@ -17,7 +17,7 @@ from flask import Flask, request
 
 from .. import __version__, log as logsetup, paths, procs, settings
 from ..util import remove_quietly
-from . import auth
+from . import auth, icons
 
 log = logging.getLogger('web')
 
@@ -32,6 +32,7 @@ def create_app():
         MAX_CONTENT_LENGTH=1024 * 1024,
         JSON_SORT_KEYS=False,
     )
+    app.jinja_env.globals['icon'] = icons.icon
     boot = str(int(time.time()))
 
     @app.context_processor

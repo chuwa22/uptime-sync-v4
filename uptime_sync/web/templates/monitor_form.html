@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Add monitor' if is_new else 'Edit ' ~ m.name }}{% endblock %}
 {% block content %}
-<h1>{{ 'Add monitor' if is_new else 'Edit monitor' }}</h1>
-{% for e in errors %}<div class="flash warn">{{ e }}</div>{% endfor %}
+<div class="head">
+  <div class="head-title"><h1>{{ 'Add monitor' if is_new else 'Edit monitor' }}</h1>
+    <p class="sub">{{ 'What to check, and the Push URL that receives the result.' if is_new else m.name }}</p></div>
+  <a class="button" href="{{ url_for('monitors_list') }}">{{ icon('back') }}Monitors</a>
+</div>
+{% for e in errors %}<div class="flash warn">{{ icon('alert') }}<span>{{ e }}</span></div>{% endfor %}
 {#- Placeholders need IE10+; the <small> hints carry the same examples for IE8/9.
     data-ph="TYPE=text|..." swaps the placeholder when the type changes (app.js). -#}
 <form method="post" action="{{ url_for('monitor_save') }}" class="card form">
@@ -52,12 +56,13 @@
     <label class="check" data-for-types="HTTP HTTPS"><input type="checkbox" name="ssl_verify"{{ ' checked' if m.ssl_verify }}> Verify TLS certificate (HTTPS, or an https:// Monitor URL)</label>
   </div>
   <div class="actions">
-    <button class="primary">Save</button>
+    <button class="primary">{{ icon('check') }}Save</button>
     <a class="button" href="{{ url_for('monitors_list') }}">Cancel</a>
   </div>
 </form>
 
 <div class="card flush examples">
+  <div class="card-head"><h2>{{ icon('info') }}Examples</h2></div>
   <table class="grid stack">
     <thead><tr><th>Example</th><th>Type</th><th>Target</th><th>Port</th><th>What it tells you</th></tr></thead>
     <tbody>

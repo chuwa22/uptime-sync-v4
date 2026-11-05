@@ -11,6 +11,17 @@
   - The version shows just under the card ("Uptime Sync v4.0.9") instead of at the bottom of the page.
   - Sign in / Create admin is a full-width button, and the card sits lower on tall screens.
   - After a wrong password, the user name stays filled in and the password field gets the focus.
+- Improvement (web): new look for the other pages.
+  - Every page has a header: title, one line under it, and its main button on the right (Restart service on the Dashboard, Add monitor, back buttons on the forms).
+  - Dashboard tiles have an icon and a coloured edge. Status pills are tinted, with a dot.
+  - Logs: each level is a coloured badge (INFO, WARNING, ERROR).
+  - Settings: the three sections have icons, and the Save button stays at the bottom of the screen while you scroll.
+  - Account shows your initial, role and last sign-in above Change password. The new-secret page is a card.
+  - Inputs and buttons are a little larger, with a focus ring. Flash messages have an icon and a coloured edge.
+- Feature (web): icons in the menu, on buttons, headings and flash messages. They are part of the agent, nothing is loaded from the internet.
+  - IE9+ and other browsers get inline SVG in the colour of the text around it.
+  - IE8 cannot draw SVG: a conditional comment gives it the same icon from static/icons-ie8.png.
+  - web/icons.py holds the icons. After changing them, rebuild the PNG with tools/ie8-icons.py (it draws the PNG in a browser).
 - Feature (web, top bar): the version shows after the site name, for example "v4.0.9".
 - Feature (web, top bar): the user name opens a menu that shows "Signed in as <name> (<role>)", with Account and Sign out. Click outside it or press Escape to close it. On a narrow screen it opens to the right so it stays on screen.
   - Without JavaScript, and in IE8-11, the name links to Account and Sign out sits next to it, as before. The menu is a div, not <details>, because IE8 cannot style unknown tags.

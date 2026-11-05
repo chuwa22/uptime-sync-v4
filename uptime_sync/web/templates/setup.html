@@ -5,13 +5,13 @@
 <div class="card">
   {% with title = 'Welcome to Uptime Sync', subtitle = 'First, create the administrator account' %}{% include "_auth_head.html" %}{% endwith %}
   {% if remote %}
-  <div class="flash warn">The administrator account can only be created on this PC itself.</div>
+  <div class="flash warn">{{ icon('alert') }}<span>The administrator account can only be created on this PC itself.</span></div>
   <p>Open <b class="mono">http://127.0.0.1:{{ request.environ.get('SERVER_PORT', '5000') }}/</b> in a browser on the
     agent's PC (for example over Remote Desktop). Until the account exists, anyone who reached this page
     over the network could take it.</p>
   {% else %}
   <p class="muted small">The user name is <b>admin</b>.</p>
-  {% if error %}<div class="flash warn">{{ error }}</div>{% endif %}
+  {% if error %}<div class="flash warn">{{ icon('alert') }}<span>{{ error }}</span></div>{% endif %}
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>Password <small class="muted">(at least {{ min_len }} characters)</small>

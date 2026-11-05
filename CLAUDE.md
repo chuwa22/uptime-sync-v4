@@ -178,6 +178,14 @@ README.md covers usage. This file covers the rules for changing the code.
     include `_auth_head.html` (logo, title, subtitle) and `_auth_foot.html`
     (version), and empty `{% block foot %}`. `.ver` is the version pill,
     shared with the top bar.
+  - **Icons (4.0.9).** `web/icons.py` is the only source: `{{ icon('name') }}`
+    (a Jinja global) prints the inline SVG for IE9+ and, in a `lt IE 9`
+    conditional comment, a `.ic8-name` cell of `static/icons-ie8.png`. A new
+    or changed icon means: add it to `PATHS`, rebuild the PNG with
+    `tools/ie8-icons.py` (open its page in a browser, save the PNG), and paste
+    `icons.ie8_css()` into app.css. `IconTests` checks the PNG width, the CSS
+    offsets and that templates name only known icons. The `--*-ink` colours
+    also live in both dark blocks.
   - **Phones (4.0.9).** A `table.stack` becomes one small card per row below
     640px. Give its cells a role: `title` (the name, first line), `lead` (the
     status, right of the name), `wide` (a line of its own), or a `data-label`

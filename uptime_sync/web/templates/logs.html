@@ -2,7 +2,7 @@
 {% block title %}Logs{% endblock %}
 {% block content %}
 <div class="head">
-  <h1>Logs</h1>
+  <div class="head-title"><h1>Logs</h1><p class="sub">Engine, web and supervisor, from logs/logs.db</p></div>
   <form method="get" class="filters">
     <select name="level" data-autosubmit>
       {% for l in levels %}<option value="{{ l }}"{{ ' selected' if l == level }}>{{ l }}+</option>{% endfor %}
@@ -12,7 +12,7 @@
       {% for p in procs %}<option value="{{ p }}"{{ ' selected' if p == proc }}>{{ p }}</option>{% endfor %}
     </select>
     <input type="search" class="search" name="q" value="{{ q }}" placeholder="Search text" title="Search text" maxlength="200">
-    <button type="submit">Filter</button>
+    <button type="submit">{{ icon('search') }}Filter</button>
   </form>
 </div>
 <div class="card flush">
@@ -21,7 +21,7 @@
     <tbody>
     {% for r in rows %}
       <tr class="{{ 'l-err' if r.level in ('ERROR', 'CRITICAL') else 'l-warn' if r.level == 'WARNING' else '' }}">
-        <td class="nowrap">{{ r.time }}</td><td>{{ r.level }}</td>
+        <td class="nowrap muted">{{ r.time }}</td><td><span class="lvl lvl-{{ r.level | lower }}">{{ r.level }}</span></td>
         <td class="nowrap">{{ r.proc }}/{{ r.logger }}</td><td class="wide"><pre class="msg">{{ r.msg }}</pre></td>
       </tr>
     {% else %}
@@ -37,7 +37,7 @@
   &middot; logs.db: {{ stats.rows }} rows, {{ (stats.bytes / 1048576) | round(1) }} MB
 </p>
 {% if files %}
-<h2>Text logs</h2>
+<h2>{{ icon('logs') }}Text logs</h2>
 <p class="muted small">Written only when the database could not be used, or by a process that crashed before logging started.</p>
 <ul class="plain">
   {% for f, size, mtime in files %}<li><a href="{{ url_for('log_file', name=f) }}">{{ f }}</a> <span class="muted small">({{ (size / 1024) | round(1) }} KB)</span></li>{% endfor %}

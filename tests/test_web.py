@@ -334,9 +334,6 @@ class OldBrowserTests(unittest.TestCase):
                 self.assertNotIn(token, js, '%s: %s' % (name, token))
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class ServerTypeTests(unittest.TestCase):
     """Settings > Reporting: Public / Local network, each with its own URL (4.0.9)."""
@@ -578,3 +575,55 @@ class AuthPageTests(unittest.TestCase):
     def test_other_pages_keep_the_footer(self):
         WebTests.setup_admin(self)
         self.assertIn('class="foot"', self.c.get('/').get_data(as_text=True))
+
+
+class IconTests(unittest.TestCase):
+    """Local icons: inline SVG, and the IE8 sprite cell beside it."""
+
+    def test_sprite_has_one_cell_per_icon(self):
+        import struct
+        from uptime_sync.web import icons
+        with open(os.path.join(WEB, 'static', 'icons-ie8.png'), 'rb') as f:
+            head = f.read(24)
+        self.assertEqual(head[:8], b'\x89PNG\r\n\x1a\n')
+        w, h = struct.unpack('>II', head[16:24])
+        self.assertEqual((w, h), (icons.CELL * len(icons.ORDER), icons.CELL),
+                         'rebuild icons-ie8.png with tools/ie8-icons.py')
+
+    def test_css_offsets_match_icons_py(self):
+        from uptime_sync.web import icons
+        css = _read('static', 'app.css')
+        self.assertIn(icons.ie8_css(), css, 'paste icons.ie8_css() into app.css')
+        self.assertIn('url(icons-ie8.png)', css)
+
+    def test_icon_markup(self):
+        from uptime_sync.web import icons
+        html = str(icons.icon('check'))
+        self.assertIn('<!--[if gte IE 9]><!--><svg class="ic"', html)
+        self.assertIn('<!--[if lt IE 9]><span class="ic8 ic8-check"></span><![endif]-->', html)
+        self.assertIn('stroke="currentColor"', html)
+        with self.assertRaises(KeyError):
+            icons.icon('nope')
+
+    def test_templates_name_only_known_icons(self):
+        from uptime_sync.web import icons
+        for name in os.listdir(os.path.join(WEB, 'templates')):
+            for ic in re.findall(r"icon\('([a-z]+)'", _read('templates', name)):
+                self.assertIn(ic, icons.PATHS, '%s: %s' % (name, ic))
+
+    def test_pages_render_icons(self):
+        _env.reset()
+        paths.ensure_dirs()
+        auth._attempts.clear()
+        self.app = create_app()
+        self.app.testing = True
+        self.c = self.app.test_client()
+        WebTests.setup_admin(self)
+        for url in ('/', '/monitors', '/monitors/new', '/settings', '/logs', '/account'):
+            html = self.c.get(url).get_data(as_text=True)
+            self.assertIn('<svg class="ic"', html, url)
+            self.assertIn('ic8-dashboard', html, url)
+
+
+if __name__ == '__main__':
+    unittest.main()
