@@ -60,6 +60,10 @@ def push_base_url(url):
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), parts.fragment))
 
 
+# field -> (lo, hi, default). normalize() clamps hand-edited values to these;
+# the monitor form rejects anything outside them.
+LIMITS = {'timeout': (1, 120, 10), 'retry_count': (1, 10, 3), 'port': (1, 65535, None)}
+
 def normalize(raw):
     """A monitor dict with every field present and sane types."""
     m = copy.deepcopy(DEFAULTS)
@@ -84,7 +88,8 @@ def normalize(raw):
         # Not used by these checks; a value left over from another type (the
         # form only hides the field) would otherwise be saved and shown.
         m['port'] = None
-    for key, lo, hi, fallback in (('timeout', 1, 120, 10), ('retry_count', 1, 10, 3)):
+    for key in ('timeout', 'retry_count'):
+        lo, hi, fallback = LIMITS[key]
         try:
             m[key] = min(hi, max(lo, int(m[key])))
         except (TypeError, ValueError):

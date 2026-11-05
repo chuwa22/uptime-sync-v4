@@ -42,6 +42,10 @@ NUMERIC = (
     (('remote', 'heartbeat_interval'), int, 30, 86400),
 )
 
+# 'check_interval' / 'web.port' -> (lo, hi): what the Settings form offers
+# and checks. One table, so the form can never refuse a value load() keeps.
+BOUNDS = {'.'.join(p): (lo, hi) for p, _kind, lo, hi in NUMERIC}
+
 log = logging.getLogger('settings')
 _warned = set()
 

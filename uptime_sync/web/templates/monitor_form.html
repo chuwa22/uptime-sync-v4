@@ -25,7 +25,7 @@
       <input name="target" value="{{ m.target }}" class="mono" placeholder="8.8.8.8"
         data-ph="PING=192.168.1.1|DNS=1.1.1.1|TCP=192.168.1.10|HTTP=intranet.local|HTTPS=example.com"></label>
     <label data-for-types="TCP HTTP HTTPS">Port <small class="muted">required for TCP PORT (e.g. 3389), optional for HTTP(S)</small>
-      <input name="port" type="number" min="1" max="65535" value="{{ m.port if m.port is not none else '' }}"
+      <input name="port" type="number" min="{{ limits.port[0] }}" max="{{ limits.port[1] }}" value="{{ m.port if m.port is not none else '' }}"
         placeholder="3389" data-ph="TCP=3389|HTTP=80 (default)|HTTPS=443 (default)"></label>
   </div>
   <label data-for-types="HTTP HTTPS">Monitor URL <small class="muted">optional, a full URL to check instead of Target, e.g. https://example.com/health</small>
@@ -43,10 +43,10 @@
       <input name="dns_query_name" value="{{ m.dns_query_name }}" class="mono" placeholder="google.com"></label>
   </div>
   <div class="cols">
-    <label>Timeout (s) <small class="muted">per attempt, 1-120</small>
-      <input name="timeout" type="number" min="1" max="120" value="{{ m.timeout }}" placeholder="10"></label>
-    <label>Attempts <small class="muted">tries before reporting down, 1-10</small>
-      <input name="retry_count" type="number" min="1" max="10" value="{{ m.retry_count }}" placeholder="3"></label>
+    <label>Timeout (s) <small class="muted">per attempt, {{ limits.timeout[0] }}-{{ limits.timeout[1] }}</small>
+      <input name="timeout" type="number" min="{{ limits.timeout[0] }}" max="{{ limits.timeout[1] }}" value="{{ m.timeout }}" placeholder="10"></label>
+    <label>Attempts <small class="muted">tries before reporting down, {{ limits.retry_count[0] }}-{{ limits.retry_count[1] }}</small>
+      <input name="retry_count" type="number" min="{{ limits.retry_count[0] }}" max="{{ limits.retry_count[1] }}" value="{{ m.retry_count }}" placeholder="3"></label>
   </div>
   <label data-for-types="HTTP HTTPS">Request headers <small class="muted">optional, one "Name: value" per line, e.g. Authorization: Bearer ${API_TOKEN}</small>
     <textarea name="headers" rows="3" class="mono" placeholder="Authorization: Bearer ${API_TOKEN}&#10;X-Site: head-office">{% for k, v in m.headers.items() %}{{ k }}: {{ v }}

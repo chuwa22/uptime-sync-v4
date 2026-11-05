@@ -202,14 +202,21 @@ def url_host(url):
         return '(invalid URL)'
 
 
-_CGNAT = ipaddress.ip_network('100.64.0.0/10')   # carrier-grade NAT, Tailscale
+# What counts as "this network" for a Local server (whose certificate is not
+# checked). An explicit list, not ipaddress.is_private: that also covers
+# ranges routed on the internet or never used on a LAN (Teredo 2001::/32,
+# 198.18/15 benchmarking, 240/4, 0/8), depending on the Python version.
+LOCAL_NETWORKS = tuple(ipaddress.ip_network(n) for n in (
+    '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',   # RFC 1918
+    '127.0.0.0/8', '169.254.0.0/16',                    # loopback, link-local
+    '100.64.0.0/10',                                    # carrier-grade NAT, Tailscale
+    '::1/128', 'fc00::/7', 'fe80::/10'))               # IPv6 loopback, ULA, link-local
 
 
 def _is_local_ip(ip):
     if getattr(ip, 'ipv4_mapped', None):
         ip = ip.ipv4_mapped
-    return ip.is_loopback or ip.is_link_local or ip.is_private or \
-        (ip.version == 4 and ip in _CGNAT)
+    return any(ip.version == n.version and ip in n for n in LOCAL_NETWORKS)
 
 
 def is_local_host(host):

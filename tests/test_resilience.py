@@ -332,5 +332,153 @@ class HttpDnsTests(unittest.TestCase):
         http.assert_called_once()
 
 
+def _wait_for(pred, seconds=5.0):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if pred():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+class LogDbReplacedTests(unittest.TestCase):
+    """A quarantined logs.db must not keep receiving every process's lines."""
+
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        logstore.init_db()
+        self.h = logstore.SQLiteHandler('engine')
+        self.lg = logging.getLogger('resilience.writer')
+        self.lg.addHandler(self.h)
+        self.lg.propagate = False
+        self.lg.setLevel(logging.INFO)
+
+    def tearDown(self):
+        self.lg.removeHandler(self.h)
+        self.h.close()
+
+    def msgs(self):
+        return [r['msg'] for r in logstore.query(limit=100)]
+
+    def test_writer_follows_a_moved_database(self):
+        self.lg.info('before')
+        self.assertTrue(_wait_for(lambda: self.msgs() == ['before']))
+        self.assertTrue(logstore.quarantine('test'))         # another process moves it away
+        self.lg.info('after')
+        self.assertTrue(_wait_for(lambda: self.msgs() == ['after']), self.msgs())
+
+    def test_a_database_held_open_elsewhere_is_moved_once_writers_let_go(self):
+        self.lg.info('first')
+        self.assertTrue(_wait_for(lambda: self.msgs() == ['first']))
+        real = os.replace
+        held = {'n': 1}
+
+        def windows_replace(src, dst):
+            if src == logstore.DB_FILE and held['n']:
+                held['n'] -= 1
+                raise PermissionError(13, 'in use by another process')
+            return real(src, dst)
+        with mock.patch.object(logstore.os, 'replace', side_effect=windows_replace):
+            self.assertFalse(logstore.quarantine('corrupt'))
+            self.assertTrue(os.path.exists(logstore.RESET_FLAG))
+            self.lg.info('second')                            # the writer lets go and moves it
+            self.assertTrue(_wait_for(lambda: not os.path.exists(logstore.RESET_FLAG)))
+        self.assertTrue(_wait_for(lambda: self.msgs() == ['second']), self.msgs())
+        self.assertTrue([n for n in os.listdir(paths.LOG_DIR) if n.startswith('logs.db.corrupt-')])
+
+    def test_stale_flag_never_moves_a_healthy_database(self):
+        with open(logstore.RESET_FLAG, 'w') as f:
+            f.write('1 2\nold\n')
+        self.lg.info('kept')
+        self.assertTrue(_wait_for(lambda: self.msgs() == ['kept']))
+        self.assertFalse(os.path.exists(logstore.RESET_FLAG))
+        self.assertFalse([n for n in os.listdir(paths.LOG_DIR) if n.startswith('logs.db.corrupt-')])
+
+
+class ChunkedPruneTests(unittest.TestCase):
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        logstore.init_db()
+
+    def test_retention_and_cap_delete_in_chunks(self):
+        old, now = time.time() - 30 * 86400, time.time()
+        conn = logstore.connect()
+        with conn:
+            conn.executemany('INSERT INTO logs (ts, proc, level, logger, msg) VALUES (?, ?, ?, ?, ?)',
+                             [(old, 'engine', 20, 'x', 'old')] * 250 +
+                             [(now, 'engine', 20, 'x', '%05d %s' % (i, 'y' * 1000)) for i in range(3000)])
+        conn.close()
+        statements = []
+        real = logstore._delete_chunked
+
+        def spy(conn, where, args, chunk=logstore.DELETE_CHUNK):
+            statements.append(where)
+            return real(conn, where, args, chunk=100)
+        with mock.patch.object(logstore, '_delete_chunked', side_effect=spy):
+            with self.assertLogs('log', 'WARNING'):
+                removed = logstore.prune(14, max_bytes=1024 * 1024, target_bytes=512 * 1024)
+        self.assertEqual(statements, ['ts < ?', 'id <= ?'])
+        self.assertGreater(removed, 2250)
+        left = logstore.query(limit=1000)
+        self.assertNotIn('old', [r['msg'] for r in left])
+        self.assertTrue(left[0]['msg'].startswith('02999'))   # newest kept
+
+
+class LocalNetworkTests(unittest.TestCase):
+    def test_explicit_ranges_only(self):
+        for host in ('192.168.1.10', '10.1.2.3', '172.16.0.1', '127.0.0.1', '169.254.1.1',
+                     '100.64.0.1', '::1', 'fd00::1', 'fe80::1', '::ffff:10.0.0.1', '[fd00::5]'):
+            self.assertTrue(util.is_local_host(host), host)
+        for host in ('8.8.8.8', '2001::1', '2001:0:4136:e378::1', '198.18.0.1', '240.0.0.1',
+                     '0.0.0.1', '172.32.0.1', '2606:4700::1111', ''):
+            self.assertFalse(util.is_local_host(host), host)
+
+
+class NumericBoundsTests(unittest.TestCase):
+    """One table (settings.NUMERIC) for load(), the Settings form and its HTML."""
+
+    def setUp(self):
+        from uptime_sync.web import auth, create_app
+        from tests.test_web import WebTests
+        _env.reset()
+        paths.ensure_dirs()
+        auth._attempts.clear()
+        self.app = create_app()
+        self.app.testing = True
+        self.c = self.app.test_client()
+        WebTests.setup_admin(self)
+        self.WebTests = WebTests
+
+    def post(self, **over):
+        form = {'csrf': self.WebTests.csrf(self, '/settings'), 'check_interval': '60', 'max_workers': '10',
+                'log_retention_days': '14', 'log_level': 'INFO', 'web_port': '5000',
+                'heartbeat_interval': '60', 'require_signed': 'auto', 'server_type': 'public'}
+        form.update(over)
+        return self.c.post('/settings', data=form)
+
+    def test_form_accepts_what_load_accepts(self):
+        util.atomic_write_json(paths.SETTINGS_FILE, {'check_interval': 7200})
+        html = self.c.get('/settings').get_data(as_text=True)
+        lo, hi = settings.BOUNDS['check_interval']
+        self.assertIn('name="check_interval" type="number" min="%d" max="%d" value="7200"' % (lo, hi), html)
+        self.assertEqual(self.post(check_interval='7200').status_code, 302)
+        self.assertEqual(settings.load()['check_interval'], 7200)
+
+    def test_out_of_range_is_an_error_not_a_silent_clamp(self):
+        r = self.post(check_interval='5', max_workers='999')
+        self.assertEqual(r.status_code, 200)
+        html = r.get_data(as_text=True)
+        self.assertIn('Check every must be a whole number from 10 to 86400.', html)
+        self.assertIn('Parallel checks must be a whole number from 1 to 64.', html)
+        self.assertEqual(settings.load()['check_interval'], 60)
+
+    def test_monitor_form_uses_the_same_limits(self):
+        html = self.c.get('/monitors/new').get_data(as_text=True)
+        self.assertIn('name="timeout" type="number" min="%d" max="%d"' % monitors.LIMITS['timeout'][:2], html)
+        self.assertEqual(monitors.normalize({'timeout': 999})['timeout'], monitors.LIMITS['timeout'][1])
+
+
 if __name__ == '__main__':
     unittest.main()

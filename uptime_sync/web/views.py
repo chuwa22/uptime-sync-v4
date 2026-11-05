@@ -257,14 +257,14 @@ def register(app):  # noqa: C901 -- one place for the whole route table
     @auth.admin_required
     def monitor_new():
         return render_template('monitor_form.html', m=monitors.normalize({}), errors=[], is_new=True,
-                               types=monitors.TYPES)
+                               types=monitors.TYPES, limits=monitors.LIMITS)
 
     @app.route('/monitors/<mid>/edit')
     @auth.admin_required
     def monitor_edit(mid):
         items, i = _find(mid)
         return render_template('monitor_form.html', m=items[i], errors=[], is_new=False,
-                               types=monitors.TYPES)
+                               types=monitors.TYPES, limits=monitors.LIMITS)
 
     @app.route('/monitors/save', methods=['POST'])
     @auth.admin_required
@@ -289,8 +289,8 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         errors = monitors.validate(m)
         # normalize() is lenient (it also reads hand-edited files); a typo in
         # the form must be an error, not a silent default.
-        for key, label, lo, hi in (('port', 'Port', 1, 65535), ('timeout', 'Timeout', 1, 120),
-                                   ('retry_count', 'Attempts', 1, 10)):
+        for key, label in (('port', 'Port'), ('timeout', 'Timeout'), ('retry_count', 'Attempts')):
+            lo, hi, _default = monitors.LIMITS[key]
             value = str(f.get(key, '')).strip()
             if key == 'port' and (not value or m['type'] in ('DNS', 'PING')):
                 continue
@@ -301,7 +301,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
             errors.append('Another monitor already has that name.')
         if errors:
             return render_template('monitor_form.html', m=m, errors=errors,
-                                   is_new=not raw['id'], types=monitors.TYPES), 400
+                                   is_new=not raw['id'], types=monitors.TYPES, limits=monitors.LIMITS), 400
         for i, o in enumerate(items):
             if o['id'] == m['id']:
                 items[i] = m
@@ -370,23 +370,24 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                            'server_type': f.get('server_type', 'public')},
                 'update': {'enabled': f.get('update_enabled') == 'on'},
             }
-            for key, lo, hi in (('check_interval', 10, 3600), ('max_workers', 1, 50),
-                                ('log_retention_days', 1, 365)):
-                try:
-                    new[key] = min(hi, max(lo, int(f.get(key, ''))))
-                except ValueError:
-                    errors.append('%s must be a number.' % key.replace('_', ' ').capitalize())
-            try:
-                new['remote']['heartbeat_interval'] = min(3600, max(30, int(f.get('heartbeat_interval', 60))))
-            except ValueError:
-                errors.append('Heartbeat interval must be a number.')
-            try:
-                port = int(new['web']['port'])
-                if not 0 < port < 65536:
-                    raise ValueError
-                new['web']['port'] = port
-            except ValueError:
-                errors.append('Web port must be between 1 and 65535.')
+            # Bounds from settings.BOUNDS, the table load() enforces: an
+            # out-of-range value is an error, never silently clamped.
+            for field, name, label in (('check_interval', 'check_interval', 'Check every'),
+                                       ('max_workers', 'max_workers', 'Parallel checks'),
+                                       ('log_retention_days', 'log_retention_days', 'Keep logs'),
+                                       ('heartbeat_interval', 'remote.heartbeat_interval', 'Heartbeat every'),
+                                       ('web_port', 'web.port', 'Web port')):
+                lo, hi = settings.BOUNDS[name]
+                value = str(f.get(field, '')).strip()
+                if not value.isdigit() or not lo <= int(value) <= hi:
+                    errors.append('%s must be a whole number from %d to %d.' % (label, lo, hi))
+                    value = s
+                    for key in name.split('.'):
+                        value = value.get(key, {}) if isinstance(value, dict) else value
+                node = new
+                for key in name.split('.')[:-1]:
+                    node = node.setdefault(key, {})
+                node[name.split('.')[-1]] = int(value)
             host = new['web']['host']
             if host and host != 'localhost':
                 try:
@@ -452,7 +453,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                                has_secret=bool(s.get('remote', {}).get('secret_key')),
                                sign_state=sign_state, sign_since=sign_since,
                                log_levels=loglevel.LEVELS, log_parts=loglevel.COMPONENTS,
-                               level_choices=loglevel.choices,
+                               level_choices=loglevel.choices, bounds=settings.BOUNDS,
                                library_default=loglevel.LIBRARY_DEFAULT)
 
     @app.route('/settings/new-secret', methods=['POST'])

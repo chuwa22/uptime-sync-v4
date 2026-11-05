@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Settings{% endblock %}
 {% macro locked(key) %}{% if key in managed %}<small class="lock">Managed by data/.env ({{ managed[key] }})</small>{% endif %}{% endmacro %}
-{% block content %}
+{% block content %}{% set b = bounds %}
 <div class="head">
   <div class="head-title"><h1>Settings</h1><p class="sub">Saved to data/settings.json on this agent.</p></div>
 </div>
@@ -13,10 +13,10 @@
     <label>Site name <small class="muted">shown in the top bar, e.g. Head office - server room</small>
       <input name="site_name" value="{{ s.site_name }}" maxlength="100" placeholder="Head office - server room"></label>
     <div class="cols">
-      <label>Check every (s) <small class="muted">10-3600, usually 60</small>
-        <input name="check_interval" type="number" min="10" max="3600" value="{{ s.check_interval }}" placeholder="60"></label>
-      <label>Parallel checks <small class="muted">monitors checked at once, 1-50</small>
-        <input name="max_workers" type="number" min="1" max="50" value="{{ s.max_workers }}" placeholder="10"></label>
+      <label>Check every (s) <small class="muted">{{ b['check_interval'][0] }}-{{ b['check_interval'][1] }}, usually 60</small>
+        <input name="check_interval" type="number" min="{{ b['check_interval'][0] }}" max="{{ b['check_interval'][1] }}" value="{{ s.check_interval }}" placeholder="60"></label>
+      <label>Parallel checks <small class="muted">monitors checked at once, {{ b['max_workers'][0] }}-{{ b['max_workers'][1] }}</small>
+        <input name="max_workers" type="number" min="{{ b['max_workers'][0] }}" max="{{ b['max_workers'][1] }}" value="{{ s.max_workers }}" placeholder="10"></label>
     </div>
   </div>
 
@@ -25,8 +25,8 @@
     <div class="cols">
       <label>Log level <small class="muted">every part, unless it has its own below</small>
         <select name="log_level">{% for l in log_levels %}<option{{ ' selected' if l == s.log_level }}>{{ l }}</option>{% endfor %}</select></label>
-      <label>Keep logs (days) <small class="muted">1-365</small>
-        <input name="log_retention_days" type="number" min="1" max="365" value="{{ s.log_retention_days }}" placeholder="14"></label>
+      <label>Keep logs (days) <small class="muted">{{ b['log_retention_days'][0] }}-{{ b['log_retention_days'][1] }}</small>
+        <input name="log_retention_days" type="number" min="{{ b['log_retention_days'][0] }}" max="{{ b['log_retention_days'][1] }}" value="{{ s.log_retention_days }}" placeholder="14"></label>
     </div>
     <p class="note">Give one part its own level, e.g. checks at DEBUG while you look into one monitor, without filling logs.db with the rest. The engine, web and supervisor pick up a change within a few seconds, no restart.</p>
     <table class="grid stack levels">
@@ -69,8 +69,8 @@
     </div>
     <p class="note">Paste the same secret on this agent's card in uptime-monitor (key button). Until both sides have it, heartbeats are not verified.</p>
     <div class="cols">
-      <label>Heartbeat every (s) <small class="muted">30-3600, usually 60</small>
-        <input name="heartbeat_interval" type="number" min="30" max="3600" value="{{ s.remote.heartbeat_interval }}" placeholder="60"></label>
+      <label>Heartbeat every (s) <small class="muted">{{ b['remote.heartbeat_interval'][0] }}-{{ b['remote.heartbeat_interval'][1] }}, usually 60</small>
+        <input name="heartbeat_interval" type="number" min="{{ b['remote.heartbeat_interval'][0] }}" max="{{ b['remote.heartbeat_interval'][1] }}" value="{{ s.remote.heartbeat_interval }}" placeholder="60"></label>
       <label>Require signed replies
         <select name="require_signed">
           {% set rs = s.remote.require_signed_response %}
@@ -89,8 +89,8 @@
     <div class="cols">
       <label>Web listens on <small class="muted">0.0.0.0 = every network, 127.0.0.1 = this PC only</small>
         <input name="web_host" class="mono" value="{{ s.web.host }}" placeholder="0.0.0.0"></label>
-      <label>Web port <small class="muted">1-65535, default 5000</small>
-        <input name="web_port" type="number" min="1" max="65535" value="{{ s.web.port }}" placeholder="5000"></label>
+      <label>Web port <small class="muted">{{ b['web.port'][0] }}-{{ b['web.port'][1] }}, default 5000</small>
+        <input name="web_port" type="number" min="{{ b['web.port'][0] }}" max="{{ b['web.port'][1] }}" value="{{ s.web.port }}" placeholder="5000"></label>
     </div>
   </div>
   <div class="actions save-bar"><button class="primary">{{ icon('check') }}Save settings</button></div>

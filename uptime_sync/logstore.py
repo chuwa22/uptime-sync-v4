@@ -36,6 +36,11 @@ LOG_DB_MAX_BYTES = 200 * 1024 * 1024
 LOG_DB_TARGET_BYTES = 150 * 1024 * 1024
 CORRUPT_KEEP = 1               # quarantined copies kept (they can be large)
 RECOVER_GAP_SECONDS = 600      # writer: at most one quarantine attempt per 10 min
+DELETE_CHUNK = 10000           # rows per prune transaction (bounded WAL growth, short locks)
+# Written when a corrupt logs.db cannot be moved because other processes
+# have it open (Windows): each writer that sees it closes its connection
+# and tries the move itself, so the last one to let go succeeds.
+RESET_FLAG = DB_FILE + '.reset'
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS logs (
@@ -91,18 +96,74 @@ def init_db():
         _init_db()
 
 
-def quarantine(why=''):
+def identity(path=None):
+    """(st_dev, st_ino) of logs.db, None if it is missing. A writer whose
+    connection was opened on another identity is writing to a file that
+    was moved away (POSIX keeps an open file working after a rename)."""
+    try:
+        st = os.stat(path or DB_FILE)
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino)
+
+
+def _flagged():
+    """The identity the reset flag names, or None."""
+    try:
+        with open(RESET_FLAG, 'r', encoding='ascii') as f:
+            dev, ino = f.read().split()[:2]
+        return (int(dev), int(ino))
+    except (OSError, ValueError):
+        return None
+
+
+def reset_requested(current=None):
+    """True while the reset flag names the logs.db on disk now. A flag for
+    a file that has since been replaced is stale and is removed, so a
+    healthy database is never moved because of it."""
+    flagged = _flagged()
+    if flagged is None:
+        if os.path.exists(RESET_FLAG):
+            _remove(RESET_FLAG)
+        return False
+    if flagged == (current if current is not None else identity()):
+        return True
+    _remove(RESET_FLAG)
+    return False
+
+
+def _remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def quarantine(why='', expect=None):
     """Move a corrupt logs.db (+ its -wal/-shm) to logs.db.corrupt-<ts>.
 
     False when it cannot be moved -- on Windows another process still has
-    it open; the caller tries again later. Never leaves the old -wal beside
-    a new database: SQLite would replay its frames into the fresh file."""
+    it open: RESET_FLAG then asks every writer to close its connection and
+    try again. Never leaves the old -wal beside a new database: SQLite
+    would replay its frames into the fresh file. `expect` = identity the
+    caller judged corrupt; a different file on disk is left alone."""
+    current = identity()
+    if expect is not None and current != expect:
+        _remove(RESET_FLAG)
+        return True      # already replaced by another process
     target = '%s.corrupt-%s' % (DB_FILE, time.strftime('%Y%m%d-%H%M%S'))
     try:
         os.replace(DB_FILE, target)
     except FileNotFoundError:
         pass     # another process got there first
     except OSError:
+        if current is not None and _flagged() != current:
+            try:
+                with open(RESET_FLAG, 'w', encoding='ascii') as f:
+                    f.write('%d %d\n%s\n' % (current[0], current[1], str(why)[:200].encode(
+                        'ascii', 'replace').decode('ascii')))
+            except OSError:
+                pass
         return False
     for ext in ('-wal', '-shm'):
         try:
@@ -124,6 +185,7 @@ def quarantine(why=''):
                 os.remove(os.path.join(paths.LOG_DIR, name + ext))
             except OSError:
                 pass
+    _remove(RESET_FLAG)
     write_fallback([(time.time(), 'log', logging.CRITICAL, 'log',
                      'logs.db was corrupt (%s); moved to %s, starting a new one'
                      % (why, os.path.basename(target)))], 'self-heal')
@@ -160,8 +222,30 @@ class SQLiteHandler(logging.Handler):
                 break
         return rows
 
+    def _open(self, conn, conn_id):
+        """The connection to write this batch with: (conn, conn_id), conn
+        None when logs.db is being replaced and the batch must go to the
+        fallback file. Reopens after logs.db was moved away or replaced."""
+        current = identity()
+        if conn is not None and (current != conn_id or reset_requested(current)):
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = None
+        if conn is None:
+            if reset_requested(current):
+                quarantine('requested by another process', expect=current)  # we let go: try
+                current = identity()
+                if reset_requested(current):
+                    return None, None      # still held open elsewhere
+            init_db()                      # a fresh file after a quarantine needs the schema
+            conn = connect()
+            conn_id = identity()
+        return conn, conn_id
+
     def _writer(self):
-        conn = None
+        conn = conn_id = None
         last_recover = None
         while True:
             try:
@@ -176,8 +260,11 @@ class SQLiteHandler(logging.Handler):
                              '%d log line(s) dropped: logging queue was full' % self.dropped))
                 self.dropped = 0
             try:
+                conn, conn_id = self._open(conn, conn_id)
                 if conn is None:
-                    conn = connect()
+                    write_fallback(rows, 'logs.db is being replaced')
+                    time.sleep(1)
+                    continue
                 with conn:
                     conn.executemany('INSERT INTO logs (ts, proc, level, logger, msg) '
                                      'VALUES (?, ?, ?, ?, ?)', rows)
@@ -188,7 +275,7 @@ class SQLiteHandler(logging.Handler):
                         conn.close()
                 except Exception:
                     pass
-                conn = None
+                conn = conn_id = None
                 now = time.monotonic()
                 if is_corrupt_error(e) and (last_recover is None or
                                             now - last_recover > RECOVER_GAP_SECONDS):
@@ -309,15 +396,15 @@ def prune(retention_days, max_bytes=LOG_DB_MAX_BYTES, target_bytes=LOG_DB_TARGET
     try:
         conn = connect(timeout=30)
         try:
-            with conn:
-                n = conn.execute('DELETE FROM logs WHERE ts < ?', (cutoff,)).rowcount
+            n = _delete_chunked(conn, 'ts < ?', (cutoff,))
             used = _used_bytes(conn)
             if used > max_bytes:
                 rows = conn.execute('SELECT COUNT(*) FROM logs').fetchone()[0]
                 drop = int(rows * (1.0 - float(target_bytes) / used)) + 1
-                with conn:
-                    n += conn.execute('DELETE FROM logs WHERE id <= (SELECT id FROM logs '
-                                      'ORDER BY id LIMIT 1 OFFSET ?)', (max(0, drop - 1),)).rowcount
+                last = conn.execute('SELECT id FROM logs ORDER BY id LIMIT 1 OFFSET ?',
+                                    (max(0, drop - 1),)).fetchone()
+                if last:
+                    n += _delete_chunked(conn, 'id <= ?', (last[0],))
                 logging.getLogger('log').warning(
                     'logs.db reached %d MB (cap %d MB) - removed the oldest %d line(s)',
                     used // (1024 * 1024), max_bytes // (1024 * 1024), drop)
@@ -332,9 +419,23 @@ def prune(retention_days, max_bytes=LOG_DB_MAX_BYTES, target_bytes=LOG_DB_TARGET
     except sqlite3.DatabaseError as e:
         if not is_corrupt_error(e):
             raise
-        quarantine(str(e))
-        init_db()
+        if quarantine(str(e)):
+            init_db()
         return 0
+
+
+def _delete_chunked(conn, where, args, chunk=DELETE_CHUNK):
+    """DELETE in transactions of `chunk` oldest rows: one big DELETE grew
+    the WAL by tens of MB on a box that may be short of disk, and held the
+    write lock long enough for the other processes' writers to give up."""
+    total = 0
+    sql = 'DELETE FROM logs WHERE id IN (SELECT id FROM logs WHERE %s ORDER BY id LIMIT ?)' % where
+    while True:
+        with conn:
+            n = conn.execute(sql, tuple(args) + (chunk,)).rowcount
+        total += n
+        if n < chunk:
+            return total
 
 
 def stats():

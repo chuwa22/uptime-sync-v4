@@ -231,6 +231,13 @@ README.md covers usage. This file covers the rules for changing the code.
   - logs.db: `logstore.quarantine()` replaces a corrupt database, and
     `prune()` enforces `LOG_DB_MAX_BYTES`. A PRAGMA that returns rows does its
     work only when they are read: always `.fetchall()` it.
+  - Every log writer checks `logstore.identity()` (st_dev, st_ino) before a
+    batch and reopens when logs.db was moved away: on POSIX an open SQLite
+    connection keeps writing into the renamed file. On Windows the move fails
+    while others have it open, so `quarantine()` writes `logs.db.reset`
+    naming the corrupt file's identity; each writer then closes and tries the
+    move itself. A flag naming another file is stale and removed, never acted
+    on. Prune deletes in `DELETE_CHUNK` transactions.
   - `log.setup()` and the engine's `_housekeeping()` never raise.
   - `updater.apply()` writes status `Applying` before the first move, and
     `updater.recover_interrupted()` runs at every supervisor start, right after
@@ -258,6 +265,12 @@ README.md covers usage. This file covers the rules for changing the code.
   Every request to it passes `verify=util.server_tls_verify(remote)`. It is False only when
   `server_type` is "local" AND `util.is_local_host()` holds right now. That check
   is repeated on every call, never cached in settings. GitHub is always verified.
+  "Local" means `util.LOCAL_NETWORKS`, an explicit list: never
+  `ipaddress.is_private`, which also covers internet-routed ranges.
+- **Numeric limits have one table each.** Settings: `settings.NUMERIC`
+  (`settings.BOUNDS` for the form); monitors: `monitors.LIMITS`. load() and
+  normalize() clamp hand-edited files; the forms take their min/max and their
+  checks from the same table and reject, never clamp, what is outside it.
 - **Supervisor start order.** The lock, then the stopped flag, then everything
   else. The Windows minute trigger starts a copy every minute, so nothing heavy
   may come before the lock (updater imports `requests` lazily for this reason).
