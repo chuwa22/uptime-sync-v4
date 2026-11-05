@@ -16,7 +16,8 @@
     "api_key": "",
     "secret_key": "",
     "heartbeat_interval": 60,
-    "require_signed_response": "auto"
+    "require_signed_response": "auto",
+    "server_type": "public"
   },
   "update": {
     "enabled": true,

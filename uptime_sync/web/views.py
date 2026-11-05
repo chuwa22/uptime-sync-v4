@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 
 from .. import __version__, log as logsetup, logstore, monitors, paths, procs, settings, signing, updater
-from ..util import deep_merge, read_json, touch
+from ..util import deep_merge, is_local_host, read_json, touch
 from . import auth
 
 log = logging.getLogger('web')
@@ -355,7 +355,8 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                 'log_level': f.get('log_level', 'INFO'),
                 'web': {'port': f.get('web_port', ''), 'host': f.get('web_host', '').strip()},
                 'remote': {'enabled': f.get('remote_enabled') == 'on',
-                           'require_signed_response': f.get('require_signed', 'auto')},
+                           'require_signed_response': f.get('require_signed', 'auto'),
+                           'server_type': f.get('server_type', 'public')},
                 'update': {'enabled': f.get('update_enabled') == 'on'},
             }
             for key, lo, hi in (('check_interval', 10, 3600), ('max_workers', 1, 50),
@@ -388,12 +389,26 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                 new['remote']['require_signed_response'] = 'auto'
             rs = new['remote']['require_signed_response']
             new['remote']['require_signed_response'] = {'true': True, 'false': False}.get(rs, 'auto')
+            if new['remote']['server_type'] not in ('public', 'local'):
+                new['remote']['server_type'] = 'public'
             if 'remote.url' not in managed:
                 url = f.get('remote_url', '').strip()
-                u = urlparse(url)
-                if url and (u.scheme not in ('http', 'https') or not u.hostname):
+                try:
+                    u = urlparse(url)
+                    host = u.hostname
+                except ValueError:
+                    u, host = None, None
+                if url and (u is None or u.scheme not in ('http', 'https') or not host):
                     errors.append('Server URL must be an http(s) URL to api/heartbeat.php.')
                 new['remote']['url'] = url
+            else:
+                host = urlparse(s.get('remote', {}).get('url', '')).hostname
+            if new['remote']['server_type'] == 'local' and host and not is_local_host(host):
+                # "Local" turns certificate checks off; never for a server
+                # out on the internet.
+                errors.append('Local network needs a server on this network: localhost, a '
+                              '192.168.x.x / 10.x.x.x / 172.16-31.x.x address, or a name that '
+                              'resolves to one. %s is not - choose Public.' % host)
             if 'remote.api_key' not in managed:
                 new['remote']['api_key'] = f.get('api_key', '').strip()
             if 'remote.secret_key' not in managed and f.get('secret_key', '').strip():

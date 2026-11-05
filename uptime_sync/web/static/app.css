@@ -136,6 +136,10 @@ input::-ms-clear { display: none; }
 label.check { font-weight: 500; }
 label.check input { display: inline; width: auto; margin: 0 7.5px 0 0; vertical-align: middle; }
 .checks label { display: inline-block; margin-right: 22.5px; }
+fieldset.radio-group { border: 0; padding: 0; margin: 0 0 6px; min-width: 0; }
+fieldset.radio-group legend { color: inherit; font-weight: 550; font-size: 13.8px; padding: 0; margin-bottom: 7.5px; }
+fieldset.radio-group label.check { margin-bottom: 7.5px; }
+fieldset.radio-group label.check small { display: block; margin: 3px 0 0 21px; }
 .cols { overflow: hidden; }
 .cols > label { display: inline-block; vertical-align: top; width: 48%; margin-right: 1.5%; }
 .note { color: #6b7686; color: var(--muted); font-size: 12.75px; margin: -4.5px 0 13.5px; }
@@ -195,6 +199,8 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
   .banner > span { padding: 0; }
   label.check { display: flex; align-items: center; gap: 7.5px; }
   label.check input { margin: 0; }
+  fieldset.radio-group label.check { flex-wrap: wrap; row-gap: 0; }
+  fieldset.radio-group label.check small { flex-basis: 100%; }
   .checks { display: flex; gap: 22.5px; flex-wrap: wrap; }
   .checks label { margin-right: 0; }
   .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 15px; }

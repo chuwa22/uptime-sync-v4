@@ -3,11 +3,13 @@
 import copy
 import datetime
 import hashlib
+import ipaddress
 import json
 import logging
 import os
 import re
 import shutil
+import socket
 import tempfile
 import time
 from urllib.parse import urlparse
@@ -184,6 +186,49 @@ def url_host(url):
         return '%s://%s' % (u.scheme, u.hostname) if u.hostname else '(invalid URL)'
     except ValueError:
         return '(invalid URL)'
+
+
+_CGNAT = ipaddress.ip_network('100.64.0.0/10')   # carrier-grade NAT, Tailscale
+
+
+def _is_local_ip(ip):
+    if getattr(ip, 'ipv4_mapped', None):
+        ip = ip.ipv4_mapped
+    return ip.is_loopback or ip.is_link_local or ip.is_private or \
+        (ip.version == 4 and ip in _CGNAT)
+
+
+def is_local_host(host):
+    """True for localhost / a private, link-local or CGNAT address, or a
+    name that resolves ONLY to such addresses (checked on every call, so a
+    name that later points to the internet stops counting as local)."""
+    host = (host or '').strip().strip('[]')
+    if not host:
+        return False
+    try:
+        return _is_local_ip(ipaddress.ip_address(host.split('%')[0]))
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(host, None)
+        ips = {ipaddress.ip_address(i[4][0].split('%')[0]) for i in infos}
+    except (OSError, ValueError, UnicodeError):
+        return False
+    return bool(ips) and all(_is_local_ip(ip) for ip in ips)
+
+
+def server_tls_verify(remote):
+    """Check the reporting server's certificate? Always, unless the admin
+    chose server_type 'local' AND the host really is on the local network:
+    a LAN server often has a self-signed certificate. Reply signing (HMAC)
+    still protects what the agent acts on."""
+    if str((remote or {}).get('server_type') or 'public').lower() != 'local':
+        return True
+    try:
+        host = urlparse(str(remote.get('url') or '')).hostname
+    except ValueError:
+        return True
+    return not is_local_host(host)
 
 
 def free_bytes(path):

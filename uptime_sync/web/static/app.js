@@ -166,6 +166,26 @@
   }
   if (typeSelect) { on(typeSelect, 'change', applyType); applyType(); }
 
+  // Settings: the Public / Local radios swap the Server URL example
+  // (data-by-server="public=...|local=..."; data-by-server-attr names an
+  // attribute to set instead of the text).
+  var serverRadios = $all('[data-server-type]');
+  function applyServerType() {
+    var kind = 'public';
+    each(serverRadios, function (r) { if (r.checked) { kind = r.value; } });
+    each($all('[data-by-server]'), function (el) {
+      var v = placeholderFor(el.getAttribute('data-by-server'), kind);
+      if (v === null) { return; }
+      var attr = el.getAttribute('data-by-server-attr');
+      if (attr) { el.setAttribute(attr, v); } else { setText(el, v); }
+    });
+  }
+  if (serverRadios.length) {
+    // IE8 fires change on a radio only when it loses focus; click is immediate.
+    each(serverRadios, function (r) { on(r, 'click', applyServerType); });
+    applyServerType();
+  }
+
   // Dashboard: refresh from /api/status every 15 s.
   var tiles = $all('[data-status-url]')[0];
   if (!tiles || !window.XMLHttpRequest || !window.JSON) { return; }

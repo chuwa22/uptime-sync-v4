@@ -132,6 +132,11 @@ On Windows, put the folder somewhere like `C:\UptimeSync4`, not under a user pro
 
 Precedence is: OS environment > `data/.env` > `data/settings.json` > defaults.
 
+**Server location** (Settings > Reporting): *Public* checks the server's certificate.
+*Local network* also accepts http and a self-signed https certificate. It is allowed
+only for localhost and private or LAN addresses, for example
+`http://192.168.1.10/uptime-monitor/api/heartbeat.php`.
+
 ## Updates
 
 uptime-monitor decides **when** to update: the update mode and window, the

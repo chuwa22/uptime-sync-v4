@@ -27,8 +27,17 @@
   <div class="card">
     <h2>Reporting to uptime-monitor</h2>
     <label class="check"><input type="checkbox" name="remote_enabled"{{ ' checked' if s.remote.enabled }}> Send heartbeats</label>
-    <label>Server URL <small class="muted">e.g. https://monitor.example.com/api/heartbeat.php</small> {{ locked('remote.url') }}
-      <input name="remote_url" class="mono" value="{{ '' if 'remote.url' in managed else s.remote.url }}"{{ ' disabled' if 'remote.url' in managed }} placeholder="https://monitor.example.com/api/heartbeat.php"></label>
+    {% set st = 'local' if s.remote.server_type == 'local' else 'public' %}
+    <fieldset class="radio-group">
+      <legend>Where is the server?</legend>
+      <label class="check"><input type="radio" name="server_type" value="public" data-server-type{{ ' checked' if st == 'public' }}> Public (internet)
+        <small class="muted">e.g. https://monitor.example.com/api/heartbeat.php - its certificate is always checked</small></label>
+      <label class="check"><input type="radio" name="server_type" value="local" data-server-type{{ ' checked' if st == 'local' }}> Local network (LAN)
+        <small class="muted">e.g. http://192.168.1.10/uptime-monitor/api/heartbeat.php - http, or https with a self-signed certificate</small></label>
+    </fieldset>
+    {% set ph = {'public': 'https://monitor.example.com/api/heartbeat.php', 'local': 'http://192.168.1.10/uptime-monitor/api/heartbeat.php'} %}
+    <label>Server URL <small class="muted" data-by-server="public=e.g. {{ ph.public }}|local=e.g. {{ ph.local }}">e.g. {{ ph[st] }}</small> {{ locked('remote.url') }}
+      <input name="remote_url" class="mono" value="{{ '' if 'remote.url' in managed else s.remote.url }}"{{ ' disabled' if 'remote.url' in managed }} placeholder="{{ ph[st] }}" data-by-server="public={{ ph.public }}|local={{ ph.local }}" data-by-server-attr="placeholder"></label>
     <div class="cols">
       <label>API key <small class="muted">from this agent's card in uptime-monitor</small> {{ locked('remote.api_key') }}
         <input name="api_key" class="mono" value="{{ '' if 'remote.api_key' in managed else s.remote.api_key }}"{{ ' disabled' if 'remote.api_key' in managed }} autocomplete="off"></label>

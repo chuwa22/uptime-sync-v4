@@ -186,6 +186,10 @@ README.md covers usage. This file covers the rules for changing the code.
     recovery relies on it to tell old files from new ones.
   - The supervisor restarts an engine whose `run/status.json` is older than
     3 x check_interval + 60 s. The engine must keep writing it every cycle.
+- **TLS to the reporting server (4.0.9).** Every request to `remote.url`
+  passes `verify=util.server_tls_verify(remote)`. It is False only when
+  `server_type` is "local" AND `util.is_local_host()` holds right now. That check
+  is repeated on every call, never cached in settings. GitHub is always verified.
 - **Supervisor start order.** The lock, then the stopped flag, then everything
   else. The Windows minute trigger starts a copy every minute, so nothing heavy
   may come before the lock (updater imports `requests` lazily for this reason).

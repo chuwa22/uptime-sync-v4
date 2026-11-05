@@ -335,3 +335,50 @@ class OldBrowserTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ServerTypeTests(unittest.TestCase):
+    """Settings > Reporting: Public / Local network radios (4.0.9)."""
+
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        auth._attempts.clear()
+        self.app = create_app()
+        self.app.testing = True
+        self.c = self.app.test_client()
+        WebTests.setup_admin(self)
+
+    def post(self, server_type, url):
+        token = WebTests.csrf(self, '/settings')
+        form = {'csrf': token, 'site_name': '', 'check_interval': '60', 'max_workers': '10',
+                'log_retention_days': '14', 'log_level': 'INFO', 'web_port': '5000', 'web_host': '',
+                'heartbeat_interval': '60', 'require_signed': 'auto', 'remote_url': url,
+                'api_key': 'k', 'server_type': server_type}
+        return self.c.post('/settings', data=form)
+
+    def test_radios_render_with_examples(self):
+        html = self.c.get('/settings').get_data(as_text=True)
+        self.assertIn('name="server_type" value="public" data-server-type checked', html)
+        self.assertIn('http://192.168.1.10/uptime-monitor/api/heartbeat.php', html)
+        self.assertIn('data-by-server-attr="placeholder"', html)
+
+    def test_local_server_saved(self):
+        r = self.post('local', 'http://192.168.1.10/uptime-monitor/api/heartbeat.php')
+        self.assertEqual(r.status_code, 302)
+        s = settings.load()
+        self.assertEqual(s['remote']['server_type'], 'local')
+        self.assertEqual(s['remote']['url'], 'http://192.168.1.10/uptime-monitor/api/heartbeat.php')
+        html = self.c.get('/settings').get_data(as_text=True)
+        self.assertIn('value="local" data-server-type checked', html)
+
+    def test_local_refused_for_an_internet_host(self):
+        r = self.post('local', 'https://8.8.8.8/api/heartbeat.php')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('choose Public', r.get_data(as_text=True))
+        self.assertEqual(settings.load()['remote']['server_type'], 'public')
+
+    def test_public_accepts_any_http_url(self):
+        self.assertEqual(self.post('public', 'http://10.0.0.5/api/heartbeat.php').status_code, 302)
+        self.assertEqual(self.post('bogus', 'https://mon.example.com/api/heartbeat.php').status_code, 302)
+        self.assertEqual(settings.load()['remote']['server_type'], 'public')

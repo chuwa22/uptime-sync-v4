@@ -17,9 +17,15 @@ import sys
 import time
 
 import requests
+import urllib3
 
 from . import __version__, paths, signing, updater
-from .util import MIN_FREE_BYTES, USER_AGENT, free_bytes, iso_now, redact
+from .util import MIN_FREE_BYTES, USER_AGENT, free_bytes, iso_now, redact, server_tls_verify, url_host
+
+# verify=False is used only where the admin chose it (a Local server, a
+# monitor with ssl_verify off); urllib3 would otherwise write a warning
+# to the child's stderr log on every request.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 log = logging.getLogger('heartbeat')
 
@@ -88,6 +94,7 @@ class Heartbeat:
         # handshake every beat.
         self.session = requests.Session()
         self.session.headers['User-Agent'] = USER_AGENT
+        self._tls_note = None
 
     def interval(self, settings):
         if self.next_override:
@@ -109,8 +116,10 @@ class Heartbeat:
         if secret:
             sig = signing.sign(secret, body)
             headers['X-Signature'] = sig
+        verify = self._verify(remote)
         try:
-            r = self.session.post(url, data=body, headers=headers, timeout=TIMEOUT, allow_redirects=False)
+            r = self.session.post(url, data=body, headers=headers, timeout=TIMEOUT,
+                                  allow_redirects=False, verify=verify)
         except requests.RequestException as e:
             return self._fail('network error: %s' % redact(e))
         if 500 <= r.status_code < 600:
@@ -138,6 +147,19 @@ class Heartbeat:
         verdict = signing.verify_reply(r.headers.get('X-Response-Signature'), sig, r.content, secret)
         log.debug('Heartbeat OK (reply %s)', verdict)
         return data if self.may_act(verdict, remote) else {}
+
+    def _verify(self, remote):
+        verify = server_tls_verify(remote)
+        local = str(remote.get('server_type') or 'public').lower() == 'local'
+        note = (local, verify, url_host(remote.get('url')))
+        if note != self._tls_note:
+            self._tls_note = note
+            if local and verify:
+                log.warning('Server type is Local, but %s is not on the local network - its '
+                            'certificate is checked as for a public server', note[2])
+            elif local:
+                log.info('Local server %s: a self-signed certificate is accepted', note[2])
+        return verify
 
     def _fail(self, why):
         self.failures += 1

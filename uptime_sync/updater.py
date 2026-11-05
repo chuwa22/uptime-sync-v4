@@ -34,7 +34,7 @@ from urllib.parse import urljoin, urlparse
 from . import __version__, paths, procs
 from .signing import sign
 from .util import (MIN_FREE_BYTES, USER_AGENT, atomic_write_json, is_newer, is_version, iso_now,
-                   read_json, redact, remove_quietly, sha256_file)
+                   read_json, redact, remove_quietly, server_tls_verify, sha256_file)
 
 log = logging.getLogger('update')
 
@@ -118,12 +118,14 @@ def signed_server_url(url, api_key, secret_key):
 
 # -- download + stage (runs in the engine) ----------------------------------
 
-def _open(url, kind, remote_url):
+def _open(url, kind, remote_url, verify=True):
     import requests   # here, not at the top: the supervisor imports this module
     hop = url
     for _ in range(MAX_REDIRECTS + 1):
+        # verify=False only for a Local reporting server (server_tls_verify);
+        # GitHub is always checked.
         r = requests.get(hop, timeout=60, stream=True, allow_redirects=False,
-                         headers={'User-Agent': USER_AGENT})
+                         headers={'User-Agent': USER_AGENT}, verify=verify if kind == 'server' else True)
         if not r.is_redirect:
             r.raise_for_status()
             return r
@@ -197,7 +199,7 @@ def download_and_stage(url, version, sha256, settings):
     last_error = None
     for attempt in range(3):
         try:
-            r = _open(url, kind, remote.get('url', ''))
+            r = _open(url, kind, remote.get('url', ''), server_tls_verify(remote))
             size = 0
             with open(part, 'wb') as f:
                 for chunk in r.iter_content(65536):

@@ -748,3 +748,35 @@ class MaskTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ServerTlsTests(unittest.TestCase):
+    def test_is_local_host(self):
+        for host in ('127.0.0.1', 'localhost', '192.168.1.10', '10.1.2.3', '172.16.0.9',
+                     '100.64.0.1', '::1', 'fe80::1', '[::1]'):
+            self.assertTrue(util.is_local_host(host), host)
+        for host in ('8.8.8.8', '1.1.1.1', '', None, '2001:4860:4860::8888'):
+            self.assertFalse(util.is_local_host(host), host)
+
+    def test_verify_off_only_for_local_on_a_local_address(self):
+        self.assertFalse(util.server_tls_verify({'server_type': 'local', 'url': 'https://192.168.1.10/x'}))
+        self.assertTrue(util.server_tls_verify({'server_type': 'local', 'url': 'https://8.8.8.8/x'}))
+        self.assertTrue(util.server_tls_verify({'server_type': 'public', 'url': 'https://192.168.1.10/x'}))
+        self.assertTrue(util.server_tls_verify({'url': 'https://192.168.1.10/x'}))
+
+    def test_heartbeat_passes_verify(self):
+        _env.reset()
+        paths.ensure_dirs()
+        hb = heartbeat.Heartbeat(time.time())
+        s = util.deep_merge(settings.load(), {'remote': {
+            'enabled': True, 'url': 'https://192.168.1.10/api/heartbeat.php', 'api_key': 'k',
+            'server_type': 'local', 'require_signed_response': False}})
+        with mock.patch.object(hb.session, 'post', return_value=FakeReply(200)) as post:
+            with self.assertLogs('heartbeat', 'INFO'):
+                hb.send(s)
+        self.assertIs(post.call_args[1]['verify'], False)
+        s['remote']['url'] = 'https://8.8.8.8/api/heartbeat.php'
+        with mock.patch.object(hb.session, 'post', return_value=FakeReply(200)) as post:
+            with self.assertLogs('heartbeat', 'WARNING'):
+                hb.send(s)
+        self.assertIs(post.call_args[1]['verify'], True)
