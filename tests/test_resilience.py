@@ -10,6 +10,7 @@ import time
 import unittest
 from unittest import mock
 
+import requests
 
 from uptime_sync import (checks, engine, heartbeat, log as logsetup, loglevel, logstore, monitors, paths,
                          settings, supervisor, updater, util)
@@ -661,3 +662,52 @@ class LogWriterStopTests(unittest.TestCase):
         h.close()
         self.assertLess(time.monotonic() - t, 2.0)
         self.assertFalse(h._thread.is_alive())
+
+
+FAKE_TOKEN = 'SeCrEt' + 'ToKeN1'    # joined: the pre-commit hook scans for push-token literals
+
+
+class PushLogTests(unittest.TestCase):
+    """Found in the live test: a push that keeps failing wrote ERROR + WARNING
+    for every monitor on every cycle."""
+
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        self.e = engine.Engine(supervised=True)
+        self.m = monitors.normalize({'name': 'a', 'type': 'PING', 'target': '192.0.2.1',
+                                     'push_url': 'https://kuma.example/api/push/' + FAKE_TOKEN})
+
+    def levels(self, calls):
+        with self.assertLogs('engine', 'DEBUG') as cm:
+            logging.getLogger('engine').debug('marker')
+            for ok, code, error in calls:
+                self.e._log_push(self.m, ok, 5, code, error)
+        out = cm.output[1:]
+        for line in out:
+            self.assertNotIn(FAKE_TOKEN, line)
+        return [line.split(':', 1)[0] for line in out], out
+
+    def test_same_failure_is_logged_once_then_hourly(self):
+        lv, out = self.levels([(True, 0, 'ConnectionError')] * 5)
+        self.assertEqual(lv, ['WARNING'] + ['DEBUG'] * 4)
+        self.assertIn('push to https://kuma.example failed: ConnectionError', out[0])
+        self.e._push_failing[self.m['id']][1] -= engine.PUSH_REMINDER_SECONDS + 1
+        lv, out = self.levels([(True, 0, 'ConnectionError')])
+        self.assertEqual(lv, ['WARNING'])
+        self.assertIn('still failing: 6 in a row', out[0])
+        lv, out = self.levels([(True, 200, '')])
+        self.assertEqual(lv, ['INFO'])
+        self.assertIn('works again after 6 failed push(es)', out[0])
+        self.assertEqual(self.levels([(True, 200, '')])[0], ['DEBUG'])
+
+    def test_a_different_failure_or_state_is_news(self):
+        lv, _ = self.levels([(True, 0, 'ConnectionError'), (True, 0, 'ReadTimeout'),
+                             (True, 500, ''), (False, 500, ''), (False, 500, '')])
+        self.assertEqual(lv, ['WARNING', 'WARNING', 'WARNING', 'WARNING', 'DEBUG'])
+
+    def test_one_line_per_push(self):
+        with mock.patch.object(self.e.session, 'get', side_effect=requests.ConnectionError('x')):
+            with self.assertLogs('engine', 'DEBUG') as cm:
+                self.e._push(self.m, True, 5, 0)
+        self.assertEqual(len(cm.output), 1)

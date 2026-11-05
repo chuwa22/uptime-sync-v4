@@ -77,6 +77,8 @@
 - Fix (dashboard): the uptime percentage comes from the engine's memory (run/status.json). Before, it was read from history.json, which is written every 10 cycles, so it lagged by up to 10 minutes.
 - Fix (CLI): `main.py logs --level CRITICAL` (and WARN) filters as asked. The Logs page no longer offers a "cli" process: CLI commands print to the console and never wrote to logs.db.
 - Performance (Logs page): a text search reads at most 100,000 lines per page, and Older searches the next 100,000. LIKE cannot use an index, so a rare word read the whole of logs.db every time (about 0.1 s per million lines here, seconds on a Win7 disk); now about 10 ms.
+- Fix (logs): a push that fails is one WARNING line, with the host and the error. The same failure again is DEBUG, with a reminder once an hour ("still failing: N in a row"), and the first push that works again says after how many failures. Before, every failed push wrote an ERROR and a WARNING line on every cycle: 5 monitors whose Uptime Kuma was down wrote about 29,000 lines a day.
+- Fix (logs): a Local server on plain http logs "plain http, not encrypted" instead of "a self-signed certificate is accepted".
 - Performance (logs): each process's log writer wakes every 5 s when idle instead of twice a second. Closing it is still immediate.
 4.0.8
 2026-11-05

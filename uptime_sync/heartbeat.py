@@ -175,6 +175,9 @@ class Heartbeat:
             if local and verify:
                 log.warning('Server type is Local, but %s is not on the local network - its '
                             'certificate is checked as for a public server', note[2])
+            elif local and note[2].startswith('http://'):
+                log.info('Local server %s: plain http, not encrypted; reply signing protects '
+                         'what the agent acts on', note[2])
             elif local:
                 log.info('Local server %s: a self-signed certificate is accepted', note[2])
         return verify

@@ -295,8 +295,10 @@ README.md covers usage. This file covers the rules for changing the code.
   `<name>-<sha1(root)[:8]>`. Uninstall and start use the name kept in
   data/autostart.json.
 - **Log volume.** A push that succeeds with no change from the last one logs
-  at DEBUG. INFO is for changes and WARNING for errors. Keep it that way for
-  new per-cycle messages.
+  at DEBUG. INFO is for changes and WARNING for errors. A failure that repeats
+  unchanged logs at DEBUG, with a WARNING reminder every
+  `PUSH_REMINDER_SECONDS` (`engine._log_push`). One line per push. Keep it
+  that way for new per-cycle messages.
 - **VERSION is prepend-only.** Never edit or remove older entries.
 
 ## Testing

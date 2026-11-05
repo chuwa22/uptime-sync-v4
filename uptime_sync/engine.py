@@ -26,6 +26,7 @@ HISTORY_SAVE_EVERY = 10        # cycles; and always on stop
 UPDATE_GRACE_SECONDS = 180
 PUSH_WINDOW = 10
 STUCK_CYCLES = 3               # a check running this many intervals -> restart the engine
+PUSH_REMINDER_SECONDS = 3600   # a push that keeps failing is logged again this often
 HEARTBEAT_STUCK_SECONDS = 600  # one beat in flight this long -> restart the engine
 HOUSEKEEPING_SECONDS = 3600
 LOW_DISK_RETENTION_DAYS = 3
@@ -66,7 +67,8 @@ class Engine:
         self._hb_busy_since = None      # monotonic start of the beat in flight
         self._monitor_read_error = None
         self._cycles = 0
-        self._last_state = {}           # monitor id -> (ok, push code), to log only changes
+        self._last_state = {}           # monitor id -> (ok, push code, error), to log only changes
+        self._push_failing = {}         # monitor id -> [failed pushes in a row, last reminder]
         self._errors_logged = set()
         self._status_warned = False
         self._budget_warned = None
@@ -174,6 +176,7 @@ class Engine:
         self._push_codes = {u: w for u, w in self._push_codes.items() if u in urls}
         self._push_alerted &= urls
         self._last_state = {k: v for k, v in self._last_state.items() if k in known}
+        self._push_failing = {k: v for k, v in self._push_failing.items() if k in known}
         self._budget_warned = None
         log.info('Loaded %d monitor(s), %d enabled', len(all_monitors), len(self.monitors))
 
@@ -331,27 +334,53 @@ class Engine:
         params = {'status': 'up' if ok else 'down',
                   'msg': '%s: %s' % (m['name'], 'All systems UP' if ok else 'Service is DOWN'),
                   'ping': ms, 'dns_ping': dns_ms}
+        error = ''
         try:
             r = self.session.get(monitors.push_base_url(m['push_url']), params=params, timeout=10)
             code = r.status_code
             r.close()
         except requests.RequestException as e:
             code = 0
-            # Host only: the exception text carries the whole URL, and the
-            # path / query of a push URL is its token.
-            log.error('Push for %s to %s failed: %s', m['name'], url_host(m['push_url']),
-                      type(e).__name__)
-        # INFO only when something changed: a steady 'UP, 200' for every
-        # monitor every minute is most of the log and none of the news.
-        state = (ok, code == 200)
+            error = type(e).__name__
+        self._log_push(m, ok, ms, code, error)
+        self._track_push(m, code)
+
+    def _log_push(self, m, ok, ms, code, error):
+        """One line per push, and only news at INFO / WARNING: a steady
+        'UP, 200' is most of the log and none of the news, and so is the same
+        failure every cycle (5 monitors whose Kuma is down wrote ~29,000
+        lines a day). A failure that goes on is repeated once an hour."""
+        mark = '[UP]' if ok else '[DOWN]'
+        state = (ok, code, error)
         changed = self._last_state.get(m['id']) != state
         self._last_state[m['id']] = state
-        if code != 200:
-            level = logging.WARNING
+        failing = self._push_failing.get(m['id'])
+        if code == 200:
+            if failing:
+                del self._push_failing[m['id']]
+                log.info('%s %s %sms -> push HTTP 200 (works again after %d failed push(es))',
+                         mark, m['name'], ms, failing[0])
+            else:
+                log.log(logging.INFO if changed else logging.DEBUG, '%s %s %sms -> push HTTP 200',
+                        mark, m['name'], ms)
+            return
+        # Host only: the exception text carries the whole URL, and the path /
+        # query of a push URL is its token.
+        what = ('push to %s failed: %s' % (url_host(m['push_url']), error) if error else
+                'push HTTP %s from %s' % (code, url_host(m['push_url'])))
+        now = time.monotonic()
+        if failing is None:
+            failing = self._push_failing[m['id']] = [0, now]
+        failing[0] += 1
+        if changed:
+            failing[1] = now
+            log.warning('%s %s %sms -> %s', mark, m['name'], ms, what)
+        elif now - failing[1] >= PUSH_REMINDER_SECONDS:
+            failing[1] = now
+            log.warning('%s %s %sms -> %s (still failing: %d in a row)', mark, m['name'], ms, what,
+                        failing[0])
         else:
-            level = logging.INFO if changed else logging.DEBUG
-        log.log(level, '%s %s %sms -> push HTTP %s', '[UP]' if ok else '[DOWN]', m['name'], ms, code)
-        self._track_push(m, code)
+            log.debug('%s %s %sms -> %s', mark, m['name'], ms, what)
 
     def _track_push(self, m, code):
         """Warn once when >= 80% of the last 10 pushes got 404 (the monitor
