@@ -228,6 +228,25 @@ table.grid td.title a { font-weight: 600; }
 .flash.ok .ic { color: #1f9d55; color: var(--up); }
 .flash.warn .ic { color: #d64545; color: var(--down); }
 
+/* Toasts (base.html, _toast.html): every notice of the UI, stacked in the
+   bottom-right corner, newest at the bottom. A coloured bar on the left and the icon say
+   ok / warn / info. app.js adds the close button and the fade-out. */
+.toasts { position: fixed; bottom: 18px; right: 18px; z-index: 40; width: 360px; max-width: 90%; }
+.toast { position: relative; margin-top: 9px; padding: 10.5px 36px 10.5px 13.5px; border-radius: 10px;
+  font-size: 13.8px; line-height: 1.45; word-wrap: break-word;
+  color: #1b2330; color: var(--text); background: #ffffff; background: var(--card);
+  border: 1px solid #e2e7ee; border: 1px solid var(--line);
+  border-left: 4px solid #2f6fe4; border-left: 4px solid var(--accent);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, .16); }
+.toast.ok { border-left-color: #1f9d55; border-left-color: var(--up); }
+.toast.warn { border-left-color: #d64545; border-left-color: var(--down); }
+.toast .ic, .toast .ic8 { color: #2f6fe4; color: var(--accent); }
+.toast.ok .ic { color: #1f9d55; color: var(--up); }
+.toast.warn .ic { color: #d64545; color: var(--down); }
+button.toast-x { position: absolute; top: 6px; right: 6px; padding: 3px 8px; border: 0; background: none;
+  box-shadow: none; font-size: 18px; line-height: 1; border-radius: 6px; color: #6b7686; color: var(--muted); }
+button.toast-x:hover { color: #1b2330; color: var(--text); background: #f4f6f9; background: var(--bg); }
+
 form.inline { display: inline; margin: 0; }
 label { display: block; margin-bottom: 12.75px; font-weight: 550; font-size: 13.8px; }
 label small { font-weight: 400; }
@@ -338,6 +357,11 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
   input[type=checkbox], input[type=radio] { accent-color: #2f6fe4; accent-color: var(--accent); }
   .flash { display: flex; align-items: flex-start; gap: 9px; }
   .flash .ic { flex: none; margin: 1.5px 0 0; }
+  .toasts { max-width: calc(100% - 36px); }
+  .toast { display: flex; align-items: flex-start; gap: 9px; animation: toast-in .2s ease-out; }
+  .toast .ic { flex: none; margin: 1.5px 0 0; }
+  .toast-msg { flex: 1 1 auto; min-width: 0; }
+  .toast.leaving { opacity: 0; transform: translateX(18px); transition: opacity .2s, transform .2s; }
   .profile { display: flex; align-items: center; }
   /* Settings: Save stays in view at the bottom of the window. */
   .save-bar { position: sticky; bottom: 0; z-index: 5; margin: 0 -18px 15px; padding: 12px 18px;
@@ -394,6 +418,7 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
      (td.title) leads, the status (td.lead) sits at its right, the other
      cells flow below with their data-label, td.wide takes a line of its own. */
   @media (max-width: 640px) {
+    .toasts { bottom: 12px; left: 16px; right: 16px; width: auto; max-width: none; }
     table.stack thead { display: none; }
     table.stack, table.stack tbody { display: block; }
     table.stack tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4.5px 13.5px;
@@ -411,4 +436,9 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
       font-family: -apple-system, "Segoe UI", Roboto, Tahoma, sans-serif; font-size: 11px; font-weight: 600;
       text-transform: uppercase; letter-spacing: .04em; color: #6b7686; color: var(--muted); }
   }
+}
+
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast.leaving { animation: none; transition: none; transform: none; }
 }

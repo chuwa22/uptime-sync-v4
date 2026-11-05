@@ -1,0 +1,7 @@
+{#- One notice for the toast stack in base.html (the only place notices
+    show). cat: ok | warn | info. app.js adds the close button and fades ok /
+    info out after a few seconds; warnings stay until closed. Without
+    JavaScript (or in a browser app.js skips) they simply stay. -#}
+{% macro toast(cat, msg) -%}
+<div class="toast {{ cat }}" role="{{ 'alert' if cat == 'warn' else 'status' }}">{{ icon('check' if cat == 'ok' else 'alert' if cat == 'warn' else 'info') }}<span class="toast-msg">{{ msg }}</span></div>
+{%- endmacro %}

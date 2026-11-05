@@ -38,10 +38,14 @@
 {% else %}
 <div class="theme-corner"><button type="button" class="theme-toggle hidden" data-theme-toggle></button></div>
 {% endif %}
+{#- Every notice goes here: flash() messages, plus a page's own (form errors)
+    from its toasts block. See _toast.html. -#}
+{% from "_toast.html" import toast %}
+<div class="toasts" data-toasts>
+  {%- with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}{{ toast(cat, msg) }}{% endfor %}{% endwith -%}
+  {%- block toasts %}{% endblock -%}
+</div>
 <div class="{% block main_class %}page{% endblock %}" role="main">
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for cat, msg in messages %}<div class="flash {{ cat }}">{{ icon('check' if cat == 'ok' else 'alert' if cat == 'warn' else 'info') }}<span>{{ msg }}</span></div>{% endfor %}
-  {% endwith %}
   {% block content %}{% endblock %}
 </div>
 {% block foot %}<div class="foot" role="contentinfo">Uptime Sync {{ version }}</div>{% endblock %}

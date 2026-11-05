@@ -195,6 +195,13 @@ README.md covers usage. This file covers the rules for changing the code.
     that is printed before the value. The dashboard rows that app.js redraws
     need the same classes and labels (`PhoneLayoutTests`). These rules sit
     inside `@supports`, so IE keeps the plain table.
+  - **Notices are toasts (4.0.9).** `flash(msg, 'ok'|'warn'|'info')` and a
+    page's own messages (form errors) all go to the stack in base.html,
+    bottom right. A page adds its own with `{% from "_toast.html" import toast %}`
+    and `{% block toasts %}{{ toast('warn', e) }}{% endblock %}`. Never write a
+    `<div class="flash">` for a notice; `.flash` is left for text that is part
+    of the page (setup's "only on this PC"). app.js fades ok/info out after
+    6 s; warnings stay until closed (`ToastTests`).
   - Every POST carries the `csrf` form field.
   - Admin-only routes use `@auth.admin_required`.
   - Any form that checks a password calls `auth.begin_attempt(key)` before

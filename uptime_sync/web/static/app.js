@@ -264,6 +264,40 @@
     });
   });
 
+  // Toasts (base.html): a close button on each, and ok / info notices fade
+  // out after TOAST_MS, paused while the pointer or keyboard focus is on
+  // them. Warnings (form errors, refusals) stay until closed: they say what
+  // to fix. Without this script every toast just stays.
+  var TOAST_MS = 6000;
+  function setupToast(t) {
+    var x = document.createElement('button');
+    var timer = null;
+    var gone = false;
+    x.type = 'button';
+    x.className = 'toast-x';
+    x.title = 'Dismiss';
+    x.setAttribute('aria-label', 'Dismiss');
+    setText(x, '\u00d7');   // multiplication sign
+    t.appendChild(x);
+    function stop() { if (timer) { window.clearTimeout(timer); timer = null; } }
+    function remove() {
+      if (gone) { return; }
+      gone = true;
+      stop();
+      t.className += ' leaving';
+      window.setTimeout(function () { if (t.parentNode) { t.parentNode.removeChild(t); } }, 220);
+    }
+    on(x, 'click', remove);
+    if ((' ' + t.className + ' ').indexOf(' warn ') >= 0) { return; }
+    function start() { stop(); if (!gone) { timer = window.setTimeout(remove, TOAST_MS); } }
+    on(t, 'mouseover', stop);
+    on(t, 'mouseout', start);
+    on(x, 'focus', stop);
+    on(x, 'blur', start);
+    start();
+  }
+  each($all('[data-toasts] .toast'), setupToast);
+
   // Dashboard: refresh from /api/status every 15 s.
   var tiles = $all('[data-status-url]')[0];
   if (!tiles || !window.XMLHttpRequest || !window.JSON) { return; }

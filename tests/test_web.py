@@ -738,5 +738,63 @@ class IconTests(unittest.TestCase):
             text = re.sub(r'<!--.*?-->|<[^>]+>', '', cell, flags=re.S)
             self.assertEqual(text.strip(), '', text)
 
+
+class ToastTests(unittest.TestCase):
+    """Every notice (flash() and form errors) is a toast in base.html's stack."""
+
+    def setUp(self):
+        WebTests.setUp(self)
+
+    csrf = WebTests.csrf
+    setup_admin = WebTests.setup_admin
+
+    @staticmethod
+    def stack(html):
+        m = re.search(r'<div class="toasts" data-toasts>(.*?)</div>\s*<div class="[^"]*" role="main">',
+                      html, re.S)
+        return m.group(1) if m else None
+
+    def test_flash_is_a_toast_outside_the_page(self):
+        self.setup_admin()
+        token = self.csrf('/monitors/new')
+        r = self.c.post('/monitors/save', follow_redirects=True, data={
+            'csrf': token, 'name': 'Gateway', 'type': 'PING', 'target': '10.0.0.1',
+            'push_url': 'https://kuma.example.com/api/push/abc', 'enabled': 'on',
+            'timeout': '5', 'retry_count': '2'})
+        html = r.get_data(as_text=True)
+        stack = self.stack(html)
+        self.assertIsNotNone(stack)
+        self.assertIn('<div class="toast ok" role="status">', stack)
+        self.assertIn('Saved &#34;Gateway&#34;', stack)
+        self.assertNotIn('class="flash', html)
+        # shown once: the next page has an empty stack
+        self.assertEqual(self.stack(self.c.get('/monitors').get_data(as_text=True)).strip(), '')
+
+    def test_form_errors_are_warning_toasts(self):
+        self.setup_admin()
+        token = self.csrf('/monitors/new')
+        r = self.c.post('/monitors/save', data={'csrf': token, 'name': '', 'type': 'PING', 'target': '',
+                                                'push_url': 'http://kuma/api/push/abc'})
+        self.assertEqual(r.status_code, 400)
+        stack = self.stack(r.get_data(as_text=True))
+        self.assertIn('<div class="toast warn" role="alert">', stack)
+        self.assertIn('Name is required.', stack)
+        self.assertIn('Push URL must be an https', stack)
+
+    def test_sign_in_error_is_a_toast(self):
+        self.setup_admin()
+        self.c.post('/logout', data={'csrf': self.csrf('/')})
+        token = self.csrf('/login')
+        html = self.c.post('/login', data={'csrf': token, 'username': 'admin',
+                                           'password': 'wrong-password-1'}).get_data(as_text=True)
+        stack = self.stack(html)
+        self.assertIn('class="toast warn"', stack)
+
+    def test_toast_script_keeps_warnings(self):
+        with open(os.path.join(os.path.dirname(paths.__file__), 'web', 'static', 'app.js')) as f:
+            js = f.read()
+        self.assertIn("each($all('[data-toasts] .toast'), setupToast)", js)
+        self.assertIn("indexOf(' warn ') >= 0) { return; }", js)
+
 if __name__ == '__main__':
     unittest.main()

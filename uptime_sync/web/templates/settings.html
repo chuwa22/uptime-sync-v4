@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% from "_toast.html" import toast %}
+{% block toasts %}{% for e in errors %}{{ toast('warn', e) }}{% endfor %}{% endblock %}
 {% block title %}Settings{% endblock %}
 {% macro locked(key) %}{% if key in managed %}<small class="lock">Managed by data/.env ({{ managed[key] }})</small>{% endif %}{% endmacro %}
 {% block content %}{% set b = bounds %}
 <div class="head">
   <div class="head-title"><h1>Settings</h1><p class="sub">Saved to data/settings.json on this agent.</p></div>
 </div>
-{% for e in errors %}<div class="flash warn">{{ icon('alert') }}<span>{{ e }}</span></div>{% endfor %}
 <form method="post" class="form">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <div class="card">

@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_toast.html" import toast %}
+{% block toasts %}{% for e in errors %}{{ toast('warn', e) }}{% endfor %}{% endblock %}
 {% block title %}{{ 'Add monitor' if is_new else 'Edit ' ~ m.name }}{% endblock %}
 {% block content %}
 <div class="head">
@@ -6,7 +8,6 @@
     <p class="sub">{{ 'What to check, and the Push URL that receives the result.' if is_new else m.name }}</p></div>
   <a class="button" href="{{ url_for('monitors_list') }}">{{ icon('back') }}Monitors</a>
 </div>
-{% for e in errors %}<div class="flash warn">{{ icon('alert') }}<span>{{ e }}</span></div>{% endfor %}
 {#- Placeholders need IE10+; the <small> hints carry the same examples for IE8/9.
     data-ph="TYPE=text|..." swaps the placeholder when the type changes (app.js). -#}
 <form method="post" action="{{ url_for('monitor_save') }}" class="card form">
