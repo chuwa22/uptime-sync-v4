@@ -13,10 +13,16 @@
 
 Exit 0 from the supervisor means "stopped on purpose", so no OS restarts it;
 any crash exits non-zero and is restarted.
+
+Names: UptimeSync4 / uptime-sync / com.uptimesync.agent, unless one with
+that name already starts a DIFFERENT install folder -- then this install
+gets <name>-<8 hex of its path>, so a second copy on the same box never
+takes over the first one's autostart. The name chosen is kept in
+data/autostart.json and reused by every later install / uninstall.
 """
 
+import hashlib
 import os
-import subprocess
 import sys
 import tempfile
 from xml.sax.saxutils import escape
@@ -35,14 +41,19 @@ class AutostartError(Exception):
     pass
 
 
+RUN_TIMEOUT = 60
+
+
 def _run(cmd, check=True):
-    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          stdin=subprocess.DEVNULL, creationflags=flags)
-    out = perms._console_text(proc.stdout).strip()   # OEM code page on Windows
-    if check and proc.returncode != 0:
-        raise AutostartError('%s failed (%d): %s' % (' '.join(cmd[:2]), proc.returncode, out))
-    return proc.returncode, out
+    code, raw, error = procs.run(cmd, RUN_TIMEOUT)
+    out = perms._console_text(raw).strip()   # OEM code page on Windows
+    if code is None:
+        if check:
+            raise AutostartError('%s: %s' % (' '.join(cmd[:2]), error))
+        return -1, error
+    if check and code != 0:
+        raise AutostartError('%s failed (%d): %s' % (' '.join(cmd[:2]), code, out))
+    return code, out
 
 
 def is_admin():
@@ -57,6 +68,40 @@ def is_admin():
 
 def _state():
     return read_json(STATE_FILE, {}) or {}
+
+
+def _mentions_root(text):
+    """Does an existing task / unit / plist start THIS install's main.py?"""
+    t = (text or '').lower()
+    forms = (MAIN_PY, escape(MAIN_PY))
+    # schtasks output went through the OEM code page and _console_text.
+    forms += tuple(f.encode('ascii', 'replace').decode('ascii') for f in forms)
+    return any(f.lower() in t for f in forms)
+
+
+def root_suffixed(base):
+    digest = hashlib.sha1(os.path.normcase(paths.ROOT).encode('utf-8')).hexdigest()[:8]
+    return '%s-%s' % (base, digest)
+
+
+def choose_name(base, existing_text):
+    """The registration name for this install. existing_text(name) returns
+    the definition registered under `name`, or None when there is none."""
+    previous = _state().get('name')
+    if previous:
+        return previous
+    text = existing_text(base)
+    if text is None or _mentions_root(text):
+        return base
+    return root_suffixed(base)
+
+
+def _read_text(path):
+    try:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            return f.read()
+    except OSError:
+        return None
 
 
 # -- Windows ---------------------------------------------------------------------
@@ -118,18 +163,24 @@ def windows_task_xml(python, root):
 """.format(python=escape(python), main=escape(main), root=escape(root))
 
 
+def _win_task_text(name):
+    code, out = _run(['schtasks', '/Query', '/TN', name, '/XML'], check=False)
+    return out if code == 0 else None
+
+
 def _win_install(python):
     if not is_admin():
         raise AutostartError('Run this from an elevated prompt (Run as administrator).')
+    name = choose_name(WIN_TASK, _win_task_text)
     fd, xml_path = tempfile.mkstemp(suffix='.xml')
     os.close(fd)
     try:
         with open(xml_path, 'w', encoding='utf-16') as f:
             f.write(windows_task_xml(python, paths.ROOT))
-        _run(['schtasks', '/Create', '/TN', WIN_TASK, '/XML', xml_path, '/F'])
+        _run(['schtasks', '/Create', '/TN', name, '/XML', xml_path, '/F'])
     finally:
         remove_quietly(xml_path)
-    return {'kind': 'windows-task', 'name': WIN_TASK}
+    return {'kind': 'windows-task', 'name': name}
 
 
 def _win_uninstall(state):
@@ -141,8 +192,11 @@ def _win_start(state):
 
 
 def _win_installed():
-    code, _ = _run(['schtasks', '/Query', '/TN', WIN_TASK], check=False)
-    return code == 0
+    """The task name that starts this install, or ''."""
+    for name in (WIN_TASK, root_suffixed(WIN_TASK)):
+        if _mentions_root(_win_task_text(name)):
+            return name
+    return ''
 
 
 # -- Linux ---------------------------------------------------------------------
@@ -169,40 +223,41 @@ def systemd_unit(python, root, user=None):
     return '\n'.join(lines)
 
 
-def _linux_paths():
+def _linux_paths(name=UNIT):
     if is_admin():
-        return '/etc/systemd/system/%s.service' % UNIT, []
+        return '/etc/systemd/system/%s.service' % name, []
     base = os.path.expanduser('~/.config/systemd/user')
-    return os.path.join(base, '%s.service' % UNIT), ['--user']
+    return os.path.join(base, '%s.service' % name), ['--user']
 
 
 def _linux_install(python):
-    unit_path, scope = _linux_paths()
+    name = choose_name(UNIT, lambda n: _read_text(_linux_paths(n)[0]))
+    unit_path, scope = _linux_paths(name)
     user = (os.environ.get('SUDO_USER') or 'root') if not scope else None
     os.makedirs(os.path.dirname(unit_path), exist_ok=True)
     with open(unit_path, 'w') as f:
         f.write(systemd_unit(python, paths.ROOT, user))
     _run(['systemctl'] + scope + ['daemon-reload'])
-    _run(['systemctl'] + scope + ['enable', UNIT])
+    _run(['systemctl'] + scope + ['enable', name])
     note = '' if not scope else ('user unit: run `loginctl enable-linger %s` so it starts at boot '
                                  'without a login' % os.environ.get('USER', '<user>'))
-    return {'kind': 'systemd', 'name': UNIT, 'path': unit_path, 'scope': scope, 'note': note}
+    return {'kind': 'systemd', 'name': name, 'path': unit_path, 'scope': scope, 'note': note}
 
 
 def _linux_uninstall(state):
     scope = state.get('scope', [])
-    _run(['systemctl'] + scope + ['disable', '--now', UNIT], check=False)
+    _run(['systemctl'] + scope + ['disable', '--now', state.get('name', UNIT)], check=False)
     remove_quietly(state.get('path', ''))
     _run(['systemctl'] + scope + ['daemon-reload'], check=False)
 
 
 def _linux_start(state):
-    _run(['systemctl'] + state.get('scope', []) + ['restart', UNIT])
+    _run(['systemctl'] + state.get('scope', []) + ['restart', state.get('name', UNIT)])
 
 
 # -- macOS ---------------------------------------------------------------------
 
-def launchd_plist(python, root, user=None):
+def launchd_plist(python, root, user=None, label=LABEL):
     def s(v):
         return '<string>%s</string>' % escape(v)
     user_xml = '\n  <key>UserName</key>\n  %s' % s(user) if user else ''
@@ -236,7 +291,7 @@ def launchd_plist(python, root, user=None):
   {log}{user}
 </dict>
 </plist>
-""".format(label=s(LABEL), python=s(python), main=s(os.path.join(root, 'main.py')),
+""".format(label=s(label), python=s(python), main=s(os.path.join(root, 'main.py')),
            root=s(root), log=s(log), user=user_xml)
 
 
@@ -244,38 +299,42 @@ def _mac_domain():
     return 'system' if is_admin() else 'gui/%d' % os.getuid()
 
 
-def _mac_install(python):
+def _mac_plist(label):
     if is_admin():
-        plist = '/Library/LaunchDaemons/%s.plist' % LABEL
-        user = os.environ.get('SUDO_USER')
-    else:
-        plist = os.path.expanduser('~/Library/LaunchAgents/%s.plist' % LABEL)
-        user = None
+        return '/Library/LaunchDaemons/%s.plist' % label
+    return os.path.expanduser('~/Library/LaunchAgents/%s.plist' % label)
+
+
+def _mac_install(python):
+    label = choose_name(LABEL, lambda n: _read_text(_mac_plist(n)))
+    plist = _mac_plist(label)
+    user = os.environ.get('SUDO_USER') if is_admin() else None
     domain = _mac_domain()
-    _run(['launchctl', 'bootout', '%s/%s' % (domain, LABEL)], check=False)
+    _run(['launchctl', 'bootout', '%s/%s' % (domain, label)], check=False)
     os.makedirs(os.path.dirname(plist), exist_ok=True)
     with open(plist, 'w', encoding='utf-8') as f:
-        f.write(launchd_plist(python, paths.ROOT, user))
+        f.write(launchd_plist(python, paths.ROOT, user, label))
     if is_admin():
         os.chmod(plist, 0o644)
     code, out = _run(['launchctl', 'bootstrap', domain, plist], check=False)
     if code != 0:
         _run(['launchctl', 'load', '-w', plist])
-    return {'kind': 'launchd', 'name': LABEL, 'path': plist, 'domain': domain,
+    return {'kind': 'launchd', 'name': label, 'path': plist, 'domain': domain,
             'note': '' if is_admin() else 'LaunchAgent: runs while this user is logged in '
                                           '(install with sudo for a boot-time LaunchDaemon)'}
 
 
 def _mac_uninstall(state):
     domain = state.get('domain', _mac_domain())
-    code, _ = _run(['launchctl', 'bootout', '%s/%s' % (domain, LABEL)], check=False)
+    code, _ = _run(['launchctl', 'bootout', '%s/%s' % (domain, state.get('name', LABEL))], check=False)
     if code != 0 and state.get('path'):
         _run(['launchctl', 'unload', '-w', state['path']], check=False)
     remove_quietly(state.get('path', ''))
 
 
 def _mac_start(state):
-    _run(['launchctl', 'kickstart', '%s/%s' % (state.get('domain', _mac_domain()), LABEL)])
+    _run(['launchctl', 'kickstart', '%s/%s' % (state.get('domain', _mac_domain()),
+                                               state.get('name', LABEL))])
 
 
 # -- public ----------------------------------------------------------------------
@@ -313,7 +372,10 @@ def uninstall():
 def installed():
     state = _state()
     if procs.IS_WINDOWS:
-        return state or ({'kind': 'windows-task', 'name': WIN_TASK} if _win_installed() else {})
+        if state:
+            return state
+        name = _win_installed()
+        return {'kind': 'windows-task', 'name': name} if name else {}
     if state.get('path') and not os.path.exists(state['path']):
         return {}
     return state

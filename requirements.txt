@@ -6,11 +6,18 @@
 
 # direct
 requests==2.32.4
-urllib3==2.2.3
 certifi==2026.10.23
 flask==2.3.3
 werkzeug==3.0.6
-waitress==3.0.0
+# Two pins where the fixed release no longer installs on 3.8: newer boxes
+# get the fix (waitress 3.0.1: CVE-2024-49769; urllib3 2.5/2.6: redirect
+# and decompression-bomb CVEs of 2025), Windows 7 keeps the last 3.8 build.
+# The agent's exposure on 3.8 is small: waitress serves the LAN dashboard
+# only, and urllib3 talks to a configured server and GitHub.
+waitress==3.0.0; python_version < "3.9"
+waitress==3.0.2; python_version >= "3.9"
+urllib3==2.2.3; python_version < "3.9"
+urllib3==2.6.3; python_version >= "3.9"
 
 # dependencies of the above
 idna==3.15

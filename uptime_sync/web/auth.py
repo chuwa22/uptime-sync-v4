@@ -18,7 +18,7 @@ import time
 from flask import abort, g, redirect, request, session, url_for
 
 from .. import paths
-from ..util import atomic_write_json, iso_now, read_json, touch
+from ..util import atomic_write_json, corrupt_copies, iso_now, read_json, touch
 
 ITERATIONS = 600000
 LEGACY_ITERATIONS = 100000
@@ -56,15 +56,27 @@ def check_password(password, stored):
 
 def load_users():
     data = read_json(paths.USERS_FILE, {}) or {}
+    if not isinstance(data, dict):
+        return {}
     return {k: v for k, v in data.items() if isinstance(v, dict) and not k.startswith('_')}
 
 
 def save_users(users):
-    atomic_write_json(paths.USERS_FILE, users, private=True)
+    atomic_write_json(paths.USERS_FILE, users, private=True, backup=True)
 
 
 def has_users():
-    return bool(load_users())
+    """True once an admin was ever created -- also when users.json cannot be
+    read, or was corrupt and quarantined with no usable backup. Otherwise
+    /setup would reopen and whoever reached it first would become admin.
+    `main.py reset-password` on the box is the way back in."""
+    return bool(load_users()) or os.path.exists(paths.USERS_FILE) or \
+        bool(corrupt_copies(paths.USERS_FILE))
+
+
+def accounts_lost():
+    """has_users() is True but there is no account to sign in with."""
+    return has_users() and not load_users()
 
 
 def create_user(username, password, role='admin'):
@@ -147,7 +159,10 @@ def rate_limited(ip):
     now = time.time()
     with _lock:
         recent = [t for t in _attempts.get(ip, []) if now - t < ATTEMPT_WINDOW]
-        _attempts[ip] = recent
+        if recent:
+            _attempts[ip] = recent
+        else:
+            _attempts.pop(ip, None)   # do not keep one empty entry per IP ever seen
         return len(recent) >= MAX_ATTEMPTS
 
 

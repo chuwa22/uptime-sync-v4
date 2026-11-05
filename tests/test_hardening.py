@@ -9,7 +9,7 @@ import time
 import unittest
 from unittest import mock
 
-from uptime_sync import checks, engine, monitors, paths, perms, signing, supervisor, updater, util
+from uptime_sync import checks, engine, monitors, paths, perms, settings, signing, supervisor, updater, util
 
 
 class VersionTests(unittest.TestCase):
@@ -49,10 +49,10 @@ class EngineCycleTests(unittest.TestCase):
         self.e = engine.Engine(supervised=True)
         self.m = monitors.normalize({'name': 'slow', 'type': 'PING', 'target': '192.0.2.1'})
         self.e.monitors = [self.m]
-        self.e.settings = {'check_interval': 10, 'max_workers': 2}
+        self.e.settings = util.deep_merge(settings.load(), {'check_interval': 10, 'max_workers': 2})
 
     def test_check_still_running_is_not_started_again(self):
-        self.e._inflight.add(self.m['id'])
+        self.e._inflight[self.m['id']] = time.monotonic()
         with mock.patch.object(self.e, '_check_and_push') as run:
             self.e._run_cycle()
         run.assert_not_called()
@@ -70,7 +70,7 @@ class EngineCycleTests(unittest.TestCase):
     def test_inflight_cleared_even_when_a_check_raises(self):
         with mock.patch.object(self.e, '_check_and_push', side_effect=RuntimeError('x')):
             self.e._run_cycle()
-        self.assertEqual(self.e._inflight, set())
+        self.assertEqual(self.e._inflight, {})
 
 
 class SupervisorRestartTests(unittest.TestCase):

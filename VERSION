@@ -1,3 +1,46 @@
+4.0.8
+2026-11-05
+- Security (update): the agent no longer downloads an update from the reporting server unless `update.allow_server_download` is true in data/settings.json. Only the GitHub release asset is accepted by default. The web UI cannot set this flag. Before, an admin session could point `remote.url` at a server it controlled, and that server could offer its own zip with its own SHA-256. The agent would then run that code as SYSTEM.
+- Security (monitors): `${UPTIME_SECRET_KEY}`, `${UPTIME_API_KEY}`, `${UPTIME_REMOTE_URL}` and `${UPTIME_SYNC_SECRET_KEY}` are never expanded in a monitor's push URL, monitor URL or headers. The monitor form rejects them. Before, anyone who could edit monitors could send the agent's HMAC key to any host.
+- Security (setup): `/setup` also checks that the Host header is 127.0.0.1, localhost or ::1. A web page on another domain whose name resolves to 127.0.0.1 (DNS rebinding) can no longer create the admin.
+- Security (install, Windows): `main.py install` makes Administrators the owner of every file in the install folder. The user who unzipped the release could otherwise make a .py file writable again. It also warns when ordinary users can write to the base Python folder that .venv runs on, and prints the icacls command that fixes it.
+- Security (packages): Python 3.9 and newer get waitress 3.0.2 (CVE-2024-49769) and urllib3 2.6.3 (2025 CVEs). Python 3.8 keeps waitress 3.0.0 and urllib3 2.2.3, the last releases that install there.
+- Security (logs): a failed push and the "most pushes returned 404" warning show only scheme://host. Before, the error text carried the full push URL with its token. The status and monitor lists no longer show user:password@ from a push URL either.
+- Self-healing (data files): a JSON file that exists but does not parse is no longer treated as missing.
+  - It is moved to `<file>.corrupt-<time>` (the last 3 copies are kept) and logged at CRITICAL.
+  - settings.json, monitors.json and users.json keep a `.bak` of the last good version, and a corrupt file is restored from it.
+  - If users.json is lost, `/setup` stays closed (otherwise whoever came first would become admin). The login page says to run `main.py reset-password`.
+- Self-healing (logs.db):
+  - A corrupt logs.db is moved to `logs.db.corrupt-<time>` and a new one is started. Before, every log line went to the fallback file for ever and the daily cleanup crash-looped the engine.
+  - The old-row cleanup really gives the space back now. `PRAGMA incremental_vacuum` only works when its rows are read, and they were not.
+  - logs.db is capped at 200 MB: the oldest lines are removed down to 150 MB, whatever their age.
+  - Cleanup runs every hour, not once a day. With less than 200 MB free on the disk, only 3 days of logs are kept.
+  - A full or read-only disk no longer stops a process from starting: logging falls back to the text file, then to stderr, then to nothing.
+- Self-healing (update): the update state is written as "Applying" before any file moves. If the power goes or the supervisor is killed during an install, the next start puts the previous version back exactly as it was, then marks that version Failed.
+- Self-healing (engine):
+  - A check still running from an earlier cycle is reported down, and is not left showing its last "up".
+  - A check stuck for 3 intervals makes the engine restart itself (exit code 5). A thread stuck in a call that never returns cannot be stopped any other way.
+  - The supervisor restarts an engine that is alive but has not finished a cycle for 3 intervals + 60 s. It checks the age of run/status.json.
+- Fix (settings): numbers in settings.json are checked when they are loaded. A value that is not a number, or is out of range, is replaced by the default or the nearest limit, with one warning. Examples: `"check_interval": "abc"`, `"max_workers": 999`, a port of 0. Before, a hand-edited value like these crash-looped the engine.
+- Fix (autostart): a second install on the same box gets its own task, unit or launchd name (`UptimeSync4-<8 hex>`). Before, it took over the first install's autostart. The chosen name is kept in data/autostart.json.
+- Fix (checks):
+  - The DNS breaker is truly half-open. After 60 s, one check tries again while the others keep failing fast, and a failed retry reopens it at once.
+  - HTTP(S) dns_ping is measured before the request. Measured after, the OS cache made it read about 0 ms.
+  - "ping cannot run" and unexpected check errors are logged at ERROR once, with the traceback, and then at DEBUG.
+- Fix (push): after a 404 streak, the first 200 no longer triggers the 404 warning again.
+- Performance:
+  - A push that succeeds with no change from the last one is logged at DEBUG. Only changes and errors are logged at INFO and above.
+  - The Logs page uses new indexes for the level and process filters.
+  - history.json is written compactly every 10 cycles and on stop, not with indentation every cycle.
+  - On Windows, the ACL of the install folder is set again only when it has changed. Setting it on every start rewrote every file under .venv.
+  - The supervisor takes its lock before it opens logs.db or reads settings, so the Windows minute trigger costs almost nothing.
+  - The heartbeat keeps one connection to the server. The push connection pool grows with max_workers.
+  - A warning (once) when the timeouts and retries cannot fit into check_interval.
+  - The dashboard no longer fetches the status again as soon as the page loads.
+- Code: every external program (ping, icacls, schtasks, systemctl, launchctl, pip, the update import test) runs through `procs.run` with a hard timeout. Before, autostart commands had none. Other cleanups: one User-Agent constant, one free-space limit, atomic PID files that cannot crash a process, and monotonic waits in the CLI.
+- Correction to 4.0.6: an update that was put back leaves no empty backup folder. It counted towards the 3 kept backups, not 5.
+- Tests: 59 new tests (tests/test_selfheal.py), covering the log store, heartbeat.send, the DNS query and breaker, push tracking, `_act_on`, autostart names and files, the supervisor backoff and pulse, `mask_push_url`, and every fix above.
+
 4.0.7
 2026-11-05
 - Feature (web): every password field has an eye button that shows or hides what was typed: sign in, first-time setup, change password, and the HMAC secret in Settings. A field locked by data/.env gets none.

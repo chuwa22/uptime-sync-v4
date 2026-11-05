@@ -27,16 +27,7 @@ def setup(proc, level='INFO', console=None):
     for h in list(root.handlers):
         root.removeHandler(h)
         h.close()
-    try:
-        logstore.init_db()
-        root.addHandler(logstore.SQLiteHandler(proc))
-    except Exception as e:
-        logstore.write_fallback([(time.time(), proc, logging.ERROR, 'log',
-                                  'cannot open logs.db, logging to this file: %s' % e)], 'setup')
-        fh = logging.FileHandler(os.path.join(paths.LOG_DIR, 'fallback-%s.log' % time.strftime('%Y-%m-%d')),
-                                 encoding='utf-8')
-        fh.setFormatter(logging.Formatter(FORMAT, DATEFMT))
-        root.addHandler(fh)
+    root.addHandler(_store_handler(proc))
     if console is None:
         console = bool(sys.stdout) and hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
     if console:
@@ -51,6 +42,26 @@ def setup(proc, level='INFO', console=None):
         logging.getLogger(proc).critical('Unhandled exception', exc_info=(kind, value, tb))
     sys.excepthook = excepthook
     return logging.getLogger(proc)
+
+
+def _store_handler(proc):
+    """logs.db; else the fallback text file; else stderr; else nothing.
+    Never raises: a full or read-only disk must not stop the process that
+    is supposed to report it."""
+    try:
+        logstore.init_db()
+        return logstore.SQLiteHandler(proc)
+    except Exception as e:
+        logstore.write_fallback([(time.time(), proc, logging.ERROR, 'log',
+                                  'cannot open logs.db, logging to this file: %s' % e)], 'setup')
+    try:
+        os.makedirs(paths.LOG_DIR, exist_ok=True)
+        fh = logging.FileHandler(os.path.join(paths.LOG_DIR, 'fallback-%s.log' % time.strftime('%Y-%m-%d')),
+                                 encoding='utf-8')
+    except Exception:
+        fh = logging.StreamHandler(sys.stderr) if sys.stderr else logging.NullHandler()
+    fh.setFormatter(logging.Formatter(FORMAT, DATEFMT))
+    return fh
 
 
 def set_level(level):

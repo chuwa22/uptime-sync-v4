@@ -10,6 +10,8 @@ settings.json and are never rendered into HTML (see ENV_MANAGED).
 """
 
 import copy
+import logging
+import math
 import os
 import re
 import threading
@@ -23,6 +25,25 @@ ENV_SETTINGS = (
     (('remote', 'secret_key'), 'UPTIME_SECRET_KEY'),
     (('remote', 'url'), 'UPTIME_REMOTE_URL'),
 )
+
+# ${NAME} never expands these. They are this agent's own credentials: if a
+# monitor URL could say ${UPTIME_SECRET_KEY}, anyone allowed to edit
+# monitors could have the agent send its HMAC key to a host of their choice.
+RESERVED_REFS = frozenset(name for _, name in ENV_SETTINGS) | {'UPTIME_SYNC_SECRET_KEY'}
+
+# (path, type, min, max): load() coerces and clamps these, so a hand-edited
+# "check_interval": "abc" or 0 is a warning, not a crash loop of the engine.
+NUMERIC = (
+    (('check_interval',), int, 10, 86400),
+    (('max_workers',), int, 1, 64),
+    (('retry_delay',), float, 0, 60),
+    (('log_retention_days',), int, 1, 3650),
+    (('web', 'port'), int, 1, 65535),
+    (('remote', 'heartbeat_interval'), int, 30, 86400),
+)
+
+log = logging.getLogger('settings')
+_warned = set()
 
 _NAME_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 _REF_RE = re.compile(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}')
@@ -73,20 +94,61 @@ def env_managed():
 
 
 def expand_refs(text, env=None):
-    """Replace ${NAME} with its .env value. Unknown names stay as written."""
+    """Replace ${NAME} with its .env value. Unknown and RESERVED_REFS names
+    stay as written."""
     if not isinstance(text, str) or '${' not in text:
         return text
     env = env_values() if env is None else env
-    return _REF_RE.sub(lambda m: env.get(m.group(1), m.group(0)), text)
+
+    def value(m):
+        if m.group(1) in RESERVED_REFS:
+            return m.group(0)
+        return env.get(m.group(1), m.group(0))
+    return _REF_RE.sub(value, text)
 
 
 def undefined_refs(text, env=None):
     env = env_values() if env is None else env
-    return [n for n in _REF_RE.findall(text or '') if n not in env]
+    return [n for n in _REF_RE.findall(text or '') if n not in env and n not in RESERVED_REFS]
+
+
+def reserved_refs(text):
+    """${NAME}s in text that may never be expanded (see RESERVED_REFS)."""
+    return [n for n in _REF_RE.findall(text or '') if n in RESERVED_REFS]
 
 
 def defaults():
-    return read_json(paths.DEFAULTS_FILE, {}) or {}
+    # heal=False: config/ ships with the code; a broken copy is a bad
+    # release, not site data to quarantine.
+    return read_json(paths.DEFAULTS_FILE, {}, heal=False) or {}
+
+
+def _coerce(merged, base):
+    for path, kind, lo, hi in NUMERIC:
+        node, dflt = merged, base
+        for key in path[:-1]:
+            node = node.get(key) if isinstance(node.get(key), dict) else node.setdefault(key, {})
+            dflt = dflt.get(key) if isinstance(dflt, dict) else {}
+            if not isinstance(node, dict):
+                break
+        if not isinstance(node, dict):
+            continue
+        raw = node.get(path[-1])
+        fallback = dflt.get(path[-1], lo) if isinstance(dflt, dict) else lo
+        try:
+            value = kind(raw)
+            if isinstance(value, float) and math.isnan(value):
+                raise ValueError('nan')
+        except (TypeError, ValueError, OverflowError):
+            value = kind(fallback)
+        value = min(max(value, kind(lo)), kind(hi))
+        if value != raw or type(raw) is bool:
+            name = '.'.join(path)
+            if (name, repr(raw)) not in _warned:
+                _warned.add((name, repr(raw)))
+                log.warning('Setting %s = %r is not valid (%s to %s) - using %s',
+                            name, raw, lo, hi, value)
+        node[path[-1]] = value
 
 
 def load_site():
@@ -97,7 +159,9 @@ def load_site():
 
 def load():
     """Merged settings with .env credentials applied. A fresh copy."""
-    merged = deep_merge(defaults(), load_site())
+    base = defaults()
+    merged = deep_merge(base, load_site())
+    _coerce(merged, base)
     env = env_values()
     for path, name in ENV_SETTINGS:
         if env.get(name):
@@ -119,7 +183,7 @@ def save(merged):
                 node = node.get(key, {})
             node.pop(keys[-1], None)
         site = diff_from(defaults(), data)
-        atomic_write_json(paths.SETTINGS_FILE, site, private=True)
+        atomic_write_json(paths.SETTINGS_FILE, site, private=True, backup=True)
         return site
 
 

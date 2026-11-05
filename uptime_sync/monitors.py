@@ -129,6 +129,12 @@ def validate(m):
             errors.append('Header %s: the value cannot contain a line break.' % name[:40])
     if m['type'] == 'DNS' and m['dns_query_name'] and not is_valid_dns_query_name(m['dns_query_name']):
         errors.append('DNS query name is not a valid host name.')
+    for field, text in [('Push URL', m['push_url']), ('Monitor URL', m['monitor_url'])] + \
+            [('Header ' + k[:40], v) for k, v in m['headers'].items()]:
+        reserved = settings.reserved_refs(text)
+        if reserved:
+            errors.append('%s uses ${%s}: that is one of this agent\'s own credentials and is '
+                          'never put into a monitor.' % (field, reserved[0]))
     if m['push_url']:
         missing = settings.undefined_refs(m['push_url'])
         if missing:
@@ -175,7 +181,7 @@ def load():
 def save(monitors):
     with _lock:
         atomic_write_json(paths.MONITORS_FILE, {'monitors': [normalize(m) for m in monitors]},
-                          private=True)
+                          private=True, backup=True)
 
 
 def runtime_view(m, env=None):

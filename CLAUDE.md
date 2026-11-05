@@ -71,7 +71,13 @@ README.md covers usage. This file covers the rules for changing the code.
   - 0 means stopped on purpose, so the OS does not restart the agent.
   - `updater.EXIT_UPDATE` (3) means a verified build is staged.
   - `updater.EXIT_RESTART` (4) means the server asked for a restart.
+  - `updater.EXIT_STUCK` (5) means a check hung for 3 intervals (4.0.8). The
+    engine then leaves with `os._exit`: Python would wait for the hung pool
+    thread for ever.
   - Anything else is a crash.
+- **External programs go through `procs.run(cmd, timeout)`** (4.0.8): hidden
+  window, stdout+stderr, hard timeout, never raises. No bare `subprocess.run`
+  without a timeout anywhere in the agent.
 - **One supervisor per folder.** The OS file lock in `procs.InstanceLock` decides
   this, not PID files. The Windows minute trigger relies on it.
 - **Settings overlay.**
@@ -81,11 +87,19 @@ README.md covers usage. This file covers the rules for changing the code.
     `settings.json` and never rendered into HTML.
   - `${NAME}` is expanded only in `monitors.runtime_view()`, which feeds the
     checker and never goes to the UI.
+  - `settings.RESERVED_REFS` (the ENV_SETTINGS names + `UPTIME_SYNC_SECRET_KEY`)
+    never expand and fail validation (4.0.8). A new agent credential in .env
+    goes into that set.
+  - Numbers listed in `settings.NUMERIC` are coerced and clamped by `load()`,
+    so code may use `s['check_interval']` directly. Add a new numeric setting
+    there.
 - **Secrets.**
   - `secret_key` never appears in a payload, query string, header or log line.
     It signs, it does not travel.
   - Log URLs through `util.redact()`.
   - Write data files with `util.atomic_write_json(..., private=True)`.
+  - Log a push URL, or an exception raised by a request to one, through
+    `util.url_host()` only. The exception text carries the whole URL.
   - `perms.harden()` runs at every supervisor start, because applying
     permissions only when a file is created misses hand-made and restored
     files.
@@ -113,8 +127,10 @@ README.md covers usage. This file covers the rules for changing the code.
   - A GitHub URL must equal `github_url(repo, version)` exactly.
   - A GitHub redirect may only go to https `github.com` or
     `*.githubusercontent.com`.
-  - A server URL must be on the `remote.url` host, and an https server cannot
-    hand out an http URL.
+  - A server URL is refused unless `update.allow_server_download` is true
+    (4.0.8). That flag is set by hand only: never add it to the web form or to
+    anything the heartbeat reply can change. With it on, the URL must be on the
+    `remote.url` host, and an https server cannot hand out an http URL.
   - Redirects are followed by hand.
   - SHA-256 is mandatory and never bypassed, even by force_install.
   - The release must be newer than the installed version.
@@ -151,6 +167,35 @@ README.md covers usage. This file covers the rules for changing the code.
     `logs/logs.db`, written from one thread per process in batches.
   - Never log from inside `logstore`'s writer path.
   - Do not use `app.logger`: Flask gives it its own stderr handler.
+- **Self-healing (4.0.8).**
+  - `util.read_json()` heals by default: a file that exists but does not parse
+    is moved to `<file>.corrupt-<ts>` (3 kept), logged CRITICAL, and restored
+    from `<file>.bak` when that parses. Pass `heal=False` only for files the
+    agent must not move (3.x files in `importer`, `config/defaults.json`).
+  - Files that must survive corruption are written with `backup=True`
+    (settings, monitors, users). The `.bak` is taken only from a file that parses.
+  - `auth.has_users()` stays True when users.json is unreadable or was
+    quarantined, so `/setup` never reopens. `main.py reset-password` is the fix.
+  - logs.db: `logstore.quarantine()` replaces a corrupt database, and
+    `prune()` enforces `LOG_DB_MAX_BYTES`. A PRAGMA that returns rows does its
+    work only when they are read: always `.fetchall()` it.
+  - `log.setup()` and the engine's `_housekeeping()` never raise.
+  - `updater.apply()` writes status `Applying` before the first move, and
+    `updater.recover_interrupted()` runs at every supervisor start, right after
+    the lock. Every move out happens before any move in. Keep that order, because
+    recovery relies on it to tell old files from new ones.
+  - The supervisor restarts an engine whose `run/status.json` is older than
+    3 x check_interval + 60 s. The engine must keep writing it every cycle.
+- **Supervisor start order.** The lock, then the stopped flag, then everything
+  else. The Windows minute trigger starts a copy every minute, so nothing heavy
+  may come before the lock (updater imports `requests` lazily for this reason).
+- **Autostart names** are per install: the default name is used, unless an existing
+  task, unit or plist starts another folder's main.py. In that case the install gets
+  `<name>-<sha1(root)[:8]>`. Uninstall and start use the name kept in
+  data/autostart.json.
+- **Log volume.** A push that succeeds with no change from the last one logs
+  at DEBUG. INFO is for changes and WARNING for errors. Keep it that way for
+  new per-cycle messages.
 - **VERSION is prepend-only.** Never edit or remove older entries.
 
 ## Testing

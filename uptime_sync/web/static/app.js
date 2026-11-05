@@ -253,6 +253,6 @@
     };
     try { xhr.send(null); } catch (err) { unreachable(); }
   }
-  refresh();
+  // No refresh at load: the page was just rendered from the same data.
   window.setInterval(refresh, 15000);
 })();

@@ -7,9 +7,13 @@ SHA-256, in a signed heartbeat reply); the bytes come from either
     v<ver>/uptime-sync-v<ver>.zip -- the repo is public, so no token on
     any box. Redirect hops may go to https *.githubusercontent.com only.
   * the reporting server itself (uptime-monitor's dist/download.php, the
-    3.x path): same host as remote.url, an https server cannot hand out
-    http, and the api_key + time + signature are appended only after the
-    URL passed that check.
+    3.x path) -- OFF unless update.allow_server_download is true in
+    data/settings.json (edited by hand; the web UI cannot set it). Whoever
+    can change remote.url in the web UI could otherwise point the agent at
+    a server of their own that offers its own zip with its own SHA-256:
+    code execution as the agent's service account. With it on: same host
+    as remote.url, an https server cannot hand out http, and the api_key +
+    time + signature are appended only after the URL passed that check.
 Any other URL is refused. The SHA-256 is never optional: no hash, no install.
 
 Staging: the zip is extracted into update_staging/ (outside everything the
@@ -22,24 +26,22 @@ import datetime
 import logging
 import os
 import shutil
-import subprocess
 import sys
 import time
 import zipfile
 from urllib.parse import urljoin, urlparse
 
-import requests
-
-from . import __version__, paths
+from . import __version__, paths, procs
 from .signing import sign
-from .util import atomic_write_json, is_newer, is_version, read_json, redact, remove_quietly, sha256_file
+from .util import (MIN_FREE_BYTES, USER_AGENT, atomic_write_json, is_newer, is_version, iso_now,
+                   read_json, redact, remove_quietly, sha256_file)
 
 log = logging.getLogger('update')
 
 EXIT_UPDATE = 3       # engine -> supervisor: a verified update is staged
 EXIT_RESTART = 4      # engine -> supervisor: restart requested by the server
+EXIT_STUCK = 5        # engine -> supervisor: a check hung for 3 cycles; restart me
 
-MIN_FREE_BYTES = 100 * 1024 * 1024
 MAX_ZIP_BYTES = 200 * 1024 * 1024
 MAX_REDIRECTS = 5
 KEEP_BACKUPS = 3
@@ -117,10 +119,11 @@ def signed_server_url(url, api_key, secret_key):
 # -- download + stage (runs in the engine) ----------------------------------
 
 def _open(url, kind, remote_url):
+    import requests   # here, not at the top: the supervisor imports this module
     hop = url
     for _ in range(MAX_REDIRECTS + 1):
         r = requests.get(hop, timeout=60, stream=True, allow_redirects=False,
-                         headers={'User-Agent': 'UptimeSync/%s' % __version__})
+                         headers={'User-Agent': USER_AGENT})
         if not r.is_redirect:
             r.raise_for_status()
             return r
@@ -176,6 +179,10 @@ def download_and_stage(url, version, sha256, settings):
     remote = settings.get('remote', {})
     repo = settings.get('update', {}).get('github_repo', '')
     url, kind = resolve(url, remote.get('url', ''), repo, version)
+    if kind == 'server' and settings.get('update', {}).get('allow_server_download') is not True:
+        raise UpdateRefused('the server offered its own download, but only the GitHub release '
+                            'asset is accepted (set update.allow_server_download in '
+                            'data/settings.json to allow the reporting server)')
     if kind == 'server':
         if not (remote.get('api_key') and remote.get('secret_key')):
             raise UpdateRefused('downloading from the server needs api_key and secret_key')
@@ -227,16 +234,12 @@ def download_and_stage(url, version, sha256, settings):
     finally:
         remove_quietly(zip_path)
     atomic_write_json(paths.UPDATE_READY, {'version': version, 'sha256': actual,
-                                           'staged_at': _now()})
+                                           'staged_at': iso_now()})
     remove_quietly(paths.UPDATE_PENDING)
     return True
 
 
 # -- swap / rollback (runs in the supervisor) --------------------------------
-
-def _now():
-    return datetime.datetime.now().astimezone().isoformat(timespec='seconds')
-
 
 def state():
     return read_json(paths.UPDATE_STATE_FILE, {}) or {}
@@ -348,16 +351,12 @@ def _smoke_test(version):
     py = paths.venv_python()
     if not os.path.isfile(py):
         py = sys.executable
-    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    try:
-        proc = subprocess.run([py, '-I', '-c', _SMOKE, paths.ROOT], cwd=paths.ROOT,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              stdin=subprocess.DEVNULL, timeout=120, creationflags=flags)
-    except (OSError, subprocess.SubprocessError) as e:
-        return False, 'could not run %s: %s' % (py, e)
-    out = proc.stdout.decode('utf-8', 'replace').strip()
-    if proc.returncode != 0:
-        return False, out.splitlines()[-1] if out else 'exit %d' % proc.returncode
+    code, raw, error = procs.run([py, '-I', '-c', _SMOKE, paths.ROOT], 120, cwd=paths.ROOT)
+    if code is None:
+        return False, 'could not run %s: %s' % (py, error)
+    out = raw.decode('utf-8', 'replace').strip()
+    if code != 0:
+        return False, out.splitlines()[-1] if out else 'exit %d' % code
     if out.splitlines()[-1:] != [version]:
         return False, 'the new code reports version %r' % out[-40:]
     return True, ''
@@ -368,10 +367,8 @@ def _pip_install(root):
     # packages land in .venv and never in the system Python.
     cmd = [paths.venv_python(), '-m', 'pip', 'install', '--disable-pip-version-check',
            '-r', os.path.join(root, 'requirements.txt')]
-    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          stdin=subprocess.DEVNULL, timeout=900, creationflags=flags)
-    return proc.returncode == 0, proc.stdout.decode('utf-8', 'replace')[-2000:]
+    code, raw, error = procs.run(cmd, 900)
+    return code == 0, (raw.decode('utf-8', 'replace') + error)[-2000:]
 
 
 def apply():
@@ -386,7 +383,7 @@ def apply():
         validate_staging(version)
     except UpdateRefused as e:
         log.error('[UPDATE] Not applying v%s: %s', version, e)
-        set_state(status='Failed', version=version, time=_now(), detail=str(e))
+        set_state(status='Failed', version=version, time=iso_now(), detail=str(e))
         return None
 
     old_req = _read(os.path.join(paths.ROOT, 'requirements.txt'))
@@ -395,11 +392,21 @@ def apply():
     names_in = _swap_names(paths.STAGING_DIR)
     names_out = sorted(set(paths.SHIPPED) | set(names_in))
     log.info('[UPDATE] Applying v%s (backup of v%s in %s)', version, __version__, backup)
+    # Written BEFORE anything moves: a power cut from here until 'Applied'
+    # leaves this record, and recover_interrupted() puts the old code back
+    # on the next start instead of running a half-swapped install.
+    try:
+        set_state(status='Applying', version=version, previous=__version__, backup=backup,
+                  installed=names_in, time=iso_now(), crashes=0, detail='',
+                  requirements_changed=_read(os.path.join(paths.STAGING_DIR, 'requirements.txt')) != old_req)
+    except OSError as e:
+        log.error('[UPDATE] Cannot record the update state, v%s kept: %s', __version__, e)
+        return None
     try:
         moved_out, moved_in = _swap(names_out, backup, paths.STAGING_DIR, names_in)
     except Exception as e:
         log.error('[UPDATE] Swap to v%s failed, v%s kept: %s', version, __version__, e)
-        set_state(status='Failed', version=version, time=_now(), detail='swap failed: %s' % e)
+        set_state(status='Failed', version=version, time=iso_now(), detail='swap failed: %s' % e)
         return None
     pip_ran = False
     try:
@@ -422,13 +429,59 @@ def apply():
             ok, _ = _pip_install(paths.ROOT)
             log.log(logging.INFO if ok else logging.ERROR,
                     '[UPDATE] Reinstalled the v%s requirements: %s', __version__, 'ok' if ok else 'FAILED')
-        set_state(status='Failed', version=version, time=_now(), detail=str(e))
+        set_state(status='Failed', version=version, time=iso_now(), detail=str(e))
         return None
-    shutil.rmtree(paths.STAGING_DIR, ignore_errors=True)
     set_state(status='Applied', version=version, previous=__version__, backup=backup,
-              installed=moved_in, time=_now(), applied_at=time.time(), crashes=0, detail='')
+              installed=moved_in, time=iso_now(), applied_at=time.time(), crashes=0, detail='')
+    shutil.rmtree(paths.STAGING_DIR, ignore_errors=True)
     _prune_backups()
     return version
+
+
+def recover_interrupted():
+    """Finish an apply() that died half-way (power cut, killed supervisor):
+    the state still says 'Applying'. Put the previous version back exactly
+    as it was. Returns True when files were moved (the caller re-executes
+    itself: the code it is running may have just been replaced)."""
+    s = state()
+    if s.get('status') != 'Applying':
+        return False
+    version, previous, backup = s.get('version'), s.get('previous'), s.get('backup') or ''
+    log.critical('[UPDATE] The install of v%s was interrupted - restoring v%s', version, previous)
+    names_in = [n for n in (s.get('installed') or []) if n not in _NEVER_SWAP]
+    if not os.path.isdir(backup):
+        # apply() creates the backup folder with its first move: nothing moved.
+        set_state(status='Failed', time=iso_now(), detail='interrupted before the swap started')
+        shutil.rmtree(paths.STAGING_DIR, ignore_errors=True)
+        return False
+    # Every move out precedes every move in, so a name that has left the
+    # staging folder is new code in ROOT; everything in the backup is old code.
+    staged = set(_swap_names(paths.STAGING_DIR)) if os.path.isdir(paths.STAGING_DIR) else set()
+    came_in = [n for n in names_in if n not in staged]
+    went_out = _swap_names(backup)
+    trash = os.path.join(paths.BACKUP_DIR, 'interrupted-v%s-%s' % (version, int(time.time())))
+    try:
+        _swap(sorted(set(came_in) | set(went_out)), trash, backup, went_out)
+    except Exception as e:
+        log.critical('[UPDATE] Could not restore v%s: %s -- copy it back from %s by hand',
+                     previous, e, backup)
+        set_state(status='RollbackFailed', time=iso_now(),
+                  detail='interrupted install; restore failed: %s' % e)
+        return True
+    if s.get('requirements_changed'):
+        ok, _ = _pip_install(paths.ROOT)
+        log.log(logging.INFO if ok else logging.ERROR,
+                '[UPDATE] Reinstalled the v%s requirements: %s', previous, 'ok' if ok else 'FAILED')
+    shutil.rmtree(trash, ignore_errors=True)
+    shutil.rmtree(paths.STAGING_DIR, ignore_errors=True)
+    try:
+        os.rmdir(backup)
+    except OSError:
+        pass
+    set_state(status='Failed', version=version, time=iso_now(), backup='', installed=[],
+              detail='install was interrupted; v%s restored' % previous, rolled_back_to=previous)
+    log.error('[UPDATE] v%s restored after the interrupted install of v%s', previous, version)
+    return True
 
 
 def rollback(reason):
@@ -449,7 +502,7 @@ def rollback(reason):
     except Exception as e:
         log.critical('[UPDATE] Cannot roll back from v%s: %s -- the agent stays on it', failed, e)
         try:
-            set_state(status='RollbackFailed', time=_now(), detail='%s; rollback failed: %s' % (reason, e))
+            set_state(status='RollbackFailed', time=iso_now(), detail='%s; rollback failed: %s' % (reason, e))
         except OSError:
             pass
         return False
@@ -459,7 +512,7 @@ def rollback(reason):
                 '[UPDATE] Reinstalled the v%s requirements: %s', s.get('previous'), 'ok' if ok else 'FAILED')
     shutil.rmtree(backup, ignore_errors=True)
     shutil.rmtree(trash, ignore_errors=True)
-    set_state(status='Failed', version=failed, time=_now(), detail=reason, backup='',
+    set_state(status='Failed', version=failed, time=iso_now(), detail=reason, backup='',
               installed=[], rolled_back_to=s.get('previous'))
     log.error('[UPDATE] Rolled back from v%s to v%s: %s', failed, s.get('previous'), reason)
     return True
@@ -488,7 +541,7 @@ def heartbeat_fields():
     server expects them ('Success' / 'Failed' free its update slot)."""
     s = state()
     status = s.get('status')
-    if status == 'Applied':
+    if status in ('Applied', 'Applying'):
         status = 'Installing'
     elif status == 'RollbackFailed':
         status = 'Failed'   # the server only knows Success / Failed / Installing
@@ -496,8 +549,14 @@ def heartbeat_fields():
 
 
 def write_pending(version, url, sha256, mode):
+    """Record an offered update; no write when it is the same offer again
+    (the heartbeat repeats it every minute)."""
+    old = read_json(paths.UPDATE_PENDING, None)
+    if isinstance(old, dict) and [old.get(k) for k in ('version', 'url', 'sha256', 'mode')] == \
+            [version, url, sha256, mode]:
+        return
     atomic_write_json(paths.UPDATE_PENDING, {
-        'version': version, 'url': url, 'sha256': sha256, 'mode': mode, 'detected_at': _now()})
+        'version': version, 'url': url, 'sha256': sha256, 'mode': mode, 'detected_at': iso_now()})
 
 
 def pending():

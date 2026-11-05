@@ -97,6 +97,19 @@ The supervisor restarts a child that dies, with a backoff of 1, 2, 5, 10, 30 and
     could log.
   - `logs/fallback-<date>.log` holds lines the database could not take.
 
+It repairs itself where it can:
+
+- **Damaged data files:** a JSON file that does not parse is moved to
+  `<file>.corrupt-<time>` and logged at CRITICAL. settings, monitors and users
+  come back from their `.bak` (the last good version). If the user accounts
+  are lost, run `main.py reset-password` on the box.
+- **logs.db:** a damaged database is moved aside and a new one started. The file
+  stays under 200 MB, and with little disk space left only 3 days are kept.
+- **Interrupted update:** a power cut during an install puts the previous
+  version back on the next start.
+- **Hung engine:** a check stuck for 3 intervals, or an engine that stops
+  finishing its cycles, gets the engine restarted.
+
 ## Permissions
 
 `data/` holds the secrets and `logs/` holds the history. On every start, the agent makes both folders readable only by the service account and the admin who ran `install`.
@@ -132,8 +145,11 @@ https://github.com/chuwa22/uptime-sync-v4/releases/download/v<ver>/uptime-sync-v
 
 Before installing, the agent checks the download:
 
-- The URL must be exactly that asset of the configured repository, or a URL on the
-  uptime-monitor host itself.
+- The URL must be exactly that asset of the configured repository.
+- A download from the uptime-monitor host itself (the 3.x way) is refused unless
+  `"update": {"allow_server_download": true}` is set by hand in
+  `data/settings.json`. The web UI cannot set it: whoever can change the server
+  address there could otherwise hand the agent a zip of their own.
 - Redirects are checked hop by hop.
 - The SHA-256 is mandatory.
 - The release must be newer than the installed version.

@@ -42,7 +42,14 @@ def mask_push_url(url):
     path = u.path
     if '/api/push/' in path:
         path = path.split('/api/push/')[0] + '/api/push/***'
-    return '%s://%s%s' % (u.scheme, u.netloc, path)
+    try:
+        port = u.port
+    except ValueError:
+        port = None
+    host = u.hostname or ''     # never u.netloc: it may carry user:password@
+    if ':' in host:
+        host = '[%s]' % host
+    return '%s://%s%s%s' % (u.scheme, host, ':%d' % port if port else '', path)
 
 
 def tones(p):
@@ -101,6 +108,19 @@ def _status_payload():
 
 
 LOOPBACK = ('127.0.0.1', '::1', '::ffff:127.0.0.1')
+LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
+
+
+def _local_request():
+    """The request comes from this box AND names it as localhost. The Host
+    check stops DNS rebinding: a web page on evil.example whose name
+    resolves to 127.0.0.1 reaches us from a loopback address, but its
+    requests still carry Host: evil.example."""
+    try:
+        host = (urlparse('//' + (request.host or '')).hostname or '').lower()
+    except ValueError:
+        return False
+    return request.remote_addr in LOOPBACK and host in LOOPBACK_HOSTS
 
 
 def safe_next(nxt):
@@ -122,7 +142,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
     def setup():
         if auth.has_users():
             return redirect(url_for('login'))
-        if request.remote_addr not in LOOPBACK:
+        if not _local_request():
             # Until the admin exists, whoever opens /setup first becomes admin.
             # Only someone on the box itself may do that.
             return render_template('setup.html', remote=True, error='', min_len=auth.MIN_PASSWORD), 403
@@ -143,7 +163,10 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         if not auth.has_users():
             return redirect(url_for('setup'))
         error = ''
-        if request.method == 'POST':
+        if auth.accounts_lost():
+            error = ('No user account can be read (data/users.json is missing or damaged). '
+                     'On the agent computer run: main.py reset-password')
+        elif request.method == 'POST':
             ip = auth.client_ip()
             if auth.rate_limited(ip):
                 error = 'Too many failed attempts. Wait a few minutes and try again.'

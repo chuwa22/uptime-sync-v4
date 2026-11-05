@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import platform
-import shutil
 import struct
 import sys
 import time
@@ -20,7 +19,7 @@ import time
 import requests
 
 from . import __version__, paths, signing, updater
-from .util import iso_now, redact
+from .util import MIN_FREE_BYTES, USER_AGENT, free_bytes, iso_now, redact
 
 log = logging.getLogger('heartbeat')
 
@@ -85,6 +84,10 @@ class Heartbeat:
         self._latch_warned = False
         self.last_ok = None           # epoch of the last 200 reply
         self.last_error = ''
+        # One keep-alive connection to the server instead of a new TCP + TLS
+        # handshake every beat.
+        self.session = requests.Session()
+        self.session.headers['User-Agent'] = USER_AGENT
 
     def interval(self, settings):
         if self.next_override:
@@ -101,14 +104,13 @@ class Heartbeat:
         if not url or not remote.get('api_key'):
             return None
         body = json.dumps(build_payload(settings, self.start_time, healthy)).encode('utf-8')
-        headers = {'Content-Type': 'application/json',
-                   'User-Agent': 'UptimeSync/%s' % __version__}
+        headers = {'Content-Type': 'application/json'}
         sig = ''
         if secret:
             sig = signing.sign(secret, body)
             headers['X-Signature'] = sig
         try:
-            r = requests.post(url, data=body, headers=headers, timeout=TIMEOUT, allow_redirects=False)
+            r = self.session.post(url, data=body, headers=headers, timeout=TIMEOUT, allow_redirects=False)
         except requests.RequestException as e:
             return self._fail('network error: %s' % redact(e))
         if 500 <= r.status_code < 600:
@@ -183,7 +185,5 @@ class Heartbeat:
 
 
 def free_disk_ok():
-    try:
-        return shutil.disk_usage(paths.ROOT).free > 200 * 1024 * 1024
-    except OSError:
-        return True
+    free = free_bytes(paths.ROOT)
+    return free is None or free > MIN_FREE_BYTES

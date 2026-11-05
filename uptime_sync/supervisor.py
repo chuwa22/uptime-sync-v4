@@ -30,6 +30,7 @@ UPDATE_TRIAL_SECONDS = 300    # a new version that survives this long is kept
 UPDATE_MAX_CRASHES = 3
 STOP_GRACE_SECONDS = 20        # above a check's worst attempt (ping timeout + 2 s)
 RESTART_MIN_GAP = 60          # server-requested restarts closer than this are delayed
+PULSE_CHECK_SECONDS = 30      # how often the engine's run/status.json age is checked
 MAIN_PY = os.path.join(paths.ROOT, 'main.py')
 
 
@@ -120,8 +121,9 @@ class Supervisor:
         return argv
 
     def run(self, wait_for_lock=0):
-        paths.ensure_dirs()
-        logsetup.setup('supervisor', settings.load().get('log_level'))
+        # The lock first, and nothing else: the Windows minute trigger starts
+        # a copy every minute, and every copy but one must leave at once
+        # without opening logs.db or reading settings.
         deadline = time.monotonic() + wait_for_lock
         while not self.lock.acquire():
             if time.monotonic() >= deadline:
@@ -129,9 +131,11 @@ class Supervisor:
             time.sleep(0.5)
         try:
             if os.path.exists(paths.STOPPED_FLAG):
-                # debug: the Windows minute trigger would write this 1440 times a day
-                log.debug('Not starting: stopped by `main.py stop` (run `main.py start` to resume)')
-                return 0
+                return 0   # stopped by `main.py stop`; `main.py start` resumes
+            paths.ensure_dirs()
+            logsetup.setup('supervisor', settings.load().get('log_level'))
+            if updater.recover_interrupted():
+                return self._reexec()
             procs.write_pid(paths.SUPERVISOR_PID)
             remove_quietly(paths.SHUTDOWN_FLAG)
             for problem in perms.harden():
@@ -163,12 +167,38 @@ class Supervisor:
             roles.append('web')
         return roles
 
+    def _check_pulse(self):
+        """Restart an engine that is alive but no longer cycling: it rewrites
+        run/status.json every check_interval, so a file older than three
+        intervals (+60 s) means its main loop is stuck somewhere."""
+        engine = self.children.get('engine')
+        if not engine or not engine.running():
+            return
+        interval = settings.load()['check_interval']
+        limit = 3 * interval + 60
+        if time.monotonic() - engine.started < limit:
+            return
+        try:
+            age = time.time() - os.path.getmtime(paths.STATUS_FILE)
+        except OSError:
+            age = None
+        if age is None or age > limit:
+            log.error('Engine (pid %d) has not finished a check cycle for over %ds - restarting it',
+                      engine.proc.pid, limit)
+            engine.stop()
+            self._note_crash('engine', 'stalled')
+            log.warning('engine restarting in %ds', engine.schedule_restart())
+
     def _loop(self):
         for role in self._wanted():
             self.children[role] = Child(role, self._argv(role))
             self.children[role].start()
+        next_pulse = time.monotonic() + PULSE_CHECK_SECONDS
         while True:
             time.sleep(0.5)
+            if time.monotonic() >= next_pulse:
+                next_pulse = time.monotonic() + PULSE_CHECK_SECONDS
+                self._check_pulse()
             if self.stopping or os.path.exists(paths.SHUTDOWN_FLAG):
                 remove_quietly(paths.SHUTDOWN_FLAG)
                 log.info('Shutting down')
@@ -204,7 +234,10 @@ class Supervisor:
                     if code != 0:
                         self._note_crash(role, code)
                     delay = child.schedule_restart()
-                    log.warning('%s exited with code %s - restarting in %ds', role, code, delay)
+                    if role == 'engine' and code == updater.EXIT_STUCK:
+                        log.warning('engine stopped itself: a check was hung - restarting in %ds', delay)
+                    else:
+                        log.warning('%s exited with code %s - restarting in %ds', role, code, delay)
                 if child.proc is None and time.monotonic() >= child.next_start:
                     if self._check_rollback_needed():
                         return self._reexec()

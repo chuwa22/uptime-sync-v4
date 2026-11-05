@@ -4,9 +4,23 @@ import copy
 import datetime
 import hashlib
 import json
+import logging
 import os
 import re
+import shutil
 import tempfile
+import time
+from urllib.parse import urlparse
+
+from . import __version__
+
+USER_AGENT = 'UptimeSync/%s' % __version__
+# Below this much free space the box reports itself unhealthy, logs.db keeps
+# only LOW_DISK_RETENTION_DAYS, and no update is downloaded.
+MIN_FREE_BYTES = 200 * 1024 * 1024
+CORRUPT_KEEP = 3        # .corrupt-<ts> copies kept per JSON file
+
+log = logging.getLogger('heal')
 
 
 def atomic_write_text(path, text, private=False):
@@ -36,17 +50,89 @@ def atomic_write_text(path, text, private=False):
         raise
 
 
-def atomic_write_json(path, data, private=False):
-    atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False) + '\n', private)
+def atomic_write_json(path, data, private=False, backup=False, compact=False):
+    """backup=True first copies the current file to <path>.bak -- only when
+    it parses, so a corrupt file never replaces the last good backup.
+    compact=True: no indentation (history.json: written often, read by code)."""
+    if backup:
+        _keep_backup(path)
+    if compact:
+        text = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+    else:
+        text = json.dumps(data, indent=2, ensure_ascii=False)
+    atomic_write_text(path, text + '\n', private)
 
 
-def read_json(path, default=None):
-    """Parsed JSON from path, or `default` (deep-copied) if missing/corrupt."""
+def _keep_backup(path):
     try:
         with open(path, 'r', encoding='utf-8-sig') as f:
-            return json.load(f)
+            text = f.read()
+        json.loads(text)
     except (OSError, ValueError):
+        return
+    try:
+        atomic_write_text(path + '.bak', text, private=True)
+    except OSError as e:
+        log.warning('Could not back up %s: %s', os.path.basename(path), e)
+
+
+def read_json(path, default=None, heal=True):
+    """Parsed JSON from path; `default` (deep-copied) if it is missing.
+
+    A file that exists but does not parse is not silently treated as
+    missing (heal=True): it is moved to <path>.corrupt-<ts>, a CRITICAL line
+    is logged, and <path>.bak is restored when it parses. heal=False only
+    for files this agent must not move (3.x files being imported, the
+    shipped defaults)."""
+    try:
+        with open(path, 'r', encoding='utf-8-sig') as f:
+            text = f.read()
+    except OSError:
         return copy.deepcopy(default)
+    try:
+        return json.loads(text)
+    except ValueError as e:
+        if not heal:
+            return copy.deepcopy(default)
+        return _heal(path, default, e)
+
+
+def corrupt_copies(path):
+    """Quarantined <path>.corrupt-<ts> files, oldest first."""
+    directory, base = os.path.split(path)
+    try:
+        names = os.listdir(directory or '.')
+    except OSError:
+        return []
+    return sorted(os.path.join(directory, n) for n in names if n.startswith(base + '.corrupt-'))
+
+
+def _heal(path, default, err):
+    name = os.path.basename(path)
+    bad = '%s.corrupt-%s' % (path, time.strftime('%Y%m%d-%H%M%S'))
+    try:
+        os.replace(path, bad)
+    except FileNotFoundError:
+        bad = None      # another process healed it a moment ago
+    except OSError as e:
+        log.critical('[HEAL] %s is corrupt (%s) and could not be moved aside: %s', name, err, e)
+        return copy.deepcopy(default)
+    for old in corrupt_copies(path)[:-CORRUPT_KEEP]:
+        remove_quietly(old)
+    if bad is None:
+        return read_json(path, default, heal=False)
+    try:
+        with open(path + '.bak', 'r', encoding='utf-8-sig') as f:
+            text = f.read()
+        data = json.loads(text)
+        atomic_write_text(path, text, private=True)
+    except (OSError, ValueError):
+        log.critical('[HEAL] %s was corrupt (%s): moved to %s; no usable backup, starting '
+                     'from defaults', name, err, os.path.basename(bad))
+        return copy.deepcopy(default)
+    log.critical('[HEAL] %s was corrupt (%s): moved to %s and restored from %s.bak',
+                 name, err, os.path.basename(bad), name)
+    return data
 
 
 def deep_merge(base, override):
@@ -89,6 +175,22 @@ def iso_now():
 
 _PUSH_TOKEN_RE = re.compile(r'(/api/push/)[^/?#\s]+')
 _QUERY_SECRET_RE = re.compile(r'((?:api_key|signature|token)=)[^&\s]*', re.I)
+
+
+def url_host(url):
+    """'scheme://host' of a URL, for log lines: no path, no query, no token."""
+    try:
+        u = urlparse(str(url))
+        return '%s://%s' % (u.scheme, u.hostname) if u.hostname else '(invalid URL)'
+    except ValueError:
+        return '(invalid URL)'
+
+
+def free_bytes(path):
+    try:
+        return shutil.disk_usage(path).free
+    except OSError:
+        return None
 
 
 def redact(text):

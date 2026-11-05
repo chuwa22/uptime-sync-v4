@@ -20,6 +20,7 @@
   },
   "update": {
     "enabled": true,
-    "github_repo": "chuwa22/uptime-sync-v4"
+    "github_repo": "chuwa22/uptime-sync-v4",
+    "allow_server_download": false
   }
 }

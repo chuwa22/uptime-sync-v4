@@ -11,7 +11,7 @@ import os
 import sys
 import time
 
-from . import __version__, paths, perms, procs, settings
+from . import __version__, log as logsetup, paths, perms, procs, settings
 from .util import read_json, remove_quietly, touch
 
 STOP_WAIT_SECONDS = 60
@@ -64,8 +64,8 @@ def _spawn_supervisor():
 
 
 def _wait_running(seconds=15):
-    deadline = time.time() + seconds
-    while time.time() < deadline:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
         if _running()[1]:
             return True
         time.sleep(0.5)
@@ -110,13 +110,13 @@ def cmd_stop(a):
         return 0
     touch(paths.SHUTDOWN_FLAG)
     _say('[INFO] Stopping supervisor pid %s ...' % pid)
-    deadline = time.time() + STOP_WAIT_SECONDS
-    while time.time() < deadline:
+    deadline = time.monotonic() + STOP_WAIT_SECONDS
+    while time.monotonic() < deadline:
         if not _running()[1]:
             # The lock goes first; the process lingers ~1 s (log flush,
             # interpreter exit). A `restart` that starts the task inside that
             # window is dropped by Task Scheduler (IgnoreNew) / launchd.
-            while pid and procs.pid_alive(pid) and time.time() < deadline:
+            while pid and procs.pid_alive(pid) and time.monotonic() < deadline:
                 time.sleep(0.2)
             remove_quietly(paths.SHUTDOWN_FLAG)
             _say('[OK] Stopped. It stays stopped (also across reboots) until `main.py start`.')
@@ -204,11 +204,18 @@ def cmd_install(a):
     from . import autostart
     paths.ensure_dirs()
     _say('[OK] Directories ready under %s' % paths.ROOT)
-    problems = perms.harden(grant_current_user=True)
+    problems = perms.set_owner_admins(paths.ROOT) + perms.harden(grant_current_user=True)
     for problem in problems:
         _say('[WARN] Could not restrict permissions: %s' % problem)
     if not problems:
         _say('[OK] data/ and logs/ are readable only by this account and the service')
+    home, writers = perms.base_python_writable()
+    if writers:
+        _say('[WARN] %s can be changed by %s. The agent runs as SYSTEM on the Python in that '
+             'folder, so any local user could run code as SYSTEM. Fix (as administrator):'
+             % (home, ' / '.join(writers)))
+        _say('       icacls "%s" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F '
+             '*S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX /Q' % home)
     if a.no_autostart:
         _say('[INFO] Autostart skipped (--no-autostart). Start with `main.py run`.')
         return 0
@@ -339,7 +346,7 @@ def build_parser():
     sp = add('logs', cmd_logs, 'print recent log lines')
     sp.add_argument('-n', '--lines', type=int, default=100)
     sp.add_argument('--level', default='INFO')
-    sp.add_argument('--proc', choices=('supervisor', 'engine', 'web', 'cli'))
+    sp.add_argument('--proc', choices=logsetup.PROCS)
     sp.add_argument('--grep')
     add('version', cmd_version, 'print the version')
     return p

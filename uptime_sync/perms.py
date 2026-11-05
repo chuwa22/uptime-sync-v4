@@ -22,16 +22,22 @@ A failure is logged and never stops the agent: a permission problem must
 not be the reason a monitoring box stays down.
 """
 
+import hashlib
 import os
-import subprocess
 
-from . import paths
+from . import paths, procs
 
 IS_WINDOWS = os.name == 'nt'
 SID_SYSTEM = '*S-1-5-18'
 SID_ADMINS = '*S-1-5-32-544'
 SID_USERS = '*S-1-5-32-545'
+SID_AUTH_USERS = 'S-1-5-11'
+SID_EVERYONE = 'S-1-1-0'
 PROTECTED = (paths.DATA_DIR, paths.LOG_DIR)
+ACL_STAMP = os.path.join(paths.RUN_DIR, 'acl.stamp')
+# WriteData | AppendData | WriteExtendedAttributes | WriteAttributes, plus
+# GENERIC_ALL / GENERIC_WRITE as they appear on inherit-only entries.
+_WRITE_BITS = 0x116 | 0x10000000 | 0x40000000
 
 
 def _dirs():
@@ -104,13 +110,15 @@ def root_icacls_command(root, extra_sids=()):
     return ['icacls', root, '/inheritance:r'] + grants + ['/grant:r', '%s:(OI)(CI)RX' % SID_USERS, '/Q']
 
 
-def _run(cmd):
-    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                       stdin=subprocess.DEVNULL, timeout=60, creationflags=flags)
+def _run(cmd, timeout=300):
+    # 300 s: the root icacls rewrites the ACL of every file below it, .venv
+    # included -- thousands of files on a slow Windows 7 disk.
+    code, raw, error = procs.run(cmd, timeout)
+    if code is None:
+        return -1, error
     # schtasks / icacls / whoami print in the OEM code page (cp874 on Thai
     # Windows), not UTF-8; ASCII-safe so the message can always be printed.
-    return p.returncode, _console_text(p.stdout)
+    return code, _console_text(raw)
 
 
 def _console_text(raw):
@@ -122,14 +130,38 @@ def _console_text(raw):
     return text.encode('ascii', 'replace').decode('ascii')
 
 
+def _root_acl_digest(root):
+    """Hash of the install folder's own ACL as icacls lists it; '' if unknown."""
+    code, out = _run(['icacls', root], timeout=30)
+    return hashlib.sha256(out.encode('ascii', 'replace')).hexdigest() if code == 0 else ''
+
+
 def _windows_harden(grant_current_user):
     extra = (current_user_sid(),) if grant_current_user else ()
     problems = []
     root = paths.ROOT
     if os.path.dirname(root) != root:      # never a drive root such as C:\\
-        code, out = _run(root_icacls_command(root, extra))
-        if code != 0:
-            problems.append('%s: icacls exit %d: %s' % (root, code, out.strip()[-200:]))
+        # The root icacls rewrites the inherited ACL of every file below it,
+        # .venv included: minutes on a slow disk. Re-apply it only when the
+        # folder's ACL is not the one this agent left last time.
+        stamp = ''
+        try:
+            with open(ACL_STAMP, 'r') as f:
+                stamp = f.read().strip()
+        except OSError:
+            pass
+        if grant_current_user or not stamp or stamp != _root_acl_digest(root):
+            code, out = _run(root_icacls_command(root, extra))
+            if code != 0:
+                problems.append('%s: icacls exit %d: %s' % (root, code, out.strip()[-200:]))
+            else:
+                digest = _root_acl_digest(root)
+                if digest:
+                    try:
+                        from .util import atomic_write_text
+                        atomic_write_text(ACL_STAMP, digest)
+                    except OSError:
+                        pass
     for d in _dirs():
         for i, cmd in enumerate(icacls_commands(d, extra)):
             if i == 1 and not os.listdir(d):
@@ -175,6 +207,73 @@ def return_to_sudo_user():
                         os.lchown(name, uid, gid)
                 except OSError:
                     pass
+
+
+# -- install-time checks (Windows) -------------------------------------------------
+
+def set_owner_admins(root):
+    """Make Administrators the owner of everything under the install folder.
+    The owner of a file may always rewrite its ACL, so a .py file still owned
+    by the user who unzipped the release could be made writable again by
+    that user -- and the agent runs it as SYSTEM. Problems as a list."""
+    if not IS_WINDOWS or os.path.dirname(root) == root:
+        return []
+    code, out = _run(['icacls', root, '/setowner', SID_ADMINS, '/T', '/C', '/Q'], timeout=600)
+    return [] if code == 0 else ['%s: icacls /setowner exit %d: %s' % (root, code, out.strip()[-200:])]
+
+
+def venv_base_home():
+    """The base Python folder .venv runs on (pyvenv.cfg `home`), or ''."""
+    try:
+        with open(os.path.join(paths.VENV_DIR, 'pyvenv.cfg'), 'r', encoding='utf-8') as f:
+            for line in f:
+                key, _, value = line.partition('=')
+                if key.strip().lower() == 'home':
+                    return value.strip()
+    except OSError:
+        pass
+    return ''
+
+
+def acl_ps_command(path):
+    """PowerShell that prints '<SID> <rights>' per Allow entry of `path`.
+    SIDs, not names: group names are translated on a Thai or German Windows."""
+    lit = path.replace("'", "''")
+    script = ("$a = Get-Acl -LiteralPath '%s'; foreach ($r in $a.Access) { "
+              "if ($r.AccessControlType -eq 'Allow') { "
+              "try { $s = $r.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } "
+              "catch { $s = '' }; '{0} {1}' -f $s, [int]$r.FileSystemRights } }" % lit)
+    return ['powershell', '-NoProfile', '-NonInteractive', '-Command', script]
+
+
+def broad_writers(acl_lines):
+    """Which of Users / Authenticated Users / Everyone may write, from the
+    output of acl_ps_command (pure: unit-tested)."""
+    names = {SID_USERS.lstrip('*'): 'Users', SID_AUTH_USERS: 'Authenticated Users',
+             SID_EVERYONE: 'Everyone'}
+    found = []
+    for line in acl_lines.splitlines():
+        parts = line.split()
+        if len(parts) != 2 or parts[0] not in names:
+            continue
+        try:
+            rights = int(parts[1])
+        except ValueError:
+            continue
+        if rights & _WRITE_BITS and names[parts[0]] not in found:
+            found.append(names[parts[0]])
+    return found
+
+
+def base_python_writable():
+    """(folder, [groups]) when ordinary users may write the base Python that
+    .venv loads its DLL and standard library from; (folder, []) when not or
+    unknown. Windows only."""
+    home = venv_base_home()
+    if not IS_WINDOWS or not home or not os.path.isdir(home):
+        return home, []
+    code, out = _run(acl_ps_command(home), timeout=60)
+    return home, broad_writers(out) if code == 0 else []
 
 
 # -- public --------------------------------------------------------------------

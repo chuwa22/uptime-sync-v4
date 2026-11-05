@@ -12,7 +12,6 @@ import re
 import socket
 import ssl
 import struct
-import subprocess
 import sys
 import threading
 import time
@@ -21,7 +20,8 @@ from urllib.parse import urlparse
 import certifi
 import requests
 
-from . import __version__
+from . import procs
+from .util import USER_AGENT
 
 DNS_METHODS = ('auto', 'query', 'ping')
 DNS_DEFAULT_QUERY_NAME = 'google.com'
@@ -96,10 +96,11 @@ class Checker:
 
     def __init__(self):
         self.session = requests.Session()
-        self.session.headers['User-Agent'] = 'UptimeSync/%s' % __version__
+        self.session.headers['User-Agent'] = USER_AGENT
         self.session.max_redirects = self._HTTP_MAX_REDIRECTS
         self._lock = threading.Lock()
-        self._dns_failures = {}        # host -> (count, opened_at)
+        self._dns_failures = {}        # host -> (count, opened_at, probing)
+        self._errors_logged = set()
         self._dns_ping_fallback = set()
         self._ssl_warned = {}          # host -> day last warned
 
@@ -126,33 +127,39 @@ class Checker:
                 scheme, target, (':%d' % m['port']) if m['port'] else '')
             if kind == 'HTTPS' and not url.lower().startswith('https://'):
                 url = 'https://' + url.split('://', 1)[-1]
-            ok, ms = self.check_http(url, timeout, m.get('headers'), m.get('ssl_verify', True))
             host = urlparse(url).hostname or target
+            # Resolve first: afterwards the answer sits in the OS cache and
+            # dns_ping would always read ~0 ms.
             _, dns_ms = self.check_dns(host, timeout) if not is_ip_literal(host) else (True, 0)
+            ok, ms = self.check_http(url, timeout, m.get('headers'), m.get('ssl_verify', True))
             if kind == 'HTTPS' and ok and m.get('ssl_verify', True):
                 self._warn_ssl_expiry(host, urlparse(url).port or 443, timeout)
             return ok, ms, dns_ms
         log.warning('Unknown monitor type %r for %s', kind, m.get('name'))
         return False, 0, 0
 
+    def _log_error_once(self, key, msg):
+        """ERROR the first time, DEBUG after: a box without ping.exe would
+        otherwise log the same line for every monitor, every minute."""
+        with self._lock:
+            first = key not in self._errors_logged
+            self._errors_logged.add(key)
+        log.log(logging.ERROR if first else logging.DEBUG, msg)
+
     # -- ping --------------------------------------------------------------
 
     def ping(self, host, timeout=10):
         cmd = ping_command(host, timeout)
-        flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
         start = time.monotonic()
-        try:
-            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                  stdin=subprocess.DEVNULL, timeout=timeout + 2,
-                                  creationflags=flags)
-        except subprocess.TimeoutExpired:
-            log.debug('ping %s timed out', host)
+        code, raw, error = procs.run(cmd, timeout + 2)
+        if code is None:
+            if error.startswith('timed out'):
+                log.debug('ping %s timed out', host)
+            else:
+                self._log_error_once('ping', 'ping could not run (%s): %s' % (cmd[0], error))
             return None
-        except OSError as e:
-            log.warning('ping could not run (%s): %s', cmd[0], e)
-            return None
-        output = proc.stdout.decode('latin-1', errors='replace')
-        return parse_ping(proc.returncode, output, (time.monotonic() - start) * 1000)
+        return parse_ping(code, raw.decode('latin-1', errors='replace'),
+                          (time.monotonic() - start) * 1000)
 
     # -- DNS ---------------------------------------------------------------
 
@@ -268,32 +275,37 @@ class Checker:
 
     def _circuit_open(self, host):
         """After 3 straight resolve failures, fail fast for 60 s so N
-        monitors sharing a dead domain do not each wait out the resolver."""
+        monitors sharing a dead domain do not each wait out the resolver.
+        Then half-open: ONE caller probes while the rest keep failing fast;
+        a failed probe reopens the circuit at once, a good one closes it."""
         with self._lock:
-            count, opened = self._dns_failures.get(host, (0, 0))
+            count, opened, probing = self._dns_failures.get(host, (0, 0, False))
             if not opened:
                 return False
-            if time.monotonic() - opened > self._DNS_CIRCUIT_OPEN_SECONDS:
-                self._dns_failures[host] = (0, 0)
-                return False
-            return True
+            if probing or time.monotonic() - opened <= self._DNS_CIRCUIT_OPEN_SECONDS:
+                return True
+            self._dns_failures[host] = (count, opened, True)   # this caller probes
+            return False
 
     def _mark_failure(self, host):
         with self._lock:
-            count, opened = self._dns_failures.get(host, (0, 0))
+            count, opened, probing = self._dns_failures.get(host, (0, 0, False))
             count += 1
-            if count >= self._DNS_FAILURE_THRESHOLD and not opened:
+            if probing:
+                opened = time.monotonic()      # the half-open probe failed
+                log.debug('[DNS] %s still does not resolve; skipping it for another %ds',
+                          host, self._DNS_CIRCUIT_OPEN_SECONDS)
+            elif count >= self._DNS_FAILURE_THRESHOLD and not opened:
                 opened = time.monotonic()
                 log.warning('[DNS] %s failed to resolve %d times; skipping it for %ds',
                             host, count, self._DNS_CIRCUIT_OPEN_SECONDS)
-            self._dns_failures[host] = (count, opened)
+            self._dns_failures[host] = (count, opened, False)
 
     def _mark_success(self, host):
         with self._lock:
-            count, opened = self._dns_failures.get(host, (0, 0))
+            count, opened, probing = self._dns_failures.pop(host, (0, 0, False))
             if opened:
                 log.info('[DNS] %s resolves again', host)
-            self._dns_failures[host] = (0, 0)
 
     # -- TCP / HTTP --------------------------------------------------------
 

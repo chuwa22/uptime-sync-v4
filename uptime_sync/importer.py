@@ -150,8 +150,8 @@ def run(root, dry_run=False, force=False, out=print):
 
     new_settings = {}
     if src['settings']:
-        new_settings = map_settings(read_json(src['defaults'], {}) if src['defaults'] else {},
-                                    read_json(src['settings'], {}))
+        new_settings = map_settings(read_json(src['defaults'], {}, heal=False) if src['defaults'] else {},
+                                    read_json(src['settings'], {}, heal=False))
         if keep_or_skip(paths.SETTINGS_FILE, 'settings'):
             for _, dst in SETTING_MAP:
                 value = _get(new_settings, dst)
@@ -167,7 +167,7 @@ def run(root, dry_run=False, force=False, out=print):
                          lambda: settings.save(deep_merge(settings.defaults(), new_settings))))
 
     if src['monitors'] and keep_or_skip(paths.MONITORS_FILE, 'monitors'):
-        raw = read_json(src['monitors'], {}) or {}
+        raw = read_json(src['monitors'], {}, heal=False) or {}
         items = raw.get('monitors', []) if isinstance(raw, dict) else raw
         mons = [monitors.normalize(m) for m in items if isinstance(m, dict)]
         env = settings.parse_env_file(src['env']) if src['env'] else {}
@@ -180,12 +180,16 @@ def run(root, dry_run=False, force=False, out=print):
             missing = [n for n in settings.undefined_refs(m['push_url'] + m['monitor_url'], env)]
             if missing:
                 notes.append('uses ${%s}, not defined in .env' % missing[0])
+            reserved = settings.reserved_refs(m['push_url'] + m['monitor_url'])
+            if reserved:
+                notes.append('uses ${%s}, an agent credential that is never expanded '
+                             'in a monitor - edit it after the import' % reserved[0])
             out('[%s] monitor %s (%s %s)%s' % ('WARN' if notes else 'OK', m['name'], m['type'],
                                               m['target'], ': ' + '; '.join(notes) if notes else ''))
         plan.append(('monitors', paths.MONITORS_FILE, lambda: monitors.save(mons)))
 
     if src['users'] and keep_or_skip(paths.USERS_FILE, 'users'):
-        users = map_users(read_json(src['users'], {}))
+        users = map_users(read_json(src['users'], {}, heal=False))
         for name, u in sorted(users.items()):
             out('[OK] user %s (%s)' % (name, u['role']))
         if users:

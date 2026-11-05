@@ -53,11 +53,33 @@ def read_pid(path):
 
 
 def write_pid(path, pid=None):
-    tmp = path + '.tmp'
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(tmp, 'w') as f:
-        f.write(str(pid or os.getpid()))
-    os.replace(tmp, path)
+    """Atomic. False (never an exception) when run/ cannot be written: a PID
+    file is a convenience for `status`, not a reason for a process to die."""
+    from .util import atomic_write_text
+    try:
+        atomic_write_text(path, str(pid or os.getpid()))
+        return True
+    except OSError:
+        return False
+
+
+def run(cmd, timeout, cwd=None):
+    """Run a helper program hidden, with a hard timeout.
+
+    Returns (returncode, output_bytes, error): stdout+stderr together;
+    returncode is None when the program could not start (error = why) or
+    ran past `timeout` seconds (error = 'timed out after Ns', the child is
+    killed). Every external program the agent runs goes through here, so
+    none of them can hang a process forever."""
+    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if IS_WINDOWS else 0
+    try:
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           stdin=subprocess.DEVNULL, timeout=timeout, cwd=cwd, creationflags=flags)
+    except subprocess.TimeoutExpired as e:
+        return None, e.output or b'', 'timed out after %ds' % timeout
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        return None, b'', str(e)
+    return p.returncode, p.stdout or b'', ''
 
 
 def background_python():
