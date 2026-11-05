@@ -189,7 +189,9 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                 auth.note_failure(ip)
                 log.warning('Failed login for %r from %s', name[:40], ip)
                 error = 'Wrong username or password.'
-        return render_template('login.html', error=error)
+        # After a failed attempt, keep the user name typed (escaped by Jinja).
+        username = request.form.get('username', '').strip()[:100] if request.method == 'POST' else ''
+        return render_template('login.html', error=error, username=username)
 
     @app.route('/logout', methods=['POST'])
     def logout():

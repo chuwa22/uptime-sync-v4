@@ -6,6 +6,11 @@
   - The Local URL must point to this network: localhost, a private, link-local or CGNAT address, or a name that resolves only to such addresses. The heartbeat checks this again on every beat, so a name that later points to the internet gets its certificate checked again, with a warning.
   - The same rule applies to the update download from the server, which is still off unless `update.allow_server_download` is set. GitHub's certificate is always checked. The reply-signing latch follows the host of the chosen URL.
   - urllib3's "unverified HTTPS request" warning is turned off. It went to the engine's stderr log on every request to a server or monitor that was set not to verify.
+- Improvement (web): new layout for the sign-in and setup pages.
+  - The header is centred: a logo, the site name, and one line under it.
+  - The version shows just under the card ("Uptime Sync v4.0.9") instead of at the bottom of the page.
+  - Sign in / Create admin is a full-width button, and the card sits lower on tall screens.
+  - After a wrong password, the user name stays filled in and the password field gets the focus.
 - Feature (web, top bar): the version shows after the site name, for example "v4.0.9".
 - Feature (web, top bar): the user name opens a menu that shows "Signed in as <name> (<role>)", with Account and Sign out. Click outside it or press Escape to close it. On a narrow screen it opens to the right so it stays on screen.
   - Without JavaScript, and in IE8-11, the name links to Account and Sign out sits next to it, as before. The menu is a div, not <details>, because IE8 cannot style unknown tags.

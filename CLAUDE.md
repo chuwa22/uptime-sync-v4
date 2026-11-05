@@ -174,6 +174,10 @@ README.md covers usage. This file covers the rules for changing the code.
     and the dropdown look in `@supports` applies to `.user-menu.js` only.
     `.topbar` has `overflow: visible` inside `@supports`; otherwise it would
     clip the menu.
+  - **Sign-in / setup layout (4.0.9).** Both pages use `main_class` `auth`,
+    include `_auth_head.html` (logo, title, subtitle) and `_auth_foot.html`
+    (version), and empty `{% block foot %}`. `.ver` is the version pill,
+    shared with the top bar.
   - **Phones (4.0.9).** A `table.stack` becomes one small card per row below
     640px. Give its cells a role: `title` (the name, first line), `lead` (the
     status, right of the name), `wide` (a line of its own), or a `data-label`

@@ -44,7 +44,7 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </div>
-<div class="foot" role="contentinfo">Uptime Sync {{ version }}</div>
+{% block foot %}<div class="foot" role="contentinfo">Uptime Sync {{ version }}</div>{% endblock %}
 <script src="{{ url_for('static', filename='app.js', v=asset_v) }}"></script>
 </body>
 </html>

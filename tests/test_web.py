@@ -540,3 +540,41 @@ class TopBarTests(unittest.TestCase):
         self.assertGreater(bar.index('data-theme-toggle'), bar.index('action="/logout"'))
         # Without app.js the name is still a link to Account (IE, no JS).
         self.assertIn('<a href="/account" class="menu-btn', bar)
+
+
+class AuthPageTests(unittest.TestCase):
+    """Sign-in / setup: centred header, version under the card, no page footer."""
+
+    def setUp(self):
+        _env.reset()
+        paths.ensure_dirs()
+        auth._attempts.clear()
+        self.app = create_app()
+        self.app.testing = True
+        self.c = self.app.test_client()
+
+    def check_layout(self, html):
+        from uptime_sync import __version__
+        self.assertIn('class="auth"', html)
+        self.assertIn('<div class="auth-head">', html)
+        self.assertIn('<div class="auth-foot" role="contentinfo">Uptime Sync <span class="ver">v%s</span>'
+                      % __version__, html)
+        self.assertNotIn('class="foot"', html)
+
+    def test_setup_and_login_share_the_layout(self):
+        self.check_layout(self.c.get('/setup').get_data(as_text=True))
+        auth.create_user('admin', 'correct horse battery', role='admin')
+        self.check_layout(self.c.get('/login').get_data(as_text=True))
+
+    def test_failed_login_keeps_the_user_name_escaped(self):
+        auth.create_user('admin', 'correct horse battery', role='admin')
+        token = re.search(r'name="csrf" value="([^"]+)"', self.c.get('/login').get_data(as_text=True)).group(1)
+        html = self.c.post('/login', data={'csrf': token, 'username': 'adm"<x>', 'password': 'nope'}
+                           ).get_data(as_text=True)
+        self.assertIn('Wrong username or password.', html)
+        self.assertIn('value="adm&#34;&lt;x&gt;"', html)
+        self.assertIn('name="password" required autofocus', html)
+
+    def test_other_pages_keep_the_footer(self):
+        WebTests.setup_admin(self)
+        self.assertIn('class="foot"', self.c.get('/').get_data(as_text=True))
