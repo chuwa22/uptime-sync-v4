@@ -15,7 +15,9 @@ from . import auth
 
 log = logging.getLogger('web')
 LOG_LEVELS = loglevel.VALUES
-LOG_PAGE = 300
+LOG_PAGE_SIZES = (50, 100, 200, 500)   # rows per Logs page, offered on the page
+LOG_PAGE = 100                          # the default
+LOG_CLAMP_LINES = 3                     # longer messages fold (app.js)
 
 
 def _engine_state():
@@ -535,16 +537,31 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         before = request.args.get('before', type=int)
         if before is not None and not 0 < before < 2 ** 63:
             before = None    # sqlite integers are 64-bit; bigger raises OverflowError
-        rows, older_id, window = logstore.page(min_level=LOG_LEVELS[level], proc=proc, text=text,
-                                               before_id=before, limit=LOG_PAGE)
-        older = url_for('logs', level=level, proc=proc or None, q=text or None,
-                        before=older_id) if older_id else None
-        return render_template('logs.html', rows=rows, level=level, proc=proc, q=text,
-                               levels=list(LOG_LEVELS), procs=logsetup.PROCS, older=older,
+        n = request.args.get('n', type=int)
+        if n not in LOG_PAGE_SIZES:
+            n = LOG_PAGE
+        min_level = LOG_LEVELS[level]
+        rows, older_id, window = logstore.page(min_level=min_level, proc=proc, text=text,
+                                               before_id=before, limit=n)
+
+        def link(before_id):
+            return url_for('logs', level=level, proc=proc or None, q=text or None,
+                           n=n if n != LOG_PAGE else None, before=before_id)
+        newer = None
+        if before:
+            # rows[0] is this page's newest line; an empty page sits just below `before`
+            top = rows[0]['id'] if rows else before - 1
+            newer = link(logstore.newer(min_level, proc, text, top, n))
+        for r in rows:
+            extra = r['msg'].count('\n') + 1 - LOG_CLAMP_LINES
+            r['more'] = extra if extra > 0 else 0
+        return render_template('logs.html', rows=rows, level=level, proc=proc, q=text, n=n,
+                               sizes=LOG_PAGE_SIZES, levels=list(LOG_LEVELS), procs=logsetup.PROCS,
+                               newest=link(None) if before else None, newer=newer,
+                               older=link(older_id) if older_id else None,
                                window=window, span=logstore.SEARCH_SPAN,
                                recording=loglevel.describe(settings.load()),
-                               paged=bool(before), stats=logstore.stats(),
-                               files=logsetup.text_files())
+                               stats=logstore.stats(), files=logsetup.text_files())
 
     @app.route('/logs/file/<name>')
     @auth.admin_required

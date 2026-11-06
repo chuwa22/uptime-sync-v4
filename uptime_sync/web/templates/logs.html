@@ -1,42 +1,61 @@
 {% extends "base.html" %}
 {% block title %}Logs{% endblock %}
+{% macro pager() -%}
+<div class="pager">
+  {%- if newest %}<a class="button small" href="{{ newest }}" title="Newest lines">{{ icon('refresh', 14) }}Newest</a>{% else %}<span class="button small disabled" aria-disabled="true">{{ icon('refresh', 14) }}Newest</span>{% endif -%}
+  {%- if newer %}<a class="button small" href="{{ newer }}">&larr; Newer</a>{% else %}<span class="button small disabled" aria-disabled="true">&larr; Newer</span>{% endif -%}
+  {%- if older %}<a class="button small" href="{{ older }}">Older &rarr;</a>{% else %}<span class="button small disabled" aria-disabled="true">Older &rarr;</span>{% endif -%}
+</div>
+{%- endmacro %}
 {% block content %}
 <div class="head">
   <div class="head-title"><h1>Logs</h1><p class="sub">Engine, web and supervisor, from logs/logs.db. Log level: {{ recording }} - <a href="{{ url_for('settings_page') }}">change</a></p></div>
   <form method="get" class="filters">
-    <select name="level" data-autosubmit>
+    <select name="level" data-autosubmit title="Lowest level shown">
       {% for l in levels %}<option value="{{ l }}"{{ ' selected' if l == level }}>{{ l }}+</option>{% endfor %}
     </select>
-    <select name="proc" data-autosubmit>
+    <select name="proc" data-autosubmit title="Process">
       <option value="">All processes</option>
       {% for p in procs %}<option value="{{ p }}"{{ ' selected' if p == proc }}>{{ p }}</option>{% endfor %}
+    </select>
+    <select name="n" data-autosubmit title="Lines per page">
+      {% for s in sizes %}<option value="{{ s }}"{{ ' selected' if s == n }}>{{ s }} lines</option>{% endfor %}
     </select>
     <input type="search" class="search" name="q" value="{{ q }}" placeholder="Search text" title="Search text" maxlength="200">
     <button type="submit">{{ icon('search') }}Filter</button>
   </form>
 </div>
+<div class="logbar">
+  <p class="muted small">
+    {%- if rows %}{{ rows | length }} line{{ '' if rows | length == 1 else 's' }}, {{ rows[0].time }} back to {{ rows[-1].time }}, newest first.
+    {%- else %}No lines on this page.{% endif %}
+    {%- if window %} A search reads {{ '{:,}'.format(span) }} lines at a time; Older searches the next ones.{% endif -%}
+  </p>
+  {{ pager() }}
+</div>
 <div class="card flush">
+  {#- Scrolls inside its own box (header row stays in view), so the page
+      stays one screen long whatever the page size. -#}
+  <div class="logscroll" tabindex="0" role="region" aria-label="Log lines">
   <table class="logtable stack">
     <thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Message</th></tr></thead>
     <tbody>
     {% for r in rows %}
       <tr class="{{ 'l-err' if r.level in ('ERROR', 'CRITICAL') else 'l-warn' if r.level == 'WARNING' else '' }}">
         <td class="nowrap muted">{{ r.time }}</td><td><span class="lvl lvl-{{ r.level | lower }}">{{ r.level }}</span></td>
-        <td class="nowrap">{{ r.proc }}/{{ r.logger }}</td><td class="wide"><pre class="msg">{{ r.msg }}</pre></td>
+        <td class="nowrap">{{ r.proc }}/{{ r.logger }}</td><td class="wide"><pre class="msg"{% if r.more %} data-more="{{ r.more }}"{% endif %}>{{ r.msg }}</pre></td>
       </tr>
     {% else %}
       <tr><td colspan="4" class="muted wide">No log lines match.</td></tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
-<p class="muted small">
-  Newest first, {{ rows | length }} shown.
-  {% if window %}A search reads {{ '{:,}'.format(span) }} lines at a time; Older searches the next ones.{% endif %}
-  {% if paged %}<a href="{{ url_for('logs', level=level, proc=proc or None, q=q or None) }}">Newest</a>{% endif %}
-  {% if older %}<a href="{{ older }}">Older &rarr;</a>{% endif %}
-  &middot; logs.db: {{ stats.rows }} rows, {{ (stats.bytes / 1048576) | round(1) }} MB
-</p>
+<div class="logbar">
+  <p class="muted small">logs.db: {{ stats.rows }} rows, {{ (stats.bytes / 1048576) | round(1) }} MB</p>
+  {{ pager() }}
+</div>
 {% if files %}
 <h2>{{ icon('logs') }}Text logs</h2>
 <p class="muted small">Written only when the database could not be used, or by a process that crashed before logging started.</p>

@@ -323,6 +323,50 @@ class LogQueryTests(unittest.TestCase):
             if before is None:
                 return got, windows
 
+    def walk_back(self, min_level, text, limit, span):
+        """Follow Older to the end, then Newer back up: every page boundary
+        on the way up is one the way down had, and nothing is skipped."""
+        down, before = [], None
+        while True:
+            rows, nxt, _ = logstore.page(min_level, '', text, before, limit, span)
+            down.append((before, [r['id'] for r in rows]))
+            if nxt is None:
+                break
+            before = nxt
+        seen, before = set(), down[-1][0]
+        while before is not None:
+            rows, _, _ = logstore.page(min_level, '', text, before, limit, span)
+            ids = [r['id'] for r in rows]
+            seen.update(ids)
+            top = ids[0] if ids else before - 1
+            before = logstore.newer(min_level, '', text, top, limit, span)
+        rows, _, _ = logstore.page(min_level, '', text, None, limit, span)
+        seen.update(r['id'] for r in rows)
+        return seen
+
+    def test_newer_walks_back_up_without_gaps(self):
+        for min_level in (0, 30):
+            for text, limit in (('', 50), ('9', 20), ('nothing', 20)):
+                want = set(self.naive(min_level, '', text, limit=10000))
+                self.assertEqual(self.walk_back(min_level, text, limit, span=100), want,
+                                 (min_level, text))
+
+    def test_newer_is_the_page_just_above(self):
+        # 700 rows, ids 1..700; the page below 401 at 50 a page is 351..400
+        self.assertEqual(logstore.newer(0, '', '', 400, 50), 451)    # shows 401..450
+        self.assertIsNone(logstore.newer(0, '', '', 680, 50))       # newest page
+        rows = logstore.query(0, '', '', 451, 50)
+        self.assertEqual((rows[0]['id'], rows[-1]['id']), (450, 401))
+
+    def test_upward_warning_plan_does_not_sort_the_table(self):
+        sql, args = logstore._select(30, '', '', None, 300, after_id=100)
+        conn = logstore.connect()
+        try:
+            plan = [r[3] for r in conn.execute('EXPLAIN QUERY PLAN ' + sql, args)]
+        finally:
+            conn.close()
+        self.assertEqual(sum('logs_level_id (level=? AND id>?)' in p for p in plan), 3, plan)
+
     def test_text_search_pages_in_windows_and_misses_nothing(self):
         for min_level in (0, 30):
             for text, limit in (('9', 20), ('nothing', 20), ('', 50)):

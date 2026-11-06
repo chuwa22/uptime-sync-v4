@@ -339,6 +339,22 @@ table.logtable th { font-size: 11.25px; font-weight: 600; text-transform: upperc
   color: #6b7686; color: var(--muted); background: #f0f3f7; background: var(--code); }
 table.logtable tbody tr:hover td { background: rgba(47, 111, 228, .035); }
 table.logtable pre.msg { margin: 0; white-space: pre-wrap; word-wrap: break-word; font: inherit; }
+/* Logs page: the table scrolls in its own box, so a page of 500 lines is
+   still one screen; a pager above and below. app.js folds a message longer
+   than 3 lines (data-more) behind a "N more lines" button. */
+.logscroll { max-height: 600px; overflow: auto; }
+.logbar { overflow: hidden; margin: 0 0 10.5px; }
+.logbar p { float: left; margin: 6px 0; }
+.pager { float: right; }
+.pager .button { margin-left: 4.5px; }
+.button.small { padding: 3.75px 10.5px; font-size: 12.3px; }
+.button.small .ic, .button.small .ic8 { vertical-align: -2.25px; margin-right: 4.5px; }
+.button.disabled, .button.disabled:hover { color: #9aa4b2; border-color: #e2e7ee; border-color: var(--line);
+  cursor: default; box-shadow: none; opacity: .6; }
+table.logtable pre.msg.folded { max-height: 54px; overflow: hidden; }
+button.more { border: 0; background: none; box-shadow: none; padding: 1.5px 0; margin-top: 3px;
+  font-size: 11.25px; font-weight: 600; color: #2f6fe4; color: var(--accent); }
+button.more:hover { text-decoration: underline; }
 .nowrap { white-space: nowrap; }
 ul.plain { list-style: none; padding: 0; }
 input::placeholder, textarea::placeholder { color: #9aa4b2; opacity: 1; }
@@ -357,6 +373,12 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
   input[type=checkbox], input[type=radio] { accent-color: #2f6fe4; accent-color: var(--accent); }
   .flash { display: flex; align-items: flex-start; gap: 9px; }
   .flash .ic { flex: none; margin: 1.5px 0 0; }
+  .logscroll { max-height: calc(100vh - 300px); min-height: 280px; }
+  .logscroll table.logtable thead th { position: sticky; top: 0; z-index: 1; }
+  .logbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 7.5px 15px; }
+  .logbar p, .pager { float: none; }
+  .pager { display: flex; gap: 4.5px; }
+  .pager .button { margin-left: 0; }
   .toasts { max-width: calc(100% - 36px); }
   .toast { display: flex; align-items: flex-start; gap: 9px; animation: toast-in .2s ease-out; }
   .toast .ic { flex: none; margin: 1.5px 0 0; }
@@ -418,6 +440,7 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
      (td.title) leads, the status (td.lead) sits at its right, the other
      cells flow below with their data-label, td.wide takes a line of its own. */
   @media (max-width: 640px) {
+    .logscroll { max-height: 70vh; min-height: 0; }
     .toasts { bottom: 12px; left: 16px; right: 16px; width: auto; max-width: none; }
     table.stack thead { display: none; }
     table.stack, table.stack tbody { display: block; }

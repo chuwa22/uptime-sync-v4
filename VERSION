@@ -34,6 +34,11 @@
 - Feature (web, top bar): the version shows after the site name, for example "v4.0.9".
 - Feature (web, top bar): the user name opens a menu that shows "Signed in as <name> (<role>)", with Account and Sign out. Click outside it or press Escape to close it. On a narrow screen it opens to the right so it stays on screen.
   - Without JavaScript, and in IE8-11, the name links to Account and Sign out sits next to it, as before. The menu is a div, not <details>, because IE8 cannot style unknown tags.
+- Improvement (web, Logs): the page stays one screen long.
+  - The lines scroll inside their own box, with the column headings kept in view.
+  - Lines per page: 50, 100 (the default, was 300), 200 or 500.
+  - Newest, Newer and Older buttons above and below the lines; Newer goes back up one page (before, only Older and Newest existed). The line above the table says how many lines and which time span the page shows.
+  - A message longer than 3 lines (a traceback) shows its first 3 and a "N more lines" button. Without JavaScript it shows whole, as before.
 - Improvement (web): every notice is a toast in the bottom-right corner: "Saved ...", "Deleted ...", test results, form errors and sign-in errors. Before, they were boxes at the top of the page.
   - Done, info and test-result toasts fade out after 6 seconds; the timer pauses while the pointer is on one. Warnings and form errors stay until closed with the x, since they say what to fix.
   - Without JavaScript (or where app.js does not run) the toasts simply stay. On a phone the stack is full width at the bottom.

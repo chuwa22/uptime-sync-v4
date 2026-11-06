@@ -530,7 +530,7 @@ class PhoneLayoutTests(unittest.TestCase):
         # Log rows read fine without labels; the message takes its own line.
         logs = _read('templates', 'logs.html')
         self.assertIn('<table class="logtable stack">', logs)
-        self.assertIn('<td class="wide"><pre class="msg">', logs)
+        self.assertIn('<td class="wide"><pre class="msg"', logs)
 
     def test_live_dashboard_rows_keep_the_labels(self):
         js = _read('static', 'app.js')
@@ -795,6 +795,61 @@ class ToastTests(unittest.TestCase):
             js = f.read()
         self.assertIn("each($all('[data-toasts] .toast'), setupToast)", js)
         self.assertIn("indexOf(' warn ') >= 0) { return; }", js)
+
+
+class LogsPageTests(unittest.TestCase):
+    """Logs: page size, Newest / Newer / Older, folded long messages."""
+
+    def setUp(self):
+        WebTests.setUp(self)
+        WebTests.setup_admin(self)
+        from uptime_sync import logstore
+        logstore.init_db()
+        conn = logstore.connect()
+        with conn:
+            conn.executemany('INSERT INTO logs (ts, proc, level, logger, msg) VALUES (?, ?, ?, ?, ?)',
+                             [(1700000000 + i, 'engine', 20, 'x', 'line %d' % i) for i in range(1, 250)] +
+                             [(1700000250, 'engine', 40, 'x', 'boom\nTraceback\n  a\n  b\n  c\nValueError')])
+        conn.close()
+
+    def page(self, url):
+        r = self.c.get(url)
+        self.assertEqual(r.status_code, 200, url)
+        return r.get_data(as_text=True)
+
+    @staticmethod
+    def links(html):
+        return dict((label, href.replace('&amp;', '&')) for href, label in
+                    re.findall(r'<a class="button small" href="([^"]+)"[^>]*>(?:<!--.*?-->)*(Newest|&larr; Newer|Older &rarr;)</a>',
+                               html, re.S))
+
+    def test_page_size_and_pager(self):
+        html = self.page('/logs')
+        self.assertEqual(html.count('<pre class="msg"'), 100)                 # default page
+        self.assertIn('<option value="100" selected>100 lines</option>', html)
+        self.assertEqual(sorted(self.links(html)), ['Older &rarr;'])          # newest page: no Newer
+        self.assertIn('<span class="button small disabled" aria-disabled="true">&larr; Newer</span>', html)
+        html = self.page('/logs?n=50')
+        self.assertEqual(html.count('<pre class="msg"'), 50)
+        older = self.links(html)['Older &rarr;']
+        self.assertIn('n=50', older)
+        html = self.page(older)
+        self.assertIn('line 200<', html)
+        self.assertNotIn('line 201<', html)
+        links = self.links(html)
+        self.assertIn('Newest', links)
+        self.assertNotIn('before=', links['Newest'])
+        back = self.page(links['&larr; Newer'])                            # the page we came from
+        self.assertIn('line 249<', back)
+        self.assertIn('line 201<', back)
+        self.assertEqual(self.page('/logs?n=7').count('<pre class="msg"'), 100)   # not offered
+
+    def test_long_message_is_marked_for_folding(self):
+        html = self.page('/logs?level=ERROR')
+        self.assertIn('<pre class="msg" data-more="3">boom', html)
+        self.assertIn('class="logscroll"', html)
+        js = _read('static', 'app.js')
+        self.assertIn("each($all('pre.msg[data-more]')", js)
 
 if __name__ == '__main__':
     unittest.main()

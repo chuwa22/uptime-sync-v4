@@ -298,6 +298,25 @@
   }
   each($all('[data-toasts] .toast'), setupToast);
 
+  // Logs: a message longer than 3 lines (data-more = the lines past 3, set
+  // by the server) shows its first lines and a button for the rest, so one
+  // traceback does not push the page down. Without this script it shows whole.
+  each($all('pre.msg[data-more]'), function (pre) {
+    var extra = pre.getAttribute('data-more');
+    var btn = document.createElement('button');
+    var open = false;
+    btn.type = 'button';
+    btn.className = 'more';
+    function draw() {
+      pre.className = open ? 'msg' : 'msg folded';
+      setText(btn, open ? 'Show less' : extra + ' more line' + (extra === '1' ? '' : 's'));
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    on(btn, 'click', function (e) { open = !open; draw(); return cancel(e); });
+    pre.parentNode.insertBefore(btn, pre.nextSibling);
+    draw();
+  });
+
   // Dashboard: refresh from /api/status every 15 s.
   var tiles = $all('[data-status-url]')[0];
   if (!tiles || !window.XMLHttpRequest || !window.JSON) { return; }

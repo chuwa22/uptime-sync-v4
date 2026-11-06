@@ -331,8 +331,9 @@ def write_fallback(rows, why):
 
 # -- reading (web UI, CLI) ---------------------------------------------------
 
-def _select(min_level, proc, text, before_id, limit, floor=None):
-    """SQL + args for query(). Every branch reads rows in id order from an
+def _select(min_level, proc, text, before_id, limit, floor=None, after_id=None):
+    """SQL + args for query(). Newest first, or oldest first above after_id
+    (the Logs page's Newer link). Every branch reads rows in id order from an
     index, so LIMIT stops the scan early and nothing is sorted:
 
     - DEBUG/INFO and up: the primary key (most rows match), or
@@ -355,26 +356,30 @@ def _select(min_level, proc, text, before_id, limit, floor=None):
     if floor:
         where.append('id >= ?')
         args.append(int(floor))
+    if after_id:
+        where.append('id > ?')
+        args.append(int(after_id))
+    order = 'ASC' if after_id else 'DESC'
     cols = 'SELECT id, ts, proc, level, logger, msg FROM logs'
     min_level = int(min_level)
     if min_level < LEVELS['WARNING']:
         index = ' INDEXED BY logs_proc_id' if proc else ''
         cond = ['level >= ?'] + where
-        return ('%s%s WHERE %s ORDER BY id DESC LIMIT ?' % (cols, index, ' AND '.join(cond)),
+        return ('%s%s WHERE %s ORDER BY id %s LIMIT ?' % (cols, index, ' AND '.join(cond), order),
                 [min_level] + args + [limit])
     parts, all_args = [], []
     for level in sorted(set(v for v in LEVELS.values() if v >= min_level)):
-        parts.append('SELECT * FROM (%s INDEXED BY logs_level_id WHERE %s ORDER BY id DESC LIMIT ?)'
-                     % (cols, ' AND '.join(['level = ?'] + where)))
+        parts.append('SELECT * FROM (%s INDEXED BY logs_level_id WHERE %s ORDER BY id %s LIMIT ?)'
+                     % (cols, ' AND '.join(['level = ?'] + where), order))
         all_args += [level] + args + [limit]
-    return ' UNION ALL '.join(parts) + ' ORDER BY id DESC LIMIT ?', all_args + [limit]
+    return ' UNION ALL '.join(parts) + ' ORDER BY id %s LIMIT ?' % order, all_args + [limit]
 
 
-def query(min_level=0, proc='', text='', before_id=None, limit=200, floor=None):
-    """Newest-first rows as dicts, ids >= floor when given. Read-only
-    connection per call."""
+def query(min_level=0, proc='', text='', before_id=None, limit=200, floor=None, after_id=None):
+    """Newest-first rows as dicts, ids >= floor when given; with after_id,
+    the rows just above it, oldest first. Read-only connection per call."""
     limit = max(1, min(int(limit), 1000))
-    sql, args = _select(min_level, proc, text, before_id, limit, floor)
+    sql, args = _select(min_level, proc, text, before_id, limit, floor, after_id)
     if not os.path.exists(DB_FILE):
         return []
     conn = connect()
@@ -441,6 +446,23 @@ def page(min_level=0, proc='', text='', before_id=None, limit=200, span=SEARCH_S
     if floor is not None:
         return rows, floor, True
     return rows, None, False
+
+
+def newer(min_level=0, proc='', text='', top_id=0, limit=200, span=SEARCH_SPAN):
+    """The before_id of the page just newer than one whose newest row is
+    top_id, or None when that is the newest page. Reads up to limit + 1 rows
+    upwards; a text search reads at most `span` rows up (see page()) and then
+    points at the top of that window, so a line can show twice but is never
+    skipped."""
+    ceiling = int(top_id) + 1 + span if text else None
+    rows = query(min_level, proc, text, ceiling, limit + 1, after_id=int(top_id))
+    if len(rows) > limit:
+        return rows[limit - 1]['id'] + 1
+    if ceiling is not None:
+        high = _id_range()[1]
+        if high is not None and ceiling <= high:
+            return ceiling
+    return None
 
 
 def _used_bytes(conn):
