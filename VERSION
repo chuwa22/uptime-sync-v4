@@ -1,5 +1,8 @@
 4.0.9
 2026-11-05
+- Improvement (CLI): `main.py help` lists the commands in groups (Run it / Set it up / Look at it) with examples and the Web UI address; `main.py help <command>` shows every option of one command, with examples. `?`, `-?`, `/?` (Windows) and `-h` do the same as `help`.
+  - An unknown command says so and suggests the closest one ("lgos" -> Did you mean "logs"?). A bad option points at `main.py help <that command>`.
+  - The internal engine/web roles no longer show up as "==SUPPRESS==" in the list.
 - Fix (engine): a monitor saved, added, paused, enabled, cloned or deleted on the Monitors page is now checked within a few seconds. Before, the engine read monitors.json only at the start of each cycle, so a change waited up to `check_interval` (60 s) and the page looked as if nothing had happened.
   - The engine watches monitors.json and data/.env every second and starts a cycle early when either changes, at most once per change and never sooner than 5 s after the previous cycle started, so a burst of saves is one extra check.
   - That extra cycle also pushes to Kuma, like any other check.

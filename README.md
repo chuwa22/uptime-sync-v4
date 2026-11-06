@@ -72,7 +72,10 @@ python main.py reset-password [user]    locked out? set a new password here
 python main.py import <3.x folder> [--dry-run] [--force]
 python main.py install [--no-autostart] | uninstall
 python main.py version
+python main.py help [command]    the list above, or every option of one command
 ```
+
+On Windows `main.py /?` works too. In zsh `?` is a wildcard, so type `help`.
 
 `stop` is sticky. It writes `run/stopped`, so neither the watchdog nor a reboot
 brings the agent back until you run `start`.

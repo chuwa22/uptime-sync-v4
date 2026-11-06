@@ -312,13 +312,87 @@ def cmd_version(a):
 
 # -- parser ------------------------------------------------------------------------
 
-def build_parser():
-    p = argparse.ArgumentParser(prog='main.py', description='Uptime Sync %s' % __version__)
-    sub = p.add_subparsers(dest='command', metavar='<command>')
+# Shown by `main.py help` in this order. engine/web are started by the
+# supervisor and stay out of every list (argparse prints a hidden sub-command
+# as "==SUPPRESS==", so the overview is written here instead).
+HELP_GROUPS = (
+    ('Run it', ('start', 'stop', 'restart', 'status', 'run')),
+    ('Set it up', ('install', 'uninstall', 'import', 'reset-password')),
+    ('Look at it', ('check', 'logs', 'version', 'help')),
+)
+HIDDEN_COMMANDS = ('engine', 'web')
+HELP_WORDS = ('-h', '--help', '?', '-?', '/?', '/h', '/help')
 
-    def add(name, fn, help_):
-        sp = sub.add_parser(name, help=help_, description=help_)
+EXAMPLES = (
+    ('main.py status', 'is it running? which pids?'),
+    ('main.py restart', 'after changing settings by hand'),
+    ('main.py check', 'try every enabled monitor now'),
+    ('main.py logs -n 50 --proc engine', 'last 50 engine lines'),
+    ('main.py logs --level WARNING --grep push', 'push problems only'),
+    ('main.py reset-password admin', 'locked out of the web UI'),
+    ('main.py help logs', 'every option of one command'),
+)
+
+
+class _CmdParser(argparse.ArgumentParser):
+    """Every parse error ends with where to look next."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        cmd = self.prog.split(' ', 1)[1] if ' ' in self.prog else ''
+        hint = ('Run "main.py help %s" for its options.' % cmd) if cmd else 'Run "main.py help" for the list of commands.'
+        self.exit(2, '%s: error: %s\n%s\n' % (self.prog, message, hint))
+
+
+class _Parser(_CmdParser):
+    """Top level: its help is the grouped overview. Sub-commands are built as
+    _CmdParser (add_subparsers would otherwise copy this class, and every
+    `main.py logs --help` would print the overview)."""
+
+    def format_help(self):
+        return overview(self)
+
+
+def overview(parser):
+    subs = parser._uptime_subs
+    width = max(len(n) for _, names in HELP_GROUPS for n in names) + 4
+    out = ['Uptime Sync %s' % __version__, '',
+           'Usage:  main.py <command> [options]',
+           '        main.py help <command>     everything about one command', '']
+    for title, names in HELP_GROUPS:
+        out.append(title)
+        for n in names:
+            out.append('  %s%s' % (n.ljust(width), subs[n].description or ''))
+        out.append('')
+    out.append('Examples')
+    ew = max(len(c) for c, _ in EXAMPLES) + 3
+    for cmd, why in EXAMPLES:
+        out.append('  %s%s' % (cmd.ljust(ew), why))
+    out.append('')
+    try:
+        out.append('Web UI: %s' % _web_url())
+    except Exception:   # help must work even with a broken settings file
+        pass
+    if os.name != 'nt':
+        out.append('zsh: "?" is a wildcard there, so type `main.py help` (or quote it: main.py "?").')
+    return '\n'.join(out) + '\n'
+
+
+def _epilog(*lines):
+    return 'examples:\n' + '\n'.join('  ' + l for l in lines)
+
+
+def build_parser():
+    p = _Parser(prog='main.py', description='Uptime Sync %s' % __version__, add_help=False)
+    p.add_argument('-h', '--help', action='help', help=argparse.SUPPRESS)
+    sub = p.add_subparsers(dest='command', metavar='<command>', parser_class=_CmdParser)
+    p._uptime_subs = {}
+
+    def add(name, fn, help_, epilog=None):
+        sp = sub.add_parser(name, description=help_, epilog=epilog,
+                            formatter_class=argparse.RawDescriptionHelpFormatter)
         sp.set_defaults(fn=fn)
+        p._uptime_subs[name] = sp
         return sp
 
     sp = add('run', cmd_run, 'run the supervisor in the foreground (what autostart runs)')
@@ -326,42 +400,81 @@ def build_parser():
     # supervisor that met it would exit 0 -- which systemd/launchd treat as a
     # deliberate stop and never restart.
     sp.add_argument('--wait-lock', type=float, default=2, help=argparse.SUPPRESS)
-    sp = add('engine', cmd_engine, argparse.SUPPRESS)
+    sp = add('engine', cmd_engine, None)
     sp.add_argument('--supervised', action='store_true')
     sp.add_argument('--parent', type=int, default=0)
-    sp = add('web', cmd_web, argparse.SUPPRESS)
+    sp = add('web', cmd_web, None)
     sp.add_argument('--parent', type=int, default=0)
 
     add('start', cmd_start, 'start in the background (through autostart when installed)')
     add('stop', cmd_stop, 'stop, and stay stopped until `start` (also across reboots)')
     add('restart', cmd_restart, 'stop, then start')
-    sp = add('status', cmd_status, 'show what is running; exit 3 when not running')
-    sp.add_argument('--json', action='store_true')
+    sp = add('status', cmd_status, 'show what is running; exit 3 when not running',
+             _epilog('main.py status', 'main.py status --json      for scripts and monitoring'))
+    sp.add_argument('--json', action='store_true', help='print JSON instead of text')
     sp = add('install', cmd_install, 'create folders, register autostart, start')
-    sp.add_argument('--no-autostart', action='store_true')
+    sp.add_argument('--no-autostart', action='store_true', help='do not register autostart')
     add('uninstall', cmd_uninstall, 'stop and remove autostart (keeps data/)')
-    sp = add('import', cmd_import, 'import settings, monitors and users from an Uptime Sync 3.x folder')
-    sp.add_argument('path')
+    sp = add('import', cmd_import, 'import settings, monitors and users from an Uptime Sync 3.x folder',
+             _epilog('main.py import "C:\\Uptime Sync" --dry-run    see what would come over',
+                     'main.py import "C:\\Uptime Sync"'))
+    sp.add_argument('path', help='the 3.x install folder (the one with data/ or config/)')
     sp.add_argument('--dry-run', action='store_true', help='show what would be imported')
     sp.add_argument('--force', action='store_true', help='overwrite data that already exists here')
-    sp = add('reset-password', cmd_reset_password, 'set a web UI password (creates the admin if missing)')
-    sp.add_argument('username', nargs='?', default='admin')
+    sp = add('reset-password', cmd_reset_password, 'set a web UI password (creates the admin if missing)',
+             _epilog('main.py reset-password', 'main.py reset-password alice'))
+    sp.add_argument('username', nargs='?', default='admin', help='user to reset (default: admin)')
     add('check', cmd_check, 'check every enabled monitor once and print the result (no push)')
-    sp = add('logs', cmd_logs, 'print recent log lines')
-    sp.add_argument('-n', '--lines', type=int, default=100)
-    sp.add_argument('--level', default='INFO')
-    sp.add_argument('--proc', choices=logsetup.PROCS)
-    sp.add_argument('--grep')
+    sp = add('logs', cmd_logs, 'print recent log lines (oldest first, newest at the bottom)',
+             _epilog('main.py logs', 'main.py logs -n 50 --proc engine',
+                     'main.py logs --level WARNING', 'main.py logs --grep "push HTTP 404"'))
+    sp.add_argument('-n', '--lines', type=int, default=100, metavar='N', help='how many lines (default: 100)')
+    sp.add_argument('--level', default='INFO', metavar='LEVEL',
+                    help='lowest level shown: DEBUG, INFO, WARNING, ERROR (default: INFO)')
+    sp.add_argument('--proc', choices=logsetup.PROCS, help='one process only')
+    sp.add_argument('--grep', metavar='TEXT', help='only lines containing TEXT')
     add('version', cmd_version, 'print the version')
+    sp = add('help', None, 'show this list, or everything about one command')
+    sp.add_argument('topic', nargs='?', metavar='command', help='a command name, e.g. logs')
     return p
+
+
+def _help(parser, topic):
+    """`main.py help [command]` -> 0, or 2 for a command that does not exist."""
+    subs = parser._uptime_subs
+    if not topic or topic in HELP_WORDS:
+        sys.stdout.write(overview(parser))
+        return 0
+    if topic in subs and topic not in HIDDEN_COMMANDS:
+        subs[topic].print_help()
+        return 0
+    _unknown(parser, topic)
+    return 2
+
+
+def _unknown(parser, word):
+    import difflib
+    names = [n for n in parser._uptime_subs if n not in HIDDEN_COMMANDS]
+    close = difflib.get_close_matches(word, names, n=1)
+    msg = 'Unknown command "%s".' % word
+    if close:
+        msg += ' Did you mean "%s"?' % close[0]
+    sys.stderr.write(msg + '\nRun "main.py help" for the list of commands.\n')
 
 
 def main(argv=None):
     parser = build_parser()
-    a = parser.parse_args(argv)
-    if not getattr(a, 'fn', None):
-        parser.print_help()
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv:
+        sys.stdout.write(overview(parser))
         return 2
+    first = argv[0]
+    if first in HELP_WORDS or first == 'help':
+        return _help(parser, argv[1] if len(argv) > 1 else None)
+    if not first.startswith('-') and first not in parser._uptime_subs:
+        _unknown(parser, first)
+        return 2
+    a = parser.parse_args(argv)
     if a.fn not in (cmd_run, cmd_engine, cmd_web):   # those set up their own logging
         logsetup.setup_console()
     try:
