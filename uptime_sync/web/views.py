@@ -340,7 +340,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         else:
             items.append(m)
         monitors.save(items)
-        flash('Saved "%s". The engine picks it up on its next cycle.' % m['name'], 'ok')
+        flash('Saved "%s". The engine checks it within a few seconds.' % m['name'], 'ok')
         return redirect(url_for('monitors_list'))
 
     @app.route('/monitors/<mid>/toggle', methods=['POST'])

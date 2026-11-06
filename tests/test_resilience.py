@@ -593,6 +593,50 @@ class EngineWatchTests(unittest.TestCase):
         install.assert_not_called()            # not inline: _watch must keep watching
         self.assertFalse(os.path.exists(paths.INSTALL_TRIGGER))
 
+    def _bump_monitors(self, name):
+        monitors.save([monitors.normalize({'name': name, 'type': 'PING', 'target': '192.0.2.1'})])
+        st = os.stat(paths.MONITORS_FILE)          # a new mtime even within the same second
+        os.utime(paths.MONITORS_FILE, (st.st_atime, st.st_mtime + 1))
+
+    def test_monitor_change_wakes_the_loop_once(self):
+        self._bump_monitors('a')
+        self.e._reload_monitors(force=True)
+        self.e._wake_on_monitor_change()
+        self.assertFalse(self.e._wake.is_set())     # nothing changed
+        self._bump_monitors('b')
+        self.e._wake_on_monitor_change()
+        self.assertTrue(self.e._wake.is_set())
+        self.e._wake.clear()
+        self.e._wake_on_monitor_change()            # same change (say, not readable yet): once
+        self.assertFalse(self.e._wake.is_set())
+
+    def test_saved_monitor_is_checked_without_waiting_for_the_interval(self):
+        settings.update({'check_interval': 600})
+        self._bump_monitors('a')
+        e = engine.Engine(supervised=True)
+        cycles = []
+        def cycle():
+            cycles.append([m['name'] for m in e.monitors])
+        with mock.patch.object(engine, 'MONITOR_CHANGE_MIN_GAP', 0.2), \
+                mock.patch.object(e, '_run_cycle', side_effect=cycle), \
+                mock.patch.object(e, '_housekeeping'), \
+                mock.patch.object(e, '_heartbeat_loop'), \
+                mock.patch.object(engine.logsetup, 'setup'):
+            t = threading.Thread(target=e.run)
+            t.start()
+            try:
+                deadline = time.time() + 5
+                while not cycles and time.time() < deadline:
+                    time.sleep(0.05)
+                self._bump_monitors('b')
+                while len(cycles) < 2 and time.time() < deadline:
+                    time.sleep(0.05)
+            finally:
+                e.stop()
+                t.join(5)
+        self.assertFalse(t.is_alive())
+        self.assertEqual(cycles[:2], [['a'], ['b']])   # within seconds, not 600 s
+
     def test_unreadable_monitors_file_keeps_the_monitors(self):
         monitors.save([monitors.normalize({'name': 'a', 'type': 'PING', 'target': '192.0.2.1'})])
         self.e._reload_monitors(force=True)

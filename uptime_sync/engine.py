@@ -29,6 +29,10 @@ STUCK_CYCLES = 3               # a check running this many intervals -> restart 
 PUSH_REMINDER_SECONDS = 3600   # a push that keeps failing is logged again this often
 HEARTBEAT_STUCK_SECONDS = 600  # one beat in flight this long -> restart the engine
 HOUSEKEEPING_SECONDS = 3600
+# A saved monitor (web UI or a hand edit of monitors.json / data/.env) is
+# checked within about a second instead of at the next check_interval; a
+# burst of saves still runs at most one extra cycle per this many seconds.
+MONITOR_CHANGE_MIN_GAP = 5
 LOW_DISK_RETENTION_DAYS = 3
 
 
@@ -49,9 +53,11 @@ class Engine:
         self.session.mount('http://', adapter)
         self.heartbeat = heartbeat.Heartbeat(self.start_time)
         self.stop_event = threading.Event()
+        self._wake = threading.Event()       # stop, or monitors changed: end the wait early
         self.exit_code = 0
         self.monitors = []
         self._monitor_stamp = None
+        self._woken_for = None               # the stamp _watch last woke the loop for
         self.results = {}
         h = read_json(paths.HISTORY_FILE, {})
         self.history = h if isinstance(h, dict) else {}
@@ -93,7 +99,11 @@ class Engine:
                 self._housekeeping()
                 interval = self.settings['check_interval']
                 # monotonic: a clock stepped back by w32time must not stretch the sleep
-                self.stop_event.wait(min(interval, max(1.0, interval - (time.monotonic() - started))))
+                self._wake.wait(min(interval, max(1.0, interval - (time.monotonic() - started))))
+                self._wake.clear()
+                gap = MONITOR_CHANGE_MIN_GAP - (time.monotonic() - started)
+                if gap > 0 and not self.stop_event.is_set():
+                    self.stop_event.wait(gap)
         finally:
             self._save_history()
             remove_quietly(paths.child_pid_file('engine'))
@@ -108,11 +118,13 @@ class Engine:
         if code and not self.exit_code:
             self.exit_code = code
         self.stop_event.set()
+        self._wake.set()
 
     def _watch(self):
         """Stop on run/engine.stop, on an install click, or when orphaned."""
         while not self.stop_event.wait(1.0):
             loglevel.refresh()
+            self._wake_on_monitor_change()
             busy = self._hb_busy_since
             if busy is not None and time.monotonic() - busy > HEARTBEAT_STUCK_SECONDS:
                 # requests' timeout is per read: a server that trickles its
@@ -145,6 +157,18 @@ class Engine:
             except OSError:
                 out.append(None)
         return tuple(out)
+
+    def _wake_on_monitor_change(self):
+        """monitors.json or data/.env changed since the last load: end the
+        main loop's wait so the change is checked now. Once per change -- a
+        file that cannot be read keeps its old stamp, and must not start a
+        cycle every second."""
+        stamp = self._stamp()
+        if self._monitor_stamp is None or stamp == self._monitor_stamp or stamp == self._woken_for:
+            return
+        self._woken_for = stamp
+        log.debug('Monitors changed - checking now instead of at the next interval')
+        self._wake.set()
 
     def _reload_monitors(self, force=False):
         stamp = self._stamp()
