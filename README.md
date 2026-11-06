@@ -71,7 +71,7 @@ python main.py logs -n 200 --level WARNING --proc engine --grep timeout
 python main.py reset-password [user]    locked out? set a new password here
 python main.py import <3.x folder> [--dry-run] [--force]
 python main.py install [--no-autostart] | uninstall
-python main.py version
+python main.py version          (or --version, -v)
 python main.py help [command]    the list above, or every option of one command
 ```
 

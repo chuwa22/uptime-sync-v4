@@ -3,6 +3,7 @@ from tests import _env  # noqa: F401  (must be first)
 import contextlib
 import io
 import unittest
+from unittest import mock
 
 from uptime_sync import cli
 
@@ -64,6 +65,14 @@ class HelpTests(unittest.TestCase):
         rc, _, err = run('logs', '-n')
         self.assertEqual(rc, 2)
         self.assertIn('main.py help logs', err)
+
+    @mock.patch('uptime_sync.cli.perms.return_to_sudo_user')
+    @mock.patch('uptime_sync.cli.logsetup.setup_console')   # keeps the root logger untouched for other tests
+    def test_version_flags(self, *_):
+        for argv in (('version',), ('--version',), ('-version',), ('-v',), ('-V',), ('/version',)):
+            rc, out, _ = run(*argv)
+            self.assertEqual(rc, 0, argv)
+            self.assertIn('Uptime Sync %s' % cli.__version__, out, argv)
 
     def test_output_is_ascii(self):
         _, out, _ = run('help')

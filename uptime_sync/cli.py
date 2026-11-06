@@ -322,6 +322,7 @@ HELP_GROUPS = (
 )
 HIDDEN_COMMANDS = ('engine', 'web')
 HELP_WORDS = ('-h', '--help', '?', '-?', '/?', '/h', '/help')
+VERSION_WORDS = ('--version', '-version', '-v', '-V', '/v', '/version')
 
 EXAMPLES = (
     ('main.py status', 'is it running? which pids?'),
@@ -358,7 +359,8 @@ def overview(parser):
     width = max(len(n) for _, names in HELP_GROUPS for n in names) + 4
     out = ['Uptime Sync %s' % __version__, '',
            'Usage:  main.py <command> [options]',
-           '        main.py help <command>     everything about one command', '']
+           '        main.py help <command>     everything about one command',
+           '        main.py --version          same as `version` (also -v, -V)', '']
     for title, names in HELP_GROUPS:
         out.append(title)
         for n in names:
@@ -471,6 +473,8 @@ def main(argv=None):
     first = argv[0]
     if first in HELP_WORDS or first == 'help':
         return _help(parser, argv[1] if len(argv) > 1 else None)
+    if first in VERSION_WORDS:
+        return cmd_version(None)
     if not first.startswith('-') and first not in parser._uptime_subs:
         _unknown(parser, first)
         return 2
