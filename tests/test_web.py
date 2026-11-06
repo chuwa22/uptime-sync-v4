@@ -825,14 +825,16 @@ class LogsPageTests(unittest.TestCase):
 
     def test_page_size_and_pager(self):
         html = self.page('/logs')
-        self.assertEqual(html.count('<pre class="msg"'), 100)                 # default page
-        self.assertIn('<option value="100" selected>100 lines</option>', html)
+        self.assertEqual(html.count('<pre class="msg"'), 50)                  # default page
+        self.assertIn('<option value="50" selected>50 lines</option>', html)
         self.assertEqual(sorted(self.links(html)), ['Older &rarr;'])          # newest page: no Newer
         self.assertIn('<span class="button small disabled" aria-disabled="true">&larr; Newer</span>', html)
-        html = self.page('/logs?n=50')
+        html = self.page('/logs?n=100')
+        self.assertEqual(html.count('<pre class="msg"'), 100)
+        html = self.page('/logs?n=50')                                      # the default: not in links
         self.assertEqual(html.count('<pre class="msg"'), 50)
         older = self.links(html)['Older &rarr;']
-        self.assertIn('n=50', older)
+        self.assertNotIn('n=', older)
         html = self.page(older)
         self.assertIn('line 200<', html)
         self.assertNotIn('line 201<', html)
@@ -842,7 +844,7 @@ class LogsPageTests(unittest.TestCase):
         back = self.page(links['&larr; Newer'])                            # the page we came from
         self.assertIn('line 249<', back)
         self.assertIn('line 201<', back)
-        self.assertEqual(self.page('/logs?n=7').count('<pre class="msg"'), 100)   # not offered
+        self.assertEqual(self.page('/logs?n=7').count('<pre class="msg"'), 50)    # not offered
 
     def test_long_message_is_marked_for_folding(self):
         html = self.page('/logs?level=ERROR')

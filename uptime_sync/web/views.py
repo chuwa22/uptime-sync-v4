@@ -16,7 +16,7 @@ from . import auth
 log = logging.getLogger('web')
 LOG_LEVELS = loglevel.VALUES
 LOG_PAGE_SIZES = (50, 100, 200, 500)   # rows per Logs page, offered on the page
-LOG_PAGE = 100                          # the default
+LOG_PAGE = 50                           # the default
 LOG_CLAMP_LINES = 3                     # longer messages fold (app.js)
 
 
