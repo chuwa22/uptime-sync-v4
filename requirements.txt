@@ -7,7 +7,7 @@
 #     python tools/pin-hashes.py           (rewrites the --hash lines)
 #     python tools/pin-hashes.py --check   (resolves for Windows / Linux /
 #         macOS on 3.8, 3.9 and 3.12; fails on a package not pinned here)
-# then `install.py --recreate` + the tests on a 3.8 venv AND a current one.
+# then `main.py install --recreate` + the tests on a 3.8 venv AND a current one.
 #
 # Three tiers, because the fixed releases stopped installing on old Pythons:
 # - 3.8 (Windows 7 SP1 32-bit, the oldest supported box): the last builds

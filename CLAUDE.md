@@ -9,7 +9,9 @@ README.md covers usage. This file covers the rules for changing the code.
 
 - **Entry points:**
   - `main.py`: CLI (`uptime_sync/cli.py`).
-  - `install.py`: venv bootstrap, then `main.py install`.
+  - `main.py install` on the system Python: `bootstrap.py` builds `.venv`
+    (standard library only), then main.py re-launches into `.venv` for
+    `cli.cmd_install`. Windows wraps it in `Launcher.bat` (I / R / `install`).
 - **Process roles:**
   - `supervisor.py`: the process the OS starts.
   - `engine.py`: checks, pushes and heartbeat.
@@ -43,11 +45,12 @@ README.md covers usage. This file covers the rules for changing the code.
   (`paths.venv_python()` / `procs.background_python()`).
   - main.py re-launches itself there and refuses to run without it.
   - Never start the agent, pip or a child on `sys.executable` from outside
-    `.venv`. install.py is the only system-Python script.
+    `.venv`. `bootstrap.py` (reached only through `main.py install` outside
+    `.venv`) is the only system-Python code; keep it standard library only.
   - requirements.txt pins the full dependency tree, using environment markers
     where 3.8 and newer Pythons need different versions. After a bump, run
-    `install.py --recreate` and `pip check` on 3.8 and on a current Python.
-  - For development, `python3.8 install.py --no-autostart` gives this checkout
+    `main.py install --recreate` and `pip check` on 3.8 and on a current Python.
+  - For development, `python3.8 main.py install --no-autostart` gives this checkout
     a `.venv`. The unit tests run on any venv with the requirements; they do
     not go through main.py.
 - **Python 3.8 floor.** Do not use:
@@ -330,7 +333,7 @@ README.md covers usage. This file covers the rules for changing the code.
 - **Unit tests:** `.venv38/bin/python -m unittest discover -s tests -t .` (also run
   them on a current Python). `tests/_env.py` points `UPTIME_SYNC_ROOT` at a temp
   copy. Import it first in every test module.
-- **Lint:** `python -m pyflakes uptime_sync tests main.py install.py tools`.
+- **Lint:** `python -m pyflakes uptime_sync tests main.py tools`.
 - **Packages:** after changing a pin in requirements.txt, run
   `python tools/pin-hashes.py` (hashes) and `python tools/pin-hashes.py --check`
   (needs uv; resolves Windows / Linux / macOS on 3.8-3.14). Then install it into

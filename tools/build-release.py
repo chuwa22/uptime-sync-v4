@@ -39,7 +39,8 @@ FORBIDDEN = re.compile(
     r'|(^|/)secret\.key$|\.db$|\.log$|\.pem$|\.pfx$|\.p12$'
     r'|__pycache__|\.pyc$|\.DS_Store$'
 )
-REQUIRED = ('VERSION', 'main.py', 'install.py', 'requirements.txt', 'uptime_sync/__init__.py',
+REQUIRED = ('VERSION', 'main.py', 'Launcher.bat', 'requirements.txt', 'uptime_sync/__init__.py',
+            'uptime_sync/bootstrap.py',
             'config/defaults.json',
             'uptime_sync/supervisor.py', 'uptime_sync/updater.py')
 

@@ -113,9 +113,9 @@ class SupervisorRestartTests(unittest.TestCase):
         self.assertEqual(sorted(c.name for c in started), ['engine', 'engine', 'web', 'web'])
 
 
-class InstallBatTests(unittest.TestCase):
+class LauncherBatTests(unittest.TestCase):
     def test_no_percent0_after_shift(self):
-        with open(os.path.join(_env.REPO, 'install.bat'), 'rb') as f:
+        with open(os.path.join(_env.REPO, 'Launcher.bat'), 'rb') as f:
             bat = f.read().decode('ascii')
         after = bat.split('\r\nshift\r\n', 1)[1]
         self.assertIsNone(re.search(r'%~[a-z]*0', after), 'SHIFT moves %0: use %SELF% / %HERE%')

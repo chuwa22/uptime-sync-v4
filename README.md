@@ -10,16 +10,18 @@ needs **Python 3.8 or newer**, and starts by itself at boot.
 
 ## Install
 
-Copy (or unzip) this folder somewhere permanent, then run the installer with the
+Copy (or unzip) this folder somewhere permanent, then run `main.py install` with the
 system Python:
 
 | OS | Command | Autostart |
 |---|---|---|
-| Windows | Double-click `install.bat` (it asks for administrator rights), or `py -3 install.py` from an **elevated** prompt | Task Scheduler task `UptimeSync4` (at boot, plus every minute as a watchdog), runs as SYSTEM |
-| Linux | `sudo python3 install.py` | systemd unit `uptime-sync.service`. Without sudo it creates a user unit instead |
-| macOS | `sudo python3 install.py` | LaunchDaemon `com.uptimesync.agent`. Without sudo it creates a LaunchAgent that runs only while you are logged in |
+| Windows | Double-click `Launcher.bat` and choose **I** (it asks for administrator rights), or `py -3 main.py install` from an **elevated** prompt | Task Scheduler task `UptimeSync4` (at boot, plus every minute as a watchdog), runs as SYSTEM |
+| Linux | `sudo python3 main.py install` | systemd unit `uptime-sync.service`. Without sudo it creates a user unit instead |
+| macOS | `sudo python3 main.py install` | LaunchDaemon `com.uptimesync.agent`. Without sudo it creates a LaunchAgent that runs only while you are logged in |
 
-`install.py` creates `.venv/` in the folder and installs `requirements.txt` into it.
+Run with the system Python, `main.py install` first creates `.venv/` in the folder and
+installs `requirements.txt` into it (`uptime_sync/bootstrap.py`), then carries on inside
+`.venv`.
 Every pinned package, dependencies included, goes there. After that, everything
 runs on `.venv`'s Python. You can type `python main.py ...` with any Python:
 main.py restarts itself inside `.venv`. The system Python is used only to create
@@ -27,25 +29,26 @@ main.py restarts itself inside `.venv`. The system Python is used only to create
 
 `.venv` belongs to the machine that made it: do not copy it to another box (exclude it
 when you sync or copy the folder). A copied `.venv` fails with "No Python at ...";
-run `install.bat` (or `python install.py`) on that box and it is rebuilt.
+run `Launcher.bat` -> I (or `python main.py install`) on that box and it is rebuilt.
 
 `.venv` still uses the system Python's standard library. If you uninstall or
-upgrade that Python, run `python main.py stop`, then `python install.py --recreate`
-(it refuses while the agent is running), then `python main.py start`.
+upgrade that Python, run `python main.py install --recreate` with the new system Python
+(Windows: Launcher.bat -> R). It stops the agent, rebuilds `.venv` and starts it again.
 It then registers autostart and starts the agent. Open `http://<box>:5000/` and
 create the admin account.
 
-`install.bat` finds the system Python (`py -3`, then `python`), checks it is 3.8 or
-newer, runs `install.py` with it and keeps the window open so you can read the result.
-Options are passed through: `install.bat --no-autostart`, `--recreate`, `--wheels C:\wheels`.
+On Windows, `Launcher.bat` finds the system Python (`py -3`, then `python`), checks
+it is 3.8 or newer, runs `main.py install` with it and keeps the window open so you can
+read the result. Without the menu: `Launcher.bat install`, with options passed through:
+`Launcher.bat install --no-autostart`, `--recreate`, `--wheels C:\wheels`.
 
 On Windows, `Launcher.bat` is a control panel: double-click it (it asks for
 administrator rights) for a menu of Status, Start, Stop, Restart, Open the web UI,
 Check every monitor now, recent logs, warnings and errors, Reset a web UI password,
-Install or repair, and Uninstall autostart. Each item runs the same
+Install or repair, Rebuild .venv, and Uninstall autostart. Each item runs the same
 `main.py` command you would type at a prompt.
 
-For an offline install, run `install.py --wheels <folder of .whl files>`. On Windows 7,
+For an offline install, run `main.py install --wheels <folder of .whl files>`. On Windows 7,
 use Python 3.8.10, the last release that supports it.
 
 ### Coming from Uptime Sync 3.x

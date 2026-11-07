@@ -8,11 +8,21 @@ rem so it does exactly what the same command does at a prompt.
 rem It asks for administrator rights: the service is a SYSTEM scheduled
 rem task, and stopping or starting it needs them.
 rem
+rem Install (menu I, or without the menu):
+rem     Launcher.bat install
+rem     Launcher.bat install --no-autostart
+rem     Launcher.bat install --recreate
+rem     Launcher.bat install --wheels C:\wheels
+rem finds the system Python 3.8 or newer and runs  main.py install  with
+rem it; uptime_sync\bootstrap.py builds .venv and hands over to it.
+rem For an option value with spaces, run  py -3 main.py install ...  from
+rem an elevated prompt. To pick one Python yourself:  py -3.8 main.py install
+rem
 rem Rules (lessons from the 3.x Launcher):
 rem   - nothing is spawned to draw the menu; the version comes from the
 rem     VERSION file, the web address only when you open the web UI;
 rem   - a .venv copied from another machine is spotted from pyvenv.cfg
-rem     and sent to I (install.py rebuilds it, stopping the agent first);
+rem     and sent to I (main.py install rebuilds it, stopping the agent first);
 rem   - an empty answer three times in a row quits: with a broken stdin
 rem     (scheduled task, piped input) set /p returns at once, and the
 rem     menu would otherwise spin at full CPU.
@@ -20,17 +30,50 @@ rem
 rem Keep this file ASCII with CRLF line endings (.gitattributes).
 
 setlocal EnableExtensions
+rem Saved before the argument loop: SHIFT moves %0 too, so %~f0 / %~dp0
+rem would name the last argument afterwards.
 set "SELF=%~f0"
 set "HERE=%~dp0"
 cd /d "%HERE%"
+set "PY=%HERE%.venv\Scripts\python.exe"
+set "MAIN=%HERE%main.py"
 
+set "ELEVATED="
+set "MODE="
+set "ARGS="
+:collect
+if "%~1"=="" goto collected
+if /i "%~1"=="/elevated" goto arg_elevated
+if not defined MODE if not defined ARGS if /i "%~1"=="install" goto arg_install
+set ARGS=%ARGS% %1
+goto arg_next
+:arg_elevated
+set "ELEVATED=1"
+goto arg_next
+:arg_install
+set "MODE=install"
+:arg_next
+shift
+goto collect
+:collected
+if defined ARGS if not defined MODE goto usage
+
+rem fltmc works on Windows 7 and later and, unlike "net session", does not
+rem need the Server service.
 fltmc >nul 2>&1
 if not errorlevel 1 goto admin
-if /i "%~1"=="/elevated" goto not_admin
+if defined ELEVATED goto not_admin
 echo [INFO] Asking for administrator rights...
-powershell -NoProfile -Command "Start-Process -FilePath '%SELF%' -ArgumentList '/elevated' -Verb RunAs"
+set "PASS=/elevated"
+if defined MODE set "PASS=/elevated install%ARGS%"
+powershell -NoProfile -Command "Start-Process -FilePath '%SELF%' -ArgumentList '%PASS%' -Verb RunAs"
 if errorlevel 1 goto not_admin
 exit /b 0
+
+:usage
+echo Usage:  Launcher.bat                  the control panel
+echo         Launcher.bat install [--no-autostart] [--recreate] [--wheels DIR]
+exit /b 2
 
 :not_admin
 echo [ERROR] Administrator rights are needed: the service runs as SYSTEM.
@@ -39,10 +82,16 @@ pause
 exit /b 1
 
 :admin
+if not defined MODE goto panel
+title Uptime Sync 4 - install
+call :install %ARGS%
+echo.
+pause
+exit /b %RC%
+
+:panel
 set "VER="
 if exist "%HERE%VERSION" set /p VER=<"%HERE%VERSION"
-set "PY=%HERE%.venv\Scripts\python.exe"
-set "MAIN=%HERE%main.py"
 set "EMPTY=0"
 
 :menu
@@ -78,7 +127,8 @@ echo      8  Warnings and errors only - last 50
 echo.
 echo    Set it up
 echo      9  Reset a web UI password
-echo      I  Install or repair - runs install.bat
+echo      I  Install or repair - builds .venv, autostart, starts
+echo      R  Rebuild .venv from scratch, then install
 echo      U  Uninstall autostart - keeps data\
 echo.
 echo      H  Every command - main.py help
@@ -103,6 +153,7 @@ if "%CHOICE%"=="7" goto do_logs
 if "%CHOICE%"=="8" goto do_warnings
 if "%CHOICE%"=="9" goto do_password
 if /i "%CHOICE%"=="I" goto do_install
+if /i "%CHOICE%"=="R" goto do_rebuild
 if /i "%CHOICE%"=="U" goto do_uninstall
 if /i "%CHOICE%"=="H" goto do_help
 if /i "%CHOICE%"=="Q" goto quit
@@ -160,9 +211,16 @@ call :run reset-password "%WHO%"
 goto wait
 
 :do_install
+call :install
+goto wait
+:do_rebuild
 echo.
-call "%HERE%install.bat" /elevated
-goto menu
+echo    This deletes .venv and builds it again. data\ is kept.
+set "SURE="
+set /p "SURE=   Type YES to go on: "
+if /i not "%SURE%"=="YES" goto cancelled
+call :install --recreate
+goto wait
 
 :do_uninstall
 if not exist "%PY%" goto not_installed
@@ -209,6 +267,35 @@ if defined BROKEN (
 echo.
 "%PY%" "%MAIN%" %*
 exit /b %ERRORLEVEL%
+
+:install
+rem Runs main.py install with the SYSTEM Python, never the .venv one: the
+rem .venv may be missing or copied from another machine, and --recreate
+rem deletes it. main.py hands over to uptime_sync\bootstrap.py for that.
+echo.
+set "SYSPY="
+set "CHECK=import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)"
+py -3 -c "%CHECK%" >nul 2>&1
+if not errorlevel 1 set "SYSPY=py -3"
+if defined SYSPY goto install_found
+python -c "%CHECK%" >nul 2>&1
+if not errorlevel 1 set "SYSPY=python"
+if defined SYSPY goto install_found
+echo [ERROR] Python 3.8 or newer was not found (tried "py -3" and "python").
+echo [INFO] Install it for all users and tick "Add Python to PATH".
+echo [INFO] Windows 7: use Python 3.8.10, the last release that supports it.
+set "RC=1"
+exit /b 1
+:install_found
+%SYSPY% -c "import sys; print('[INFO] Python ' + sys.version.split()[0] + ' ' + sys.executable)"
+echo [INFO] Folder %HERE%
+echo.
+%SYSPY% "%MAIN%" install %*
+set "RC=%ERRORLEVEL%"
+echo.
+if "%RC%"=="0" echo [OK] Done. Check it any time with:  Launcher.bat, then 1
+if not "%RC%"=="0" echo [ERROR] main.py install stopped with exit code %RC% (see above).
+exit /b %RC%
 
 :quit
 endlocal

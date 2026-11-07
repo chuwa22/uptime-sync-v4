@@ -14,7 +14,7 @@ def _read(name):
 
 
 class BatFilesTest(unittest.TestCase):
-    NAMES = ('install.bat', 'Launcher.bat')
+    NAMES = ('Launcher.bat',)
 
     def test_ascii(self):
         for name in self.NAMES:
@@ -30,9 +30,11 @@ class BatFilesTest(unittest.TestCase):
             self.assertIn(name, paths.SHIPPED)
 
 
-class InstallBatTest(unittest.TestCase):
-    def test_runs_install_py(self):
-        self.assertIn(b'install.py"%ARGS%', _read('install.bat'))
+class OldInstallerGoneTest(unittest.TestCase):
+    def test_merged_into_launcher_and_bootstrap(self):
+        for name in ('install.bat', 'install.py'):
+            self.assertFalse(os.path.exists(os.path.join(HERE, name)), name)
+            self.assertNotIn(name, paths.SHIPPED)
 
 
 class LauncherBatTest(unittest.TestCase):
@@ -76,6 +78,28 @@ class LauncherBatTest(unittest.TestCase):
     def test_uninstall_asks_first(self):
         i = self.lines.index(':do_uninstall')
         block = self.lines[i:self.lines.index('call :run uninstall')]
+        self.assertIn('if /i not "%SURE%"=="YES" goto cancelled', block)
+
+    def test_install_runs_main_py_on_the_system_python(self):
+        # Never the .venv python: it may be missing, copied, or about to be
+        # deleted by --recreate. bootstrap builds it, then hands over.
+        i = self.lines.index(':install')
+        block = self.lines[i:self.lines.index('exit /b %RC%', i)]
+        self.assertIn('py -3 -c "%CHECK%" >nul 2>&1', block)
+        self.assertIn('%SYSPY% "%MAIN%" install %*', block)
+        self.assertFalse([l for l in block if '%PY%' in l], 'install must not use .venv')
+
+    def test_direct_install_mode_survives_elevation(self):
+        self.assertIn('if not defined MODE if not defined ARGS if /i "%~1"=="install" goto arg_install', self.lines)
+        self.assertIn('if defined MODE set "PASS=/elevated install%ARGS%"', self.lines)
+        self.assertIn("-ArgumentList '%PASS%' -Verb RunAs", self.data)
+        i = self.lines.index(':admin')
+        self.assertEqual(self.lines[i + 1:i + 4], ['if not defined MODE goto panel', 'title Uptime Sync 4 - install',
+                                                   'call :install %ARGS%'])
+
+    def test_rebuild_asks_first(self):
+        i = self.lines.index(':do_rebuild')
+        block = self.lines[i:self.lines.index('call :install --recreate')]
         self.assertIn('if /i not "%SURE%"=="YES" goto cancelled', block)
 
     def test_commands_exist_in_the_cli(self):

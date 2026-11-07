@@ -37,7 +37,7 @@ class VenvTests(unittest.TestCase):
             shutil.rmtree(root, ignore_errors=True)
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn(b'no .venv', p.stdout)
-        self.assertIn(b'install.py', p.stdout)
+        self.assertIn(b'main.py install', p.stdout)
 
 if __name__ == '__main__':
     unittest.main()

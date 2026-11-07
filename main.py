@@ -4,7 +4,12 @@ The agent always runs on <this folder>/.venv's interpreter, so the packages
 from requirements.txt live there and never in (or from) the system Python.
 Started with any other Python -- `python main.py status` from a prompt --
 this file re-launches itself on .venv's python with the same arguments.
-install.py creates .venv; it is the one script meant for the system Python.
+
+`main.py install` started by the system Python first builds .venv
+(uptime_sync/bootstrap.py, stdlib only), then re-launches the same way:
+
+    Windows (elevated):  py -3 main.py install      or Launcher.bat -> I
+    Linux / macOS:       sudo python3 main.py install
 """
 
 import os
@@ -19,13 +24,14 @@ from uptime_sync import paths  # noqa: E402  (stdlib only: safe outside .venv)
 
 REEXEC_FLAG = 'UPTIME_SYNC_REEXEC'
 REQUIRED = ('requests', 'certifi', 'flask', 'werkzeug', 'waitress')
+HELP_FLAGS = {'-h', '--help', '?', '-?', '/?', '/h', '/help'}   # `install --help` builds nothing
 
 
 def _fail(msg):
     if sys.stderr:   # None under pythonw
         sys.stderr.write('[ERROR] %s\n' % msg)
-        sys.stderr.write('[INFO] Fix: run  python install.py  in %s (with the system Python)\n'
-                         % paths.ROOT)
+        sys.stderr.write('[INFO] Fix: run  python main.py install  in %s with the system Python '
+                         '(Windows: Launcher.bat, then I)\n' % paths.ROOT)
     sys.exit(1)
 
 
@@ -60,7 +66,19 @@ def ensure_packages():
         _fail('.venv is missing package(s): %s' % ', '.join(missing))
 
 
+def _command(argv):
+    """The command word the way the CLI reads it: install, -install, /install."""
+    return argv[0].lstrip('-/').lower() if argv else ''
+
+
 if __name__ == '__main__':
+    if (_command(sys.argv[1:]) == 'install' and not paths.in_venv()
+            and not os.environ.get(REEXEC_FLAG) and not set(sys.argv[2:]) & HELP_FLAGS):
+        from uptime_sync import bootstrap
+        code = bootstrap.prepare(sys.argv[2:])
+        if code:
+            sys.exit(code)
+        os.environ[bootstrap.DONE_FLAG] = '1'
     ensure_venv()
     os.environ.pop(REEXEC_FLAG, None)
     ensure_packages()

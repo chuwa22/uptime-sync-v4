@@ -48,13 +48,13 @@ STATUS_FILE = os.path.join(RUN_DIR, 'status.json')
 # What an update replaces and what the release zip holds (tools/build-release.py
 # reads this tuple). Everything else under ROOT belongs to the site. tools/ is
 # developer tooling for a git clone and never ships.
-SHIPPED = ('uptime_sync', 'config', 'main.py', 'install.py', 'VERSION',
-           'requirements.txt', 'README.md', 'LICENSE', 'install.bat', 'Launcher.bat')
+SHIPPED = ('uptime_sync', 'config', 'main.py', 'VERSION',
+           'requirements.txt', 'README.md', 'LICENSE', 'Launcher.bat')
 
 
 # The agent always runs on the interpreter inside <root>/.venv, so its
 # packages (requirements.txt) never mix with the system Python's.
-# install.py creates it; main.py re-launches itself into it.
+# `main.py install` (uptime_sync/bootstrap.py) creates it; main.py re-launches itself into it.
 VENV_DIR = os.path.join(ROOT, '.venv')
 
 

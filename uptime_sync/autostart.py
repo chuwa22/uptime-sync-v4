@@ -343,7 +343,7 @@ def install():
     """Register the supervisor with the OS. Returns the state dict."""
     python = procs.background_python()
     if not os.path.isfile(python):
-        raise AutostartError('%s does not exist - run install.py first' % python)
+        raise AutostartError('%s does not exist - run `main.py install` with the system Python first' % python)
     if procs.IS_WINDOWS:
         state = _win_install(python)
     elif sys.platform == 'darwin':

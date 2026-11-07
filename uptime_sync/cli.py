@@ -201,7 +201,14 @@ def _child_pid(name):
 # -- setup -------------------------------------------------------------------------
 
 def cmd_install(a):
-    from . import autostart
+    from . import autostart, bootstrap
+    if (a.recreate or a.wheels) and not os.environ.get(bootstrap.DONE_FLAG):
+        # Started on .venv's own python: the .venv step (bootstrap) did not run.
+        _say('[ERROR] --recreate and --wheels build .venv, so they need the system Python:')
+        _say('        %s main.py install%s%s' % ('py -3' if procs.IS_WINDOWS else 'python3',
+                                                ' --recreate' if a.recreate else '',
+                                                ' --wheels DIR' if a.wheels else ''))
+        return 2
     paths.ensure_dirs()
     _say('[OK] Directories ready under %s' % paths.ROOT)
     problems = perms.set_owner_admins(paths.ROOT) + perms.harden(grant_current_user=True)
@@ -216,7 +223,7 @@ def cmd_install(a):
              % (home, ' / '.join(writers)))
         if perms.under_user_profile(home):
             _say('       install Python "for all users" (C:\\Program Files), then run '
-                 '`py -3 install.py` again so .venv is rebuilt on it')
+                 '`py -3 main.py install --recreate` again so .venv is rebuilt on it')
         else:
             _say('       icacls "%s" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F '
                  '*S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX /Q' % home)
@@ -417,8 +424,15 @@ def build_parser():
     sp = add('status', cmd_status, 'show what is running; exit 3 when not running',
              _epilog('main.py status', 'main.py status --json      for scripts and monitoring'))
     sp.add_argument('--json', action='store_true', help='print JSON instead of text')
-    sp = add('install', cmd_install, 'create folders, register autostart, start')
+    sp = add('install', cmd_install, 'build .venv, register autostart, start (run it with the system Python)',
+             _epilog('py -3 main.py install            (Windows, elevated; or Launcher.bat -> I)',
+                     'sudo python3 main.py install     (Linux / macOS)',
+                     'main.py install --wheels C:\\wheels   (offline)'))
     sp.add_argument('--no-autostart', action='store_true', help='do not register autostart')
+    sp.add_argument('--recreate', action='store_true',
+                    help='delete .venv and build it again first (run with the system Python)')
+    sp.add_argument('--wheels', metavar='DIR',
+                    help='install the packages from wheel files in DIR, offline (system Python)')
     add('uninstall', cmd_uninstall, 'stop and remove autostart (keeps data/)')
     sp = add('import', cmd_import, 'import settings, monitors and users from an Uptime Sync 3.x folder',
              _epilog('main.py import "C:\\Uptime Sync" --dry-run    see what would come over',

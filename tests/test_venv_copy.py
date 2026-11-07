@@ -1,11 +1,10 @@
 """A .venv copied from another machine (the folder synced Mac -> Windows)
 points at that machine's Python and fails before any Python code runs.
-It must be named as such, and install.py must be able to rebuild it even
-with the agent still running from it."""
+It must be named as such, and `main.py install` (uptime_sync/bootstrap.py)
+must be able to rebuild it even with the agent still running from it."""
 
 from tests import _env  # noqa: F401  (must be first)
 
-import importlib.util
 import os
 import shutil
 import subprocess
@@ -14,14 +13,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from uptime_sync import paths, procs
-
-
-def _install_module():
-    spec = importlib.util.spec_from_file_location('install_under_test', os.path.join(_env.REPO, 'install.py'))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+from uptime_sync import bootstrap, paths, procs
 
 
 class VenvCopyTests(unittest.TestCase):
@@ -60,16 +52,15 @@ class VenvCopyTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn('.venv was made on another machine', r.stdout)
         self.assertIn('/nowhere/python-from-another-machine', r.stdout)
-        self.assertIn('install.py', r.stdout)
+        self.assertIn('main.py install', r.stdout)
 
     def test_install_stops_an_agent_that_runs_from_a_broken_venv(self):
-        install = _install_module()
         with mock.patch('time.sleep'):
-            self.assertTrue(install.stop_broken_agent(timeout=5))
+            self.assertTrue(bootstrap.stop_agent(timeout=5))
         self.assertTrue(os.path.exists(paths.STOPPED_FLAG))      # `main.py install` -> start clears it
         self.assertFalse(os.path.exists(paths.SHUTDOWN_FLAG))
         with mock.patch.object(procs.InstanceLock, 'held_by_other', return_value=True):
-            self.assertFalse(install.stop_broken_agent(timeout=0.2))
+            self.assertFalse(bootstrap.stop_agent(timeout=0.2))
         self.assertTrue(os.path.exists(paths.SHUTDOWN_FLAG))     # still asked to stop
 
 
