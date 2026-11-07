@@ -41,6 +41,18 @@ class ConsiderUpdateTests(unittest.TestCase):
             self.e._consider_update(dict(REPLY), self.s)
             inst.assert_not_called()
 
+    def test_deferred_offer_logged_once(self):
+        # The heartbeat repeats the offer every minute: INFO once, then DEBUG.
+        reply = dict(REPLY, update_mode='scheduled', update_window={'start': '02:00', 'end': '04:00'})
+        with mock.patch.object(updater, 'in_window', return_value=False), \
+                mock.patch.object(self.e, '_start_install') as inst, \
+                mock.patch.object(engine, 'log') as log:
+            for _ in range(3):
+                self.e._consider_update(dict(reply), self.s)
+        inst.assert_not_called()
+        self.assertEqual(log.info.call_count, 1)
+        self.assertEqual(log.debug.call_count, 2)
+
 
 if __name__ == '__main__':
     unittest.main()

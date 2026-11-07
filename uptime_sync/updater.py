@@ -163,6 +163,8 @@ def validate_staging(version):
             staged = f.readline().strip()
     except OSError:
         raise UpdateRefused('staged build has no VERSION file')
+    except ValueError:
+        raise UpdateRefused('staged build has an unreadable VERSION file')
     if staged != version:
         raise UpdateRefused('staged build is v%s, expected v%s' % (staged, version))
     for required in (os.path.join('uptime_sync', '__init__.py'), 'main.py',
@@ -404,6 +406,7 @@ def apply():
     try:
         set_state(status='Applying', version=version, previous=__version__, backup=backup,
                   installed=names_in, time=iso_now(), crashes=0, detail='',
+                  rolling_back=None, pip_pending=False, leftovers=[],
                   requirements_changed=_read(os.path.join(paths.STAGING_DIR, 'requirements.txt')) != old_req)
     except OSError as e:
         log.error('[UPDATE] Cannot record the update state, v%s kept: %s', __version__, e)
@@ -449,9 +452,18 @@ def recover_interrupted():
     """Finish an apply() that died half-way (power cut, killed supervisor):
     the state still says 'Applying'. Put the previous version back exactly
     as it was. Returns True when files were moved (the caller re-executes
-    itself: the code it is running may have just been replaced)."""
+    itself: the code it is running may have just been replaced).
+
+    Also finishes a restore that was cut off after its swap: the pip
+    install (`pip_pending`) and the clean-up (`leftovers`) it recorded. A
+    restore writes its final state right after the swap, BEFORE pip, so a
+    power cut during pip no longer makes the next start restore again from
+    a backup that is already empty (4.0.11)."""
     s = state()
     if s.get('status') != 'Applying':
+        if s.get('pip_pending') or s.get('leftovers'):
+            _finish_restore(s.get('rolled_back_to') or __version__, bool(s.get('pip_pending')),
+                            s.get('leftovers') or [])
         return False
     version, previous, backup = s.get('version'), s.get('previous'), s.get('backup') or ''
     log.critical('[UPDATE] The install of v%s was interrupted - restoring v%s', version, previous)
@@ -461,51 +473,157 @@ def recover_interrupted():
         set_state(status='Failed', time=iso_now(), detail='interrupted before the swap started')
         shutil.rmtree(paths.STAGING_DIR, ignore_errors=True)
         return False
-    # Every move out precedes every move in, so a name that has left the
-    # staging folder is new code in ROOT; everything in the backup is old code.
-    staged = set(_swap_names(paths.STAGING_DIR)) if os.path.isdir(paths.STAGING_DIR) else set()
-    came_in = [n for n in names_in if n not in staged]
     went_out = _swap_names(backup)
-    trash = os.path.join(paths.BACKUP_DIR, 'interrupted-v%s-%s' % (version, int(time.time())))
+    rb = _resume_record(s, backup)
+    if rb:
+        # This restore was itself cut off. Its moves out all precede its
+        # moves in: once a backup name has come back, every new name is in
+        # rb['trash'] already and ROOT holds old code -- only the rest of
+        # the backup still moves.
+        trash = rb['trash']
+        names_out = [] if set(rb['back']) - set(went_out) else list(rb['out'])
+    else:
+        # Every move out of apply() precedes every move in, so a name that
+        # has left the staging folder is new code in ROOT; everything in the
+        # backup is old code.
+        staged = set(_swap_names(paths.STAGING_DIR)) if os.path.isdir(paths.STAGING_DIR) else set()
+        came_in = [n for n in names_in if n not in staged]
+        if came_in and not went_out:
+            # Nothing left to put back, yet new names are in ROOT: a restore
+            # finished its swap but could not record it. Swapping now would
+            # move the restored old code out and leave ROOT empty. Trust the
+            # files only if VERSION says they are the old ones.
+            if _installed_version() != previous:
+                log.critical('[UPDATE] Cannot restore v%s: %s is empty -- the files are left as they are',
+                             previous, backup)
+                set_state(status='RollbackFailed', time=iso_now(),
+                          detail='interrupted install; the backup folder is empty')
+                return True
+            came_in = []
+        trash = os.path.join(paths.BACKUP_DIR, 'interrupted-v%s-%s' % (version, int(time.time())))
+        names_out = sorted(set(came_in) | set(went_out))
+        _save_record(backup, trash, went_out, names_out)
     try:
-        _swap(sorted(set(came_in) | set(went_out)), trash, backup, went_out)
+        _swap(names_out, trash, backup, went_out)
     except Exception as e:
         log.critical('[UPDATE] Could not restore v%s: %s -- copy it back from %s by hand',
                      previous, e, backup)
         set_state(status='RollbackFailed', time=iso_now(),
                   detail='interrupted install; restore failed: %s' % e)
         return True
-    if s.get('requirements_changed'):
-        ok, _ = _pip_install(paths.ROOT)
-        log.log(logging.INFO if ok else logging.ERROR,
-                '[UPDATE] Reinstalled the v%s requirements: %s', previous, 'ok' if ok else 'FAILED')
-    shutil.rmtree(trash, ignore_errors=True)
-    shutil.rmtree(paths.STAGING_DIR, ignore_errors=True)
-    try:
-        os.rmdir(backup)
-    except OSError:
-        pass
-    set_state(status='Failed', version=version, time=iso_now(), backup='', installed=[],
-              detail='install was interrupted; v%s restored' % previous, rolled_back_to=previous)
+    _restored(version, previous, 'install was interrupted; v%s restored' % previous,
+              bool(s.get('requirements_changed')), [trash, backup, paths.STAGING_DIR])
     log.error('[UPDATE] v%s restored after the interrupted install of v%s', previous, version)
     return True
+
+
+def _installed_version():
+    """First line of ROOT/VERSION as it is on disk now ('' if unreadable)."""
+    try:
+        with open(os.path.join(paths.ROOT, 'VERSION'), 'r', encoding='utf-8') as f:
+            return f.readline().strip()
+    except (OSError, ValueError):
+        return ''
+
+
+def _resume_record(s, backup):
+    """The `rolling_back` record of a restore from THIS backup that was cut
+    off, or None. A record for another backup is stale and never used."""
+    rb = s.get('rolling_back')
+    if (isinstance(rb, dict) and rb.get('backup') == backup and isinstance(rb.get('trash'), str)
+            and rb['trash'] and isinstance(rb.get('back'), list) and isinstance(rb.get('out'), list)):
+        return rb
+    return None
+
+
+def _save_record(backup, trash, back, out):
+    """Written before a restore's swap, so a run cut off half-way can be
+    finished by the next one without moving restored code out again."""
+    try:
+        set_state(rolling_back={'backup': backup, 'trash': trash, 'back': back, 'out': out})
+    except OSError as e:
+        log.critical('[UPDATE] Could not record the restore before it starts (%s); going on', e)
+
+
+def _restored(version, previous, detail, pip, leftovers):
+    """After a restore's swap: record the final state FIRST, then pip and
+    clean-up. If the state cannot be written, the backup and trash stay
+    where they are, so the next start finds the record (or an empty backup
+    plus VERSION) and finishes without moving files."""
+    try:
+        set_state(status='Failed', version=version, time=iso_now(), detail=detail, backup='',
+                  installed=[], rolled_back_to=previous, rolling_back=None, pip_pending=pip,
+                  leftovers=[p for p in leftovers if p])
+    except OSError as e:
+        log.critical('[UPDATE] v%s is back, but the update state could not be written: %s',
+                     previous, e)
+        if pip:
+            _pip_logged(previous)
+        return
+    _finish_restore(previous, pip, leftovers)
+
+
+def _pip_logged(version):
+    ok, _ = _pip_install(paths.ROOT)
+    log.log(logging.INFO if ok else logging.ERROR,
+            '[UPDATE] Reinstalled the v%s requirements: %s', version, 'ok' if ok else 'FAILED')
+
+
+def _finish_restore(version, pip, leftovers):
+    """pip (tried once per record, whatever the result: a box without a
+    network must not spend 15 minutes in pip on every start), then the
+    folders the restore left: its trash, the emptied backup, staging."""
+    if pip:
+        _pip_logged(version)
+        try:
+            set_state(pip_pending=False)
+        except OSError:
+            pass
+    for path in leftovers:
+        if path:
+            shutil.rmtree(path, ignore_errors=True)
+    try:
+        set_state(leftovers=[])
+    except OSError:
+        pass
 
 
 def rollback(reason):
     """Put the backup of the previous version back. True on success. Never
     raises: on failure the state becomes RollbackFailed, which stops the
-    supervisor from trying again on every child start."""
+    supervisor from trying again on every child start. Safe to run again
+    after being cut off at any point (4.0.11): see _resume_record."""
     s = state()
     failed = s.get('version')
     backup = s.get('backup')
+    previous = s.get('previous')
+    installed = s.get('installed') or paths.SHIPPED
+    req_changed = s.get('requirements_changed')
+    if req_changed is None and backup:   # an older state does not say
+        req_changed = _read(os.path.join(paths.ROOT, 'requirements.txt')) != \
+            _read(os.path.join(backup, 'requirements.txt'))
     try:
         if not backup or not os.path.isdir(backup):
             raise RuntimeError('no backup recorded')
-        trash = os.path.join(paths.BACKUP_DIR, 'failed-v%s-%s' % (failed, int(time.time())))
         names_back = _swap_names(backup)
-        names_out = sorted(set(s.get('installed') or paths.SHIPPED) | set(names_back))
-        new_req = _read(os.path.join(paths.ROOT, 'requirements.txt'))
-        _swap(names_out, trash, backup, names_back)
+        rb = _resume_record(s, backup)
+        if rb:
+            trash = rb['trash']
+            names_out = [] if set(rb['back']) - set(names_back) else list(rb['out'])
+            log.warning('[UPDATE] Finishing an interrupted rollback from v%s', failed)
+        elif not names_back:
+            # Nothing to put back. Moving the installed names out would leave
+            # ROOT empty (before 4.0.11 a rollback killed during pip did
+            # exactly that on the next start). Done already if VERSION says so.
+            if not previous or _installed_version() != previous:
+                raise RuntimeError('the backup folder is empty')
+            trash, names_out = '', []
+        else:
+            trash = os.path.join(paths.BACKUP_DIR, 'failed-v%s-%s' % (failed, int(time.time())))
+            names_out = sorted(set(installed) | set(names_back))
+            _save_record(backup, trash, names_back, names_out)
+        if names_out or names_back:
+            _swap(names_out, trash, backup, names_back)
     except Exception as e:
         log.critical('[UPDATE] Cannot roll back from v%s: %s -- the agent stays on it', failed, e)
         try:
@@ -513,15 +631,8 @@ def rollback(reason):
         except OSError:
             pass
         return False
-    if new_req != _read(os.path.join(paths.ROOT, 'requirements.txt')):
-        ok, _ = _pip_install(paths.ROOT)
-        log.log(logging.INFO if ok else logging.ERROR,
-                '[UPDATE] Reinstalled the v%s requirements: %s', s.get('previous'), 'ok' if ok else 'FAILED')
-    shutil.rmtree(backup, ignore_errors=True)
-    shutil.rmtree(trash, ignore_errors=True)
-    set_state(status='Failed', version=failed, time=iso_now(), detail=reason, backup='',
-              installed=[], rolled_back_to=s.get('previous'))
-    log.error('[UPDATE] Rolled back from v%s to v%s: %s', failed, s.get('previous'), reason)
+    _restored(failed, previous, reason, bool(req_changed), [trash, backup])
+    log.error('[UPDATE] Rolled back from v%s to v%s: %s', failed, previous, reason)
     return True
 
 
@@ -557,13 +668,15 @@ def heartbeat_fields():
 
 def write_pending(version, url, sha256, mode):
     """Record an offered update; no write when it is the same offer again
-    (the heartbeat repeats it every minute)."""
+    (the heartbeat repeats it every minute). True when it wrote, so the
+    caller logs a new offer once instead of on every beat."""
     old = read_json(paths.UPDATE_PENDING, None)
     if isinstance(old, dict) and [old.get(k) for k in ('version', 'url', 'sha256', 'mode')] == \
             [version, url, sha256, mode]:
-        return
+        return False
     atomic_write_json(paths.UPDATE_PENDING, {
         'version': version, 'url': url, 'sha256': sha256, 'mode': mode, 'detected_at': iso_now()})
+    return True
 
 
 def pending():

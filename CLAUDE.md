@@ -276,6 +276,10 @@ when set (the tests use this), else the checkout folder.
     is moved to `<file>.corrupt-<ts>` (3 kept), logged CRITICAL, and restored
     from `<file>.bak` when that parses. Pass `heal=False` only for files the
     agent must not move (3.x files in `importer`, `config/defaults.json`).
+    It reads bytes and decodes through `util.decode_text()` (UTF-16 by BOM,
+    else utf-8-sig), so a non-UTF-8 file heals like bad JSON (4.0.11). Never
+    `open(..., encoding='utf-8')` a file the user can edit without catching
+    ValueError (UnicodeDecodeError).
   - Files that must survive corruption are written with `backup=True`
     (settings, monitors, users). The `.bak` is taken only from a file that parses.
   - `auth.has_users()` stays True when users.json is unreadable or was
@@ -295,6 +299,13 @@ when set (the tests use this), else the checkout folder.
     `updater.recover_interrupted()` runs at every supervisor start, right after
     the lock. Every move out happens before any move in. Keep that order, because
     recovery relies on it to tell old files from new ones.
+  - A restore (`rollback()`, or `recover_interrupted()` undoing an
+    install) is re-runnable (4.0.11): `_save_record()` writes
+    `rolling_back` {backup, trash, back, out} before it moves anything, and a
+    re-run resumes from that record, never from the folders alone. `apply()`
+    clears it. `_restored()` writes the final `Failed` state BEFORE pip and
+    clean-up; `pip_pending` / `leftovers` are finished at the next start.
+    If that state cannot be written, nothing is deleted.
   - The supervisor restarts an engine whose `run/status.json` has not changed
     for 3 x check_interval + 60 s, timed by `time.monotonic()` (never compare
     an mtime with `time.time()`: w32time steps the clock). The engine must keep

@@ -573,14 +573,16 @@ class Engine:
             log.info('[UPDATE] v%s offered; waiting for the post-start grace period', version)
             return
         elif mode == 'manual':
-            if not updater.pending():
-                log.info('[UPDATE] v%s available - waiting for Install in the web UI', version)
-            updater.write_pending(version, url, sha, mode)
+            # INFO once per offer, DEBUG on the repeats (log volume rule).
+            new = updater.write_pending(version, url, sha, mode)
+            (log.info if new else log.debug)(
+                '[UPDATE] v%s available - waiting for Install in the web UI', version)
             return
         elif mode == 'scheduled' and not updater.in_window(window.get('start'), window.get('end')):
-            updater.write_pending(version, url, sha, mode)
-            log.info('[UPDATE] v%s available - deferred to the %s-%s window', version,
-                     window.get('start', '?'), window.get('end', '?'))
+            new = updater.write_pending(version, url, sha, mode)
+            (log.info if new else log.debug)(
+                '[UPDATE] v%s available - deferred to the %s-%s window', version,
+                window.get('start', '?'), window.get('end', '?'))
             return
         self._start_install(url, version, sha)
 

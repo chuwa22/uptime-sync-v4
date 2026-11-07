@@ -295,7 +295,7 @@ def app_secret_key():
             key = f.read().strip()
             if len(key) >= 32:
                 return key
-    except OSError:
+    except (OSError, ValueError):   # unreadable or not text: make a new one
         pass
     key = secrets.token_hex(32)
     touch(paths.SECRET_KEY_FILE, key)
