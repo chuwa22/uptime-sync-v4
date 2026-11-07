@@ -83,6 +83,42 @@ class WebTests(unittest.TestCase):
         self.assertNotIn('ENVSECRETVALUE', html)
         self.assertIn('Managed by data/.env', html)
 
+    def test_settings_page_has_jump_links_and_folds_part_levels(self):
+        self.setup_admin()
+        html = self.c.get('/settings').get_data(as_text=True)
+        for anchor in ('site', 'logging', 'reporting', 'updates'):
+            self.assertIn('href="#%s"' % anchor, html)
+            self.assertIn('id="%s"' % anchor, html)
+        self.assertIn('<div class="fold" data-fold>', html)           # closed: nothing custom
+        self.assertIn('every part follows Log level', html)
+        self.assertIn('name="level_checks"', html)                     # still in the form
+        settings.update({'log_levels': {'checks': 'DEBUG', 'web': 'WARNING'}})
+        html = self.c.get('/settings').get_data(as_text=True)
+        self.assertIn('<div class="fold" data-fold data-fold-open>', html)
+        self.assertIn('2 parts with its own level: checks DEBUG, web WARNING', html)
+
+    def test_new_secret_asks_first_and_lives_in_reporting(self):
+        self.setup_admin()
+        settings.update({'remote': {'secret_key': 'OLDSECRETVALUE'}})
+        html = self.c.get('/settings').get_data(as_text=True)
+        self.assertIn('href="/settings/new-secret"', html)
+        self.assertNotIn('action="/settings/new-secret"', html)         # no second form at the bottom
+        page = self.c.get('/settings/new-secret').get_data(as_text=True)
+        self.assertIn('Generate new secret', page)
+        self.assertEqual(settings.load()['remote']['secret_key'], 'OLDSECRETVALUE')   # GET changes nothing
+        page = self.c.post('/settings/new-secret', data={'csrf': self.csrf('/settings/new-secret')}).get_data(as_text=True)
+        new = settings.load()['remote']['secret_key']
+        self.assertNotEqual(new, 'OLDSECRETVALUE')
+        self.assertIn(new, page)
+        self.assertEqual(self.c.post('/settings/new-secret', data={}).status_code, 400)   # CSRF still checked
+
+    def test_new_secret_link_hidden_when_env_manages_it(self):
+        with open(paths.ENV_FILE, 'w') as f:
+            f.write('UPTIME_SECRET_KEY=ENVSECRETVALUE\n')
+        self.setup_admin()
+        self.assertNotIn('href="/settings/new-secret"', self.c.get('/settings').get_data(as_text=True))
+        self.assertEqual(self.c.get('/settings/new-secret').status_code, 302)
+
     def test_viewer_is_read_only(self):
         self.setup_admin()
         auth.create_user('viewer1', PW, role='viewer')

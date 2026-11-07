@@ -1,5 +1,9 @@
 4.0.9
 2026-11-05
+- Improvement (Settings): a shorter page.
+  - The per-part log level table folds into one line ("Per-part levels: every part follows Log level", Show/Hide). It opens by itself, naming the parts, when any part has its own level. Without JavaScript (or in IE8) it is open, as before.
+  - "Generate a new secret" moved next to the HMAC secret note in Reporting. It opens a confirm page first (`GET /settings/new-secret`); only its POST makes the secret. The separate card at the bottom is gone. Hidden when data/.env manages the secret.
+  - Jump links under the title: Site, Logging, Reporting, Updates and web.
 - Feature (Dashboard, Monitors): click a column title to sort the table by it, low to high; click it again for high to low. The sorted column shows an arrow.
   - Every column sorts: Status (down, unknown, up, paused), Name and Target in natural order (`dns2` before `dns10`, `4.2.2.2` before `4.2.2.10`), Type, Response, Uptime and Checked. Equal values keep name order; a monitor not checked yet stays at the bottom both ways.
   - Monitors page: Name, Type, Target, Push URL (a monitor without one stays last) and State (enabled, then paused). The action buttons column does not sort.

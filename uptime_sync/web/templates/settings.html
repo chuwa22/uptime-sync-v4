@@ -7,9 +7,15 @@
 <div class="head">
   <div class="head-title"><h1>Settings</h1><p class="sub">Saved to data/settings.json on this agent.</p></div>
 </div>
+<p class="subnav">
+  <a class="button small" href="#site">{{ icon('monitor', 14) }}Site</a>
+  <a class="button small" href="#logging">{{ icon('logs', 14) }}Logging</a>
+  <a class="button small" href="#reporting">{{ icon('globe', 14) }}Reporting</a>
+  <a class="button small" href="#updates">{{ icon('download', 14) }}Updates and web</a>
+</p>
 <form method="post" class="form">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-  <div class="card">
+  <div class="card" id="site">
     <h2>{{ icon('monitor') }}Site and checks</h2>
     <label>Site name <small class="muted">shown in the top bar, e.g. Head office - server room</small>
       <input name="site_name" value="{{ s.site_name }}" maxlength="100" placeholder="Head office - server room"></label>
@@ -21,7 +27,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="logging">
     <h2>{{ icon('logs') }}Logging</h2>
     <div class="cols">
       <label>Log level <small class="muted">every part, unless it has its own below</small>
@@ -29,25 +35,34 @@
       <label>Keep logs (days) <small class="muted">{{ b['log_retention_days'][0] }}-{{ b['log_retention_days'][1] }}</small>
         <input name="log_retention_days" type="number" min="{{ b['log_retention_days'][0] }}" max="{{ b['log_retention_days'][1] }}" value="{{ s.log_retention_days }}" placeholder="14"></label>
     </div>
-    <p class="note">Give one part its own level, e.g. checks at DEBUG while you look into one monitor, without filling logs.db with the rest. The engine, web and supervisor pick up a change within a few seconds, no restart.</p>
-    <table class="grid stack levels">
-      <thead><tr><th>Part</th><th>What it logs</th><th>Level</th></tr></thead>
-      <tbody>
-      {% for part, what in log_parts %}{% set own = s.log_levels.get(part, '') if s.log_levels else '' %}
-        <tr>
-          <td class="title mono">{{ part }}</td>
-          <td class="wide muted">{{ what }}</td>
-          <td class="lead"><select name="level_{{ part }}" aria-label="Level for {{ part }}" title="Level for {{ part }}">
-            <option value="">{{ 'Default (' ~ library_default ~ ')' if part == 'libraries' else 'Same as Log level' }}</option>
-            {% for l in level_choices(part) %}<option{{ ' selected' if l == own }}>{{ l }}</option>{% endfor %}
-          </select></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+    {#- Per-part levels: folded behind one line (app.js) unless a part has its
+        own level, so the common case is two fields. Without JS it stays open. -#}
+    {%- set own_parts = [] %}{% for part, what in log_parts %}{% if s.log_levels and s.log_levels.get(part) %}{% set _ = own_parts.append(part ~ ' ' ~ s.log_levels.get(part)) %}{% endif %}{% endfor %}
+    <div class="fold" data-fold{% if own_parts %} data-fold-open{% endif %}>
+      <p class="fold-head" data-fold-head><strong>Per-part levels</strong>
+        <span class="muted small">{% if own_parts %}{{ own_parts | length }} part{{ '' if own_parts | length == 1 else 's' }} with its own level: {{ own_parts | join(', ') }}{% else %}every part follows Log level{% endif %}</span></p>
+      <div class="fold-body" id="fold-levels">
+        <p class="note">Give one part its own level, e.g. checks at DEBUG while you look into one monitor, without filling logs.db with the rest. The engine, web and supervisor pick up a change within a few seconds, no restart.</p>
+        <table class="grid stack levels">
+          <thead><tr><th>Part</th><th>What it logs</th><th>Level</th></tr></thead>
+          <tbody>
+          {% for part, what in log_parts %}{% set own = s.log_levels.get(part, '') if s.log_levels else '' %}
+            <tr>
+              <td class="title mono">{{ part }}</td>
+              <td class="wide muted">{{ what }}</td>
+              <td class="lead"><select name="level_{{ part }}" aria-label="Level for {{ part }}" title="Level for {{ part }}">
+                <option value="">{{ 'Default (' ~ library_default ~ ')' if part == 'libraries' else 'Same as Log level' }}</option>
+                {% for l in level_choices(part) %}<option{{ ' selected' if l == own }}>{{ l }}</option>{% endfor %}
+              </select></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="reporting">
     <h2>{{ icon('globe') }}Reporting to uptime-monitor</h2>
     <label class="check"><input type="checkbox" name="remote_enabled"{{ ' checked' if s.remote.enabled }}> Send heartbeats</label>
     {% set st = 'local' if s.remote.server_type == 'local' else 'public' %}
@@ -68,7 +83,8 @@
       <label>HMAC secret <small class="muted">{{ '(set - leave empty to keep)' if has_secret else '(not set)' }}</small> {{ locked('remote.secret_key') }}
         <input name="secret_key" type="password" class="mono" placeholder="{{ 'set - leave empty to keep' if has_secret else 'not set' }}"{{ ' disabled' if 'remote.secret_key' in managed }} autocomplete="new-password"></label>
     </div>
-    <p class="note">Paste the same secret on this agent's card in uptime-monitor (key button). Until both sides have it, heartbeats are not verified.</p>
+    <p class="note">Paste the same secret on this agent's card in uptime-monitor (key button). Until both sides have it, heartbeats are not verified.
+      {%- if 'remote.secret_key' not in managed %} <a href="{{ url_for('new_secret') }}">{{ icon('key', 14) }}Generate a new secret</a>{% endif %}</p>
     <div class="cols">
       <label>Heartbeat every (s) <small class="muted">{{ b['remote.heartbeat_interval'][0] }}-{{ b['remote.heartbeat_interval'][1] }}, usually 60</small>
         <input name="heartbeat_interval" type="number" min="{{ b['remote.heartbeat_interval'][0] }}" max="{{ b['remote.heartbeat_interval'][1] }}" value="{{ s.remote.heartbeat_interval }}" placeholder="60"></label>
@@ -83,7 +99,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="updates">
     <h2>{{ icon('download') }}Updates and web</h2>
     <label class="check"><input type="checkbox" name="update_enabled"{{ ' checked' if s['update'].enabled }}> Install updates offered by uptime-monitor</label>
     <p class="note">The server decides when (mode, window, Force Update). The zip comes from GitHub ({{ s['update'].github_repo }}) and must match the SHA-256 in the server's signed reply.</p>
@@ -97,10 +113,4 @@
   <div class="actions save-bar"><button class="primary">{{ icon('check') }}Save settings</button></div>
 </form>
 
-<form method="post" action="{{ url_for('new_secret') }}" class="card">
-  <h2>{{ icon('key') }}New HMAC secret</h2>
-  <p class="note">Makes a new random secret and shows it once. Heartbeats fail until you paste it on this agent's card in uptime-monitor too.</p>
-  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-  <button data-confirm="Generate a new HMAC secret? Heartbeats fail until you paste it on the server too.">{{ icon('key') }}Generate new secret</button>
-</form>
 {% endblock %}

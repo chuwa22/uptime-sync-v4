@@ -298,6 +298,35 @@
   }
   each($all('[data-toasts] .toast'), setupToast);
 
+  // Settings: a [data-fold] block shows its [data-fold-head] line and a
+  // Show/Hide button; the .fold-body is hidden until opened. Starts open with
+  // data-fold-open (the server sets it when something inside is not default).
+  // Without this script the body is simply always shown. Hidden fields still
+  // submit with the form.
+  each($all('[data-fold]'), function (box) {
+    var head = null, body = null, i, kid, kids = box.childNodes;
+    for (i = 0; i < kids.length; i++) {      // direct children only
+      kid = kids[i];
+      if (kid.nodeType !== 1) { continue; }
+      if (kid.getAttribute('data-fold-head') !== null) { head = kid; }
+      if ((' ' + kid.className + ' ').indexOf(' fold-body ') >= 0) { body = kid; }
+    }
+    if (!body || !head) { return; }
+    var open = box.getAttribute('data-fold-open') !== null;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'more fold-toggle';
+    if (body.id) { btn.setAttribute('aria-controls', body.id); }
+    function draw() {
+      setHidden(body, !open);
+      setText(btn, open ? 'Hide' : 'Show');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    on(btn, 'click', function (e) { open = !open; draw(); return cancel(e); });
+    head.appendChild(btn);
+    draw();
+  });
+
   // Logs: a message longer than 3 lines (data-more = the lines past 3, set
   // by the server) shows its first lines and a button for the rest, so one
   // traceback does not push the page down. Without this script it shows whole.

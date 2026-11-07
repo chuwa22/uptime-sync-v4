@@ -556,12 +556,14 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                                level_choices=loglevel.choices, bounds=settings.BOUNDS,
                                library_default=loglevel.LIBRARY_DEFAULT)
 
-    @app.route('/settings/new-secret', methods=['POST'])
+    @app.route('/settings/new-secret', methods=['GET', 'POST'])
     @auth.admin_required
     def new_secret():
         if 'remote.secret_key' in settings.env_managed():
             flash('The secret is managed by data/.env - change it there.', 'warn')
             return redirect(url_for('settings_page'))
+        if request.method == 'GET':        # the confirm step; only a POST changes anything
+            return render_template('secret.html', secret=None)
         secret = secrets.token_urlsafe(32)
         settings.update({'remote': {'secret_key': secret}})
         return render_template('secret.html', secret=secret)
