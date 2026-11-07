@@ -1,5 +1,5 @@
-4.0.9
-2026-11-05
+4.0.10
+2026-11-07
 - Improvement (Settings > Reporting): you can see whether it works.
   - A Connection tile at the top of Reporting, refreshed every 15 s like the Dashboard: OK / Waiting / Error / Failing, the reason, when the last reply was OK and when the last attempt went out.
   - The reason is the server's own words where it gives them ("HTTP 422: Invalid or missing api_key", "HTTP 401: Invalid signature"), and for a redirect where it points ("HTTP 301 - the server redirects to https://...; put that URL in Settings": an http URL on a server that moved to https). Before, only "HTTP 422".
@@ -9,13 +9,15 @@
 - Change (install): one installer, `main.py install`, on every OS. Run it with the system Python (Windows, elevated: `py -3 main.py install`, or Launcher.bat -> I; Linux / macOS: `sudo python3 main.py install`). It first builds .venv (uptime_sync/bootstrap.py, which was install.py), then carries on inside .venv: autostart, start. Options as before: `--no-autostart`, `--recreate`, `--wheels DIR`.
   - install.py and install.bat are gone. Launcher.bat does what install.bat did: `I` installs or repairs, `R` deletes and rebuilds .venv (asks first), and `Launcher.bat install [options]` installs without the menu (asks for administrator rights, then pauses on the result).
   - `--recreate` / `--wheels` on .venv's own python is refused with the command to use instead: that python cannot rebuild the .venv it runs from.
-  - An update from 4.0.8 moves the old install.py / install.bat into the backup with the rest. A folder copied over an old install keeps them: delete both by hand.
+  - An update from 4.0.9 or older moves the old install.py / install.bat into the backup with the rest. A folder copied over an old install keeps them: delete both by hand.
 - Fixed (copied .venv): a folder synced from a Mac to a Windows box (or between any two machines) brings the other machine's .venv/pyvenv.cfg, and .venv's python then fails before any code runs ("No Python at '/Library/Frameworks/...'"). main.py now says so and names the fix; Launcher.bat spots it from pyvenv.cfg and sends you to Install or repair; `main.py install` rebuilds the .venv even while the agent still runs from it (it stops the agent through run/stopped + run/shutdown, standard library only, then starts it again). Do not copy .venv between machines.
 - Feature (Windows): `Launcher.bat`, a control panel. Double-click it (it asks for administrator rights) for a menu: Status, Start, Stop, Restart, Open the web UI, Check every monitor now, recent logs, warnings and errors, Reset a web UI password, Install or repair, Uninstall autostart. Each item runs the matching `main.py` command. Drawing the menu starts no process, and three empty answers in a row quit, so a broken stdin cannot make it spin.
 - Fixed (Web UI): with an Uptime Sync 3.x web UI open on the same host (another port), signing in to one signed you out of the other, or failed with "Invalid or missing CSRF token". Browsers share cookies across ports and both used Flask's default `session` cookie. The 4.x cookie is now `uptime_sync_v4`. Everyone signs in once more after this update.
 - Feature (Dashboard): a History column of bars, one per check, the last 30 (oldest left; green up, red down, grey not checked yet). Hover a bar for its time and response time. Uptime is now a coloured badge (green >= 99%, amber >= 95%, red below) and counts exactly those 30 checks, so the number always matches the bars beside it (it used to count the whole 120-check history).
   - The engine sends the 30 checks in run/status.json (`recent`), so the bars move with the 15 s refresh; a web UI next to an older engine falls back to history.json.
   - Phones: the bars take their own line in each card. Tablets (641-1000px): thinner bars and no Type column (it stays on the Monitors page), so the table fits a 768px screen. Plain inline-block, so IE8 draws them too.
+4.0.9
+2026-11-05
 - Improvement (Settings): a shorter page.
   - The per-part log level table folds into one line ("Per-part levels: every part follows Log level", Show/Hide). It opens by itself, naming the parts, when any part has its own level. Without JavaScript (or in IE8) it is open, as before.
   - "Generate a new secret" moved next to the HMAC secret note in Reporting. It opens a confirm page first (`GET /settings/new-secret`); only its POST makes the secret. The separate card at the bottom is gone. Hidden when data/.env manages the secret.
