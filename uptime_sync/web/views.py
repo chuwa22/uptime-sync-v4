@@ -3,11 +3,12 @@ __init__.csrf_guard) and admin-only."""
 
 import ipaddress
 import logging
+import re
 import secrets
 import time
 from urllib.parse import urlparse
 
-from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, session, url_for
 
 from .. import __version__, log as logsetup, loglevel, logstore, monitors, paths, procs, settings, signing, updater
 from ..util import active_server_url, deep_merge, is_local_host, is_local_server, read_json, touch, uptime_pct
@@ -92,6 +93,56 @@ def tile_text(p):
         'signing': p['signing']['state'],
         'signing_sub': 'since ' + since[:10] if since else '',
     }
+
+
+# Dashboard table order: a click on a column title sorts by it, the next
+# click flips the direction. The choice rides in ?sort=&dir= (works without
+# JS, IE8 included) and is remembered in the session, so the 15 s refresh
+# (/api/status) and the next visit keep it. No choice = monitors.json order.
+STATE_RANK = {'down': 0, 'unknown': 1, 'up': 2, 'paused': 3}   # problems first
+
+
+def _natural(text):
+    """'4.2.2.10' after '4.2.2.2', 'dns10' after 'dns2'."""
+    parts = re.split(r'([0-9]+)', text or '')
+    return [int(t) if i % 2 else t.lower() for i, t in enumerate(parts)]   # odd = the digit runs
+
+
+DASH_SORTS = {
+    'status': lambda r: STATE_RANK.get(r['state'], 9),
+    'name': lambda r: _natural(r['name']),
+    'type': lambda r: (r['type'] or '').lower(),
+    'target': lambda r: _natural(r['target']),
+    'response': lambda r: r['ms'],
+    'uptime': lambda r: r['uptime'],
+    'checked': lambda r: r['checked_at'] or None,
+}
+
+
+def dash_sort():
+    """{'key', 'dir'} for the dashboard; key '' = monitors.json order."""
+    if 'sort' in request.args:
+        key, d = request.args.get('sort', ''), request.args.get('dir', 'asc')
+        if key in DASH_SORTS and d in ('asc', 'desc'):
+            session['dash_sort'] = [key, d]
+        elif key == '':
+            session.pop('dash_sort', None)
+    saved = session.get('dash_sort')
+    if isinstance(saved, list) and len(saved) == 2 and saved[0] in DASH_SORTS and saved[1] in ('asc', 'desc'):
+        return {'key': saved[0], 'dir': saved[1]}
+    return {'key': '', 'dir': ''}
+
+
+def sort_rows(rows, key, direction):
+    """Sorted copy. Rows without a value (never checked, no uptime yet) stay
+    at the bottom both ways; ties keep name order."""
+    fn = DASH_SORTS.get(key)
+    if not fn:
+        return rows
+    have = [r for r in rows if fn(r) is not None]
+    have.sort(key=lambda r: _natural(r['name']))
+    have.sort(key=fn, reverse=(direction == 'desc'))
+    return have + [r for r in rows if fn(r) is None]
 
 
 def _status_payload():
@@ -240,15 +291,21 @@ def register(app):  # noqa: C901 -- one place for the whole route table
 
     # -- dashboard -------------------------------------------------------------
 
+    def _sorted_status():
+        st, order = _status_payload(), dash_sort()
+        st['monitors'] = sort_rows(st['monitors'], order['key'], order['dir'])
+        st['sort'] = order
+        return st
+
     @app.route('/')
     @auth.login_required
     def dashboard():
-        return render_template('dashboard.html', st=_status_payload())
+        return render_template('dashboard.html', st=_sorted_status())
 
     @app.route('/api/status')
     @auth.login_required
     def api_status():
-        return jsonify(_status_payload())
+        return jsonify(_sorted_status())
 
     @app.route('/update/install', methods=['POST'])
     @auth.admin_required

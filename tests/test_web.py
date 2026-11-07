@@ -285,6 +285,60 @@ class WebTests(unittest.TestCase):
         rows = {r['name']: r for r in json.loads(self.c.get('/api/status').get_data(as_text=True))['monitors']}
         self.assertEqual((rows['a']['uptime'], rows['b']['uptime']), (99.5, 50.0))
 
+    def _sort_fixture(self):
+        self.setup_admin()
+        ms = [monitors.normalize({'name': n, 'type': t, 'target': tg})
+              for n, t, tg in (('dns10', 'DNS', '4.2.2.10'), ('dns2', 'DNS', '4.2.2.2'),
+                               ('web', 'HTTPS', 'example.com'), ('new', 'PING', '192.0.2.9'))]
+        monitors.save(ms)
+        util.atomic_write_json(paths.STATUS_FILE, {'updated_at': 'x', 'monitors': {
+            ms[0]['id']: {'ok': True, 'ms': 30, 'uptime': 99.0, 'checked_at': '2026-11-07T07:00:02+07:00'},
+            ms[1]['id']: {'ok': False, 'ms': 0, 'uptime': 55.8, 'checked_at': '2026-11-07T07:00:09+07:00'},
+            ms[2]['id']: {'ok': True, 'ms': 120, 'uptime': 100.0, 'checked_at': '2026-11-07T07:00:05+07:00'}}})
+
+    def names(self, query=''):
+        st = json.loads(self.c.get('/api/status' + query).get_data(as_text=True))
+        return [r['name'] for r in st['monitors']], st['sort']
+
+    def test_dashboard_sorts_by_any_column_both_ways(self):
+        self._sort_fixture()
+        self.assertEqual(self.names()[0], ['dns10', 'dns2', 'web', 'new'])          # monitors.json order
+        # (low to high, high to low). Ties keep name order; a monitor never
+        # checked ('new': no response, uptime or time yet) stays last both ways.
+        cases = {
+            'status': (['dns2', 'new', 'dns10', 'web'], ['dns10', 'web', 'new', 'dns2']),   # down, unknown, up
+            'name': (['dns2', 'dns10', 'new', 'web'], ['web', 'new', 'dns10', 'dns2']),     # dns2 < dns10
+            'type': (['dns2', 'dns10', 'web', 'new'], ['new', 'web', 'dns2', 'dns10']),
+            'target': (['dns2', 'dns10', 'new', 'web'], ['web', 'new', 'dns10', 'dns2']),   # 4.2.2.2 < 4.2.2.10
+            'response': (['dns2', 'dns10', 'web', 'new'], ['web', 'dns10', 'dns2', 'new']),
+            'uptime': (['dns2', 'dns10', 'web', 'new'], ['web', 'dns10', 'dns2', 'new']),
+            'checked': (['dns10', 'web', 'dns2', 'new'], ['dns2', 'web', 'dns10', 'new']),
+        }
+        for key, (asc, desc) in cases.items():
+            self.assertEqual(self.names('?sort=%s&dir=asc' % key), (asc, {'key': key, 'dir': 'asc'}), key)
+            self.assertEqual(self.names('?sort=%s&dir=desc' % key), (desc, {'key': key, 'dir': 'desc'}), key)
+
+    def test_sort_is_remembered_and_can_be_cleared(self):
+        self._sort_fixture()
+        self.c.get('/?sort=uptime&dir=desc')
+        self.assertEqual(self.names(), (['web', 'dns10', 'dns2', 'new'], {'key': 'uptime', 'dir': 'desc'}))
+        self.c.get('/?sort=')
+        self.assertEqual(self.names()[1], {'key': '', 'dir': ''})
+        self.c.get('/?sort=bogus&dir=sideways')        # junk is ignored, never stored
+        self.assertEqual(self.names()[1], {'key': '', 'dir': ''})
+
+    def test_column_titles_link_to_the_other_direction(self):
+        self._sort_fixture()
+        html = self.c.get('/?sort=name&dir=asc').get_data(as_text=True)
+        self.assertIn('aria-sort="ascending"', html)
+        self.assertIn('href="/?sort=name&amp;dir=desc"', html)        # clicked again: high to low
+        self.assertIn('href="/?sort=uptime&amp;dir=asc"', html)      # other columns start low to high
+        self.assertEqual(html.count('class="sort'), 7)
+        html = self.c.get('/?sort=name&dir=desc').get_data(as_text=True)
+        self.assertIn('aria-sort="descending"', html)
+        self.assertIn('href="/?sort=name&amp;dir=asc"', html)
+        self.assertLess(html.index('>web<'), html.index('>dns2<'))
+
     def test_account_password_tries_are_limited(self):
         self.setup_admin()
         token = self.csrf('/account')
