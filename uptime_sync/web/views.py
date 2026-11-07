@@ -95,10 +95,11 @@ def tile_text(p):
     }
 
 
-# Dashboard table order: a click on a column title sorts by it, the next
-# click flips the direction. The choice rides in ?sort=&dir= (works without
-# JS, IE8 included) and is remembered in the session, so the 15 s refresh
-# (/api/status) and the next visit keep it. No choice = monitors.json order.
+# Table order (Dashboard, Monitors): a click on a column title sorts by it,
+# the next click flips the direction. The choice rides in ?sort=&dir= (works
+# without JS, IE8 included) and is remembered per table in the session, so
+# the dashboard's 15 s refresh (/api/status), the redirect after a monitor
+# action and the next visit keep it. No choice = monitors.json order.
 STATE_RANK = {'down': 0, 'unknown': 1, 'up': 2, 'paused': 3}   # problems first
 
 
@@ -118,25 +119,34 @@ DASH_SORTS = {
     'checked': lambda r: r['checked_at'] or None,
 }
 
+MONITOR_SORTS = {
+    'name': lambda m: _natural(m['name']),
+    'type': lambda m: (m['type'] or '').lower(),
+    'target': lambda m: _natural('%s:%s' % (m['target'], m['port'] or '')),
+    'push': lambda m: _natural(m['push_display']) if m['push_display'] else None,
+    'state': lambda m: 0 if m['enabled'] else 1,     # enabled, then paused
+}
 
-def dash_sort():
-    """{'key', 'dir'} for the dashboard; key '' = monitors.json order."""
+
+def table_sort(table, sorts):
+    """{'key', 'dir'} for one table; key '' = monitors.json order."""
+    slot = '%s_sort' % table
     if 'sort' in request.args:
         key, d = request.args.get('sort', ''), request.args.get('dir', 'asc')
-        if key in DASH_SORTS and d in ('asc', 'desc'):
-            session['dash_sort'] = [key, d]
+        if key in sorts and d in ('asc', 'desc'):
+            session[slot] = [key, d]
         elif key == '':
-            session.pop('dash_sort', None)
-    saved = session.get('dash_sort')
-    if isinstance(saved, list) and len(saved) == 2 and saved[0] in DASH_SORTS and saved[1] in ('asc', 'desc'):
+            session.pop(slot, None)
+    saved = session.get(slot)
+    if isinstance(saved, list) and len(saved) == 2 and saved[0] in sorts and saved[1] in ('asc', 'desc'):
         return {'key': saved[0], 'dir': saved[1]}
     return {'key': '', 'dir': ''}
 
 
-def sort_rows(rows, key, direction):
+def sort_rows(rows, sorts, key, direction):
     """Sorted copy. Rows without a value (never checked, no uptime yet) stay
     at the bottom both ways; ties keep name order."""
-    fn = DASH_SORTS.get(key)
+    fn = sorts.get(key)
     if not fn:
         return rows
     have = [r for r in rows if fn(r) is not None]
@@ -292,8 +302,8 @@ def register(app):  # noqa: C901 -- one place for the whole route table
     # -- dashboard -------------------------------------------------------------
 
     def _sorted_status():
-        st, order = _status_payload(), dash_sort()
-        st['monitors'] = sort_rows(st['monitors'], order['key'], order['dir'])
+        st, order = _status_payload(), table_sort('dash', DASH_SORTS)
+        st['monitors'] = sort_rows(st['monitors'], DASH_SORTS, order['key'], order['dir'])
         st['sort'] = order
         return st
 
@@ -339,7 +349,9 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         items = monitors.load()
         for m in items:
             m['push_display'] = mask_push_url(m['push_url']) if '${' not in m['push_url'] else m['push_url']
-        return render_template('monitors.html', items=items)
+        order = table_sort('monitors', MONITOR_SORTS)
+        return render_template('monitors.html', items=sort_rows(items, MONITOR_SORTS, order['key'], order['dir']),
+                               sort=order)
 
     @app.route('/monitors/new')
     @auth.admin_required

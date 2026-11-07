@@ -178,7 +178,7 @@ table.grid th { padding-top: 9px; padding-bottom: 9px; font-size: 11.25px; color
   letter-spacing: .04em; font-weight: 600; background: #f0f3f7; background: var(--code); }
 table.grid tr:last-child td { border-bottom: 0; }
 table.grid .num { text-align: right; white-space: nowrap; }
-/* Dashboard: column titles sort the table (views.sort_rows). */
+/* Dashboard, Monitors: column titles sort the table (_sort.html, views.sort_rows). */
 table.grid th a.sort { color: #6b7686; color: var(--muted); text-decoration: none; white-space: nowrap; }
 table.grid th a.sort:hover, table.grid th a.sort:focus { color: #1b2330; color: var(--text); }
 table.grid th a.sort.on { color: #1b2330; color: var(--text); }

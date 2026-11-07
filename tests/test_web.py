@@ -339,6 +339,46 @@ class WebTests(unittest.TestCase):
         self.assertIn('href="/?sort=name&amp;dir=asc"', html)
         self.assertLess(html.index('>web<'), html.index('>dns2<'))
 
+    def _monitor_names(self, query=''):
+        html = self.c.get('/monitors' + query).get_data(as_text=True)
+        return re.findall(r'<td class="title"><a href="[^"]+">([^<]+)</a>', html), html
+
+    def test_monitors_page_sorts_by_any_column_both_ways(self):
+        self.setup_admin()
+        rows = [monitors.normalize(d) for d in (
+            {'name': 'dns10', 'type': 'DNS', 'target': '4.2.2.10', 'push_url': 'https://b.example/api/push/x'},
+            {'name': 'dns2', 'type': 'DNS', 'target': '4.2.2.2', 'push_url': 'https://a.example/api/push/y'},
+            {'name': 'web', 'type': 'HTTPS', 'target': 'example.com', 'push_url': 'https://c.example/api/push/z'},
+            {'name': 'nopush', 'type': 'PING', 'target': '192.0.2.9'})]
+        rows[2]['enabled'] = False
+        monitors.save(rows)
+        self.assertEqual(self._monitor_names()[0], ['dns10', 'dns2', 'web', 'nopush'])   # monitors.json order
+        cases = {
+            'name': (['dns2', 'dns10', 'nopush', 'web'], ['web', 'nopush', 'dns10', 'dns2']),
+            'type': (['dns2', 'dns10', 'web', 'nopush'], ['nopush', 'web', 'dns2', 'dns10']),
+            'target': (['dns2', 'dns10', 'nopush', 'web'], ['web', 'nopush', 'dns10', 'dns2']),
+            'push': (['dns2', 'dns10', 'web', 'nopush'], ['web', 'dns10', 'dns2', 'nopush']),   # no push URL: last
+            'state': (['dns2', 'dns10', 'nopush', 'web'], ['web', 'dns2', 'dns10', 'nopush']),  # enabled, paused
+        }
+        for key, (asc, desc) in cases.items():
+            self.assertEqual(self._monitor_names('?sort=%s&dir=asc' % key)[0], asc, key)
+            self.assertEqual(self._monitor_names('?sort=%s&dir=desc' % key)[0], desc, key)
+        names, html = self._monitor_names()                 # remembered, apart from the dashboard
+        self.assertEqual(names, ['web', 'dns2', 'dns10', 'nopush'])
+        self.assertIn('aria-sort="descending"', html)
+        self.assertIn('href="/monitors?sort=state&amp;dir=asc"', html)
+        self.assertEqual(html.count('class="sort'), 5)       # the actions column is not a sort
+        self.assertEqual(json.loads(self.c.get('/api/status').get_data(as_text=True))['sort']['key'], '')
+
+    def test_monitor_action_keeps_the_page_order(self):
+        self.setup_admin()
+        monitors.save([monitors.normalize({'name': n, 'type': 'PING', 'target': '192.0.2.1'}) for n in ('b', 'a')])
+        self.c.get('/monitors?sort=name&dir=asc')
+        mid = monitors.load()[0]['id']
+        r = self.c.post('/monitors/%s/toggle' % mid, data={'csrf': self.csrf('/monitors')})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self._monitor_names()[0], ['a', 'b'])
+
     def test_account_password_tries_are_limited(self):
         self.setup_admin()
         token = self.csrf('/account')

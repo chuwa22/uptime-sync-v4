@@ -1,0 +1,11 @@
+{#- A sortable column title (views.table_sort / sort_rows): a link that sorts
+    by this column low to high, or high to low when it already is. The server
+    sorts, so it works without JS. -#}
+{%- macro sort_th(endpoint, sort, key, label, cls='') -%}
+  {%- set on = sort.key == key -%}
+  {%- set nxt = 'desc' if on and sort.dir == 'asc' else 'asc' -%}
+  <th{% if cls %} class="{{ cls }}"{% endif %}{% if on %} aria-sort="{{ 'ascending' if sort.dir == 'asc' else 'descending' }}"{% endif %}>
+    <a class="sort{{ ' on' if on }}" href="{{ url_for(endpoint, sort=key, dir=nxt) }}" title="Sort by {{ label | lower }}, {{ 'high to low' if nxt == 'desc' else 'low to high' }}">{{ label }}
+      {%- if on %}<span class="arrow" aria-hidden="true">{{ '&#9650;' | safe if sort.dir == 'asc' else '&#9660;' | safe }}</span>{% endif -%}
+    </a></th>
+{%- endmacro %}

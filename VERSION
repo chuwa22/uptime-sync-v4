@@ -1,8 +1,9 @@
 4.0.9
 2026-11-05
-- Feature (Dashboard): click a column title to sort the monitor table by it, low to high; click it again for high to low. The sorted column shows an arrow.
+- Feature (Dashboard, Monitors): click a column title to sort the table by it, low to high; click it again for high to low. The sorted column shows an arrow.
   - Every column sorts: Status (down, unknown, up, paused), Name and Target in natural order (`dns2` before `dns10`, `4.2.2.2` before `4.2.2.10`), Type, Response, Uptime and Checked. Equal values keep name order; a monitor not checked yet stays at the bottom both ways.
-  - The server sorts (`?sort=&dir=`), so it works without JavaScript and in IE8. The choice is kept in the session: the 15 s refresh and the next visit keep it. `/?sort=` goes back to monitors.json order.
+  - Monitors page: Name, Type, Target, Push URL (a monitor without one stays last) and State (enabled, then paused). The action buttons column does not sort.
+  - The server sorts (`?sort=&dir=`), so it works without JavaScript and in IE8. Each table's choice is kept in the session on its own: the dashboard's 15 s refresh, the return to Monitors after Edit/Pause/Clone/Delete and the next visit keep it. `?sort=` (empty) goes back to monitors.json order.
 - Improvement (CLI): `main.py help` lists the commands in groups (Run it / Set it up / Look at it) with examples and the Web UI address; `main.py help <command>` shows every option of one command, with examples. `?`, `-?`, `/?` (Windows) and `-h` do the same as `help`.
   - `--version`, `-version`, `-v`, `-V` and `/version` do the same as `version`.
   - Every command also works with a dash or slash in front: `-restart`, `--restart` and `/restart` are `restart`. Before, `main.py -restart` failed with argparse's "unrecognized arguments".

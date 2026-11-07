@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_sort.html" import sort_th %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 <div class="head">
@@ -49,17 +50,7 @@
 
 <div class="card flush">
   <table class="grid stack">
-    {#- A column title is a link: sort by it ascending, the next click descending.
-        The server sorts (views.sort_rows), so this works without JS. -#}
-    {%- macro sort_th(key, label, cls='') -%}
-      {%- set on = st.sort.key == key -%}
-      {%- set nxt = 'desc' if on and st.sort.dir == 'asc' else 'asc' -%}
-      <th{% if cls %} class="{{ cls }}"{% endif %}{% if on %} aria-sort="{{ 'ascending' if st.sort.dir == 'asc' else 'descending' }}"{% endif %}>
-        <a class="sort{{ ' on' if on }}" href="{{ url_for('dashboard', sort=key, dir=nxt) }}" title="Sort by {{ label | lower }}, {{ 'high to low' if nxt == 'desc' else 'low to high' }}">{{ label }}
-          {%- if on %}<span class="arrow" aria-hidden="true">{{ '&#9650;' | safe if st.sort.dir == 'asc' else '&#9660;' | safe }}</span>{% endif -%}
-        </a></th>
-    {%- endmacro %}
-    <thead><tr>{{ sort_th('status', 'Status') }}{{ sort_th('name', 'Name') }}{{ sort_th('type', 'Type') }}{{ sort_th('target', 'Target') }}{{ sort_th('response', 'Response', 'num') }}{{ sort_th('uptime', 'Uptime', 'num') }}{{ sort_th('checked', 'Checked') }}</tr></thead>
+    <thead><tr>{{ sort_th('dashboard', st.sort, 'status', 'Status') }}{{ sort_th('dashboard', st.sort, 'name', 'Name') }}{{ sort_th('dashboard', st.sort, 'type', 'Type') }}{{ sort_th('dashboard', st.sort, 'target', 'Target') }}{{ sort_th('dashboard', st.sort, 'response', 'Response', 'num') }}{{ sort_th('dashboard', st.sort, 'uptime', 'Uptime', 'num') }}{{ sort_th('dashboard', st.sort, 'checked', 'Checked') }}</tr></thead>
     <tbody data-rows>
     {% for m in st.monitors %}
       <tr data-id="{{ m.id }}">
