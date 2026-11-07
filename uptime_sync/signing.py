@@ -22,7 +22,7 @@ import hmac
 from urllib.parse import urlparse
 
 from . import paths
-from .util import active_server_url, atomic_write_json, read_json
+from .util import active_server_url, atomic_write_json, read_json_for_update
 
 _LATCH_CONTEXT = b'uptime-sync response-signing latch|'
 
@@ -73,7 +73,13 @@ def latched_since(remote):
     fp = fingerprint(remote)
     if not fp:
         return ''
-    latch = read_json(paths.LATCH_FILE, {}) or {}
+    try:
+        latch = read_json_for_update(paths.LATCH_FILE, {}) or {}
+    except OSError:
+        # Held by another program right now: an unreadable latch must not
+        # read as "never latched" and let an unsigned reply through for
+        # that beat (4.0.11). Treated as latched until it can be read.
+        return '?'
     if isinstance(latch, dict) and hmac.compare_digest(str(latch.get('fingerprint', '')), fp):
         return str(latch.get('since') or '?')
     return ''

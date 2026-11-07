@@ -15,7 +15,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from . import paths, settings
 from .checks import DNS_METHODS, is_valid_dns_query_name
-from .util import atomic_write_json, read_json
+from .util import atomic_write_json, read_json, read_json_for_update
 
 TYPES = ('DNS', 'PING', 'TCP PORT', 'HTTP', 'HTTPS')
 
@@ -175,9 +175,11 @@ def _fix_ids(items):
 
 
 def load(strict=False):
-    """strict=True raises OSError when the file exists but cannot be read
-    (see util.read_json); otherwise that reads as no monitors."""
-    data = read_json(paths.MONITORS_FILE, {'monitors': []}, strict=strict)
+    """strict=True raises OSError when the file exists but stays unreadable
+    after a few quick retries (util.read_json_for_update); otherwise that
+    reads as no monitors. Every load that is saved back must be strict."""
+    data = (read_json_for_update(paths.MONITORS_FILE, {'monitors': []}) if strict
+            else read_json(paths.MONITORS_FILE, {'monitors': []}))
     if isinstance(data, list):
         data = {'monitors': data}
     items = data.get('monitors') if isinstance(data, dict) else None

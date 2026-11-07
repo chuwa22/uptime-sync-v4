@@ -20,7 +20,7 @@ import sys
 import time
 
 from . import __version__, log as logsetup, loglevel, paths, perms, procs, settings, updater
-from .util import remove_quietly, touch
+from .util import read_json, remove_quietly, touch
 
 log = logging.getLogger('supervisor')
 
@@ -180,7 +180,14 @@ class Supervisor:
         engine = self.children.get('engine')
         if not engine or not engine.running():
             return
+        # A check_interval lowered in Settings applies at once here, but the
+        # engine is still sleeping / cycling on the old one until its next
+        # cycle: use the larger of the two, or a healthy engine is killed
+        # (300 s -> 30 s gave a 150 s limit against a 300 s sleep). 4.0.11.
         interval = settings.load()['check_interval']
+        running = (read_json(paths.STATUS_FILE, {}, heal=False) or {}).get('check_interval')
+        if isinstance(running, (int, float)) and not isinstance(running, bool) and running > interval:
+            interval = min(running, settings.BOUNDS['check_interval'][1])
         limit = 3 * interval + 60
         now = time.monotonic()
         # Age by the monotonic clock since the mtime last CHANGED, not by

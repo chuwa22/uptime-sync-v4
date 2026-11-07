@@ -10,6 +10,7 @@ every session issued before it (the session cookie carries the epoch).
 import functools
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 import threading
@@ -18,7 +19,9 @@ import time
 from flask import abort, g, redirect, request, session, url_for
 
 from .. import paths
-from ..util import atomic_write_json, corrupt_copies, iso_now, read_json, touch
+from ..util import atomic_write_json, corrupt_copies, iso_now, read_json, read_json_for_update, touch
+
+log = logging.getLogger('web')
 
 ITERATIONS = 600000
 LEGACY_ITERATIONS = 100000
@@ -61,8 +64,11 @@ def check_password(password, stored):
     return hmac.compare_digest(digest.hex(), expected)
 
 
-def load_users():
-    data = read_json(paths.USERS_FILE, {}) or {}
+def load_users(strict=False):
+    """The accounts. strict=True for a change that is saved back: raise
+    OSError when users.json exists but stays unreadable (4.0.11) -- the
+    non-strict {} saved back would delete every other account."""
+    data = (read_json_for_update(paths.USERS_FILE, {}) if strict else read_json(paths.USERS_FILE, {})) or {}
     if not isinstance(data, dict):
         return {}
     return {k: v for k, v in data.items() if isinstance(v, dict) and not k.startswith('_')}
@@ -90,7 +96,7 @@ def accounts_lost():
 
 def create_user(username, password, role='admin'):
     with _lock:
-        users = load_users()
+        users = load_users(strict=True)
         if username in users:
             raise ValueError('That user already exists.')
         users[username] = {'password': hash_password(password), 'role': role,
@@ -101,7 +107,7 @@ def create_user(username, password, role='admin'):
 
 def set_password(username, password):
     with _lock:
-        users = load_users()
+        users = load_users(strict=True)
         user = users[username]
         user['password'] = hash_password(password)
         user['epoch'] = int(user.get('epoch', 1)) + 1
@@ -116,7 +122,7 @@ def revoke_sessions(username):
     also signs the user out on their other browsers, which is the safe
     reading of "Sign out" for an admin UI."""
     with _lock:
-        users = load_users()
+        users = load_users(strict=True)
         if username in users:
             users[username]['epoch'] = int(users[username].get('epoch', 1)) + 1
             save_users(users)
@@ -145,13 +151,20 @@ def authenticate(username, password):
     if not check_password(password, user.get('password')):
         return None
     with _lock:
-        users = load_users()
-        user = users[username]
+        try:
+            users = load_users(strict=True)
+        except OSError as e:
+            # The password checked out: sign in, and record last_login /
+            # the hash upgrade next time rather than write over the file.
+            log.warning('users.json could not be read again, last login not recorded: %s', e)
+            return user
+        user = users.get(username, user)
         if not str(user.get('password', '')).count('$') == 2 or \
                 str(user['password']).split('$')[1] != str(ITERATIONS):
             user['password'] = hash_password(password)
         user['last_login'] = iso_now()
         user.setdefault('epoch', 1)
+        users[username] = user
         save_users(users)
     return user
 
@@ -295,7 +308,7 @@ def app_secret_key():
             key = f.read().strip()
             if len(key) >= 32:
                 return key
-    except OSError:
+    except (OSError, ValueError):   # unreadable or not text: make a new one
         pass
     key = secrets.token_hex(32)
     touch(paths.SECRET_KEY_FILE, key)

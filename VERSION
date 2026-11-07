@@ -1,3 +1,21 @@
+4.0.11
+2026-11-07
+- Fixed (self-healing): a settings, monitors or users file saved in another encoding no longer stops the agent. A file with bytes that are not UTF-8 (saved as ANSI / cp874 by Notepad) made every process crash at start, the supervisor too. read_json now treats it like any other unreadable file: moved to <file>.corrupt-<ts>, logged CRITICAL, restored from <file>.bak. UTF-16 (Notepad's "Unicode") and a UTF-8 BOM are read as they are.
+  - data/.env in ANSI is read with the bad bytes replaced and one WARNING naming the file ("save it as UTF-8"), instead of a crash.
+  - The secret key file, the ACL stamp, VERSION and a staged build's VERSION are read the same careful way: an unreadable one is a clear error, never a crash.
+- Fixed (update rollback): a rollback or interrupted-install restore that was itself interrupted (power cut, kill) could, when re-run at the next start, move the restored old code into the trash and leave the folder without main.py.
+  - Each restore now writes a record of what it moved before it moves anything (`rolling_back` in data/update-state.json), and a re-run carries on from that record instead of guessing from the folders.
+  - The final state ("Failed", rolled back to the old version) is written before pip and clean-up; pip and the leftover folders are finished at the next start when that was cut short.
+  - When the state cannot be written (full disk), nothing is deleted: the backup stays for the next start.
+  - An empty backup next to code that is not the old version is left alone (RollbackFailed) instead of being swapped.
+- Improvement (update swap): main.py, uptime_sync and Launcher.bat leave the folder last and come back first, in an update and in a rollback. A power cut in the middle of a swap used to be able to leave no main.py (it moved out early and back late), and then nothing could start to put the old code back.
+  - Launcher.bat says so when main.py or uptime_sync\ is missing, and where the copy is (the newest backups\v<version>-<date> folder).
+- Fixed (copied .venv check): .venv/pyvenv.cfg is read as UTF-8, as venv writes it. A Python installed under a non-ASCII path no longer looks like a .venv copied from another machine.
+- Fixed (files held by another program): a file an antivirus or backup tool held for a moment was read as empty by code that then saved it back. The update state lost the backup a rollback needs; a Settings save, a new secret or a server-set log level put every other setting back to its default; a monitor edit saved over an empty list; adding a user or changing a password deleted every other account; the signing latch read as "never signed", letting one unsigned reply through.
+  - Those reads now retry for up to 0.75 s (`util.read_json_for_update`) and then refuse: the web UI says "could not be read just now - nothing was changed", `main.py reset-password` says which file is held, sign-out still signs this browser out, and a held latch counts as latched.
+  - The update state is merged onto the copy this process last saw when the file stays held, so an update in progress still ends as Applied (or Failed) with its backup recorded.
+- Fixed (check_interval): lowering it (300 s -> 30 s) made the supervisor kill a healthy engine as stalled, because the limit (3 x interval + 60 s) used the new value while the engine still slept on the old one. The engine records the interval it runs on in run/status.json and the supervisor uses the larger; a saved interval also starts a cycle at once instead of after the old sleep.
+- Improvement (log volume): an update waiting for its window (scheduled) or for Install (manual) is logged at INFO once per offer, then at DEBUG. It used to log INFO on every heartbeat.
 4.0.10
 2026-11-07
 - Improvement (Settings > Reporting): you can see whether it works.

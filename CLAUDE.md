@@ -276,6 +276,10 @@ when set (the tests use this), else the checkout folder.
     is moved to `<file>.corrupt-<ts>` (3 kept), logged CRITICAL, and restored
     from `<file>.bak` when that parses. Pass `heal=False` only for files the
     agent must not move (3.x files in `importer`, `config/defaults.json`).
+    It reads bytes and decodes through `util.decode_text()` (UTF-16 by BOM,
+    else utf-8-sig), so a non-UTF-8 file heals like bad JSON (4.0.11). Never
+    `open(..., encoding='utf-8')` a file the user can edit without catching
+    ValueError (UnicodeDecodeError).
   - Files that must survive corruption are written with `backup=True`
     (settings, monitors, users). The `.bak` is taken only from a file that parses.
   - `auth.has_users()` stays True when users.json is unreadable or was
@@ -294,7 +298,17 @@ when set (the tests use this), else the checkout folder.
   - `updater.apply()` writes status `Applying` before the first move, and
     `updater.recover_interrupted()` runs at every supervisor start, right after
     the lock. Every move out happens before any move in. Keep that order, because
-    recovery relies on it to tell old files from new ones.
+    recovery relies on it to tell old files from new ones. Within each half,
+    `_BOOT` (uptime_sync, main.py, Launcher.bat) moves out last and in first
+    (4.0.11): while main.py is gone nothing can start to run the recovery, and
+    Launcher.bat is what tells the user where the old code is.
+  - A restore (`rollback()`, or `recover_interrupted()` undoing an
+    install) is re-runnable (4.0.11): `_save_record()` writes
+    `rolling_back` {backup, trash, back, out} before it moves anything, and a
+    re-run resumes from that record, never from the folders alone. `apply()`
+    clears it. `_restored()` writes the final `Failed` state BEFORE pip and
+    clean-up; `pip_pending` / `leftovers` are finished at the next start.
+    If that state cannot be written, nothing is deleted.
   - The supervisor restarts an engine whose `run/status.json` has not changed
     for 3 x check_interval + 60 s, timed by `time.monotonic()` (never compare
     an mtime with `time.time()`: w32time steps the clock). The engine must keep
@@ -317,6 +331,16 @@ when set (the tests use this), else the checkout folder.
   - `monitors.load(strict=True)` raises on a file that exists but cannot be
     read; the engine then keeps its monitors. Use `read_json(strict=True)`
     wherever "unreadable for a moment" must not mean "empty".
+  - Every read that is saved back goes through `util.read_json_for_update()`
+    (4.0.11: strict, short retries, then OSError): `settings.update()` /
+    `load(strict=True)`, `monitors.load(strict=True)`,
+    `auth.load_users(strict=True)`, `updater.set_state()`. A non-strict read
+    there turns a held file into defaults written over the real one.
+    `set_state()` falls back to the state this process last read or wrote
+    (`_known_state`) rather than raise mid-update. An unreadable signing
+    latch counts as latched.
+  - The engine writes the `check_interval` it runs on into run/status.json;
+    the supervisor's stall limit uses the larger of that and the setting.
 - **Reporting server URL (4.0.9).** `remote.url` is the Public URL and
   `remote.local_url` is the Local one. Always read the URL in use through
   `util.active_server_url(remote)`: heartbeat, signing latch and updater all do.

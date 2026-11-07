@@ -261,7 +261,14 @@ def cmd_import(a):
 
 def cmd_reset_password(a):
     from .web import auth
-    users = auth.load_users()
+    try:
+        # strict: users.json held by another program must not read as
+        # "no users" (it would then offer to create one, and fail) (4.0.11)
+        users = auth.load_users(strict=True)
+    except OSError as e:
+        _say('[ERROR] data/users.json cannot be read right now (%s). Close the program '
+             'that holds it, then try again.' % e)
+        return 1
     if a.username not in users:
         _say('[INFO] No user %r - a new admin account will be created.' % a.username)
     pw = getpass.getpass('New password: ')

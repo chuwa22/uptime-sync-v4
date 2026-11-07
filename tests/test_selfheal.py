@@ -385,10 +385,10 @@ class InterruptedApplyTests(_FakeInstall):
         self.assert_old_code()
 
     def test_pending_not_rewritten_for_the_same_offer(self):
-        updater.write_pending(NEXT, 'u', 'a' * 64, 'manual')
+        self.assertTrue(updater.write_pending(NEXT, 'u', 'a' * 64, 'manual'))
         first = read(paths.UPDATE_PENDING)
         with mock.patch.object(updater, 'atomic_write_json') as w:
-            updater.write_pending(NEXT, 'u', 'a' * 64, 'manual')
+            self.assertFalse(updater.write_pending(NEXT, 'u', 'a' * 64, 'manual'))
         w.assert_not_called()
         self.assertEqual(read(paths.UPDATE_PENDING), first)
 

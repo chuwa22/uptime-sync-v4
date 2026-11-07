@@ -17,7 +17,7 @@ import re
 import threading
 
 from . import loglevel, paths
-from .util import atomic_write_json, deep_merge, diff_from, read_json
+from .util import atomic_write_json, decode_text, deep_merge, diff_from, read_json, read_json_for_update
 
 # setting path -> environment variable that overrides it
 ENV_SETTINGS = (
@@ -47,6 +47,20 @@ NUMERIC = (
 BOUNDS = {'.'.join(p): (lo, hi) for p, _kind, lo, hi in NUMERIC}
 
 log = logging.getLogger('settings')
+_env_warned = set()   # (path, size, hash) already warned about in this process
+
+
+def _warn_env_encoding(path, data):
+    """Once per process per file content: settings.load() runs every few
+    seconds and must not repeat the line each time."""
+    key = (path, len(data), hash(data))
+    if key in _env_warned:
+        return
+    _env_warned.add(key)
+    log.warning('%s is not UTF-8 - bytes that do not decode were replaced. Save it as UTF-8 '
+                '(Notepad: Save As > Encoding: UTF-8)', os.path.basename(path))
+
+
 _warned = set()
 
 _NAME_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
@@ -60,10 +74,18 @@ def parse_env_file(path):
     matching quotes. Malformed lines are skipped, never fatal."""
     values = {}
     try:
-        with open(path, 'r', encoding='utf-8-sig') as f:
-            lines = f.read().splitlines()
+        with open(path, 'rb') as f:
+            data = f.read()
     except OSError:
         return values
+    try:
+        lines = decode_text(data).splitlines()
+    except UnicodeDecodeError:
+        # Saved as ANSI with a Thai comment, say. The names and the ASCII
+        # values still work; an undecodable byte becomes U+FFFD. Before
+        # 4.0.11 this raised out of settings.load() in every process.
+        lines = decode_text(data, 'replace').splitlines()
+        _warn_env_encoding(path, data)
     for raw in lines:
         line = raw.strip()
         if not line or line.startswith('#') or '=' not in line:
@@ -197,16 +219,19 @@ def _warn_once(name, raw, used):
                     name, raw, '/'.join(loglevel.LEVELS), used)
 
 
-def load_site():
-    """data/settings.json only (what this site changed)."""
-    data = read_json(paths.SETTINGS_FILE, {})
+def load_site(strict=False):
+    """data/settings.json only (what this site changed). strict=True (for a
+    read-modify-write): raise OSError when it exists but stays unreadable,
+    instead of reading as "nothing changed" (read_json_for_update)."""
+    data = read_json_for_update(paths.SETTINGS_FILE, {}) if strict else read_json(paths.SETTINGS_FILE, {})
     return data if isinstance(data, dict) else {}
 
 
-def load():
-    """Merged settings with .env credentials applied. A fresh copy."""
+def load(strict=False):
+    """Merged settings with .env credentials applied. A fresh copy.
+    strict=True before a save: see load_site()."""
     base = defaults()
-    merged = deep_merge(base, load_site())
+    merged = deep_merge(base, load_site(strict))
     _fix_types(merged, base)
     _coerce(merged, base)
     loglevel.coerce(merged, _warn_once)
@@ -236,5 +261,7 @@ def save(merged):
 
 
 def update(changes):
-    """Apply a nested dict of changes on top of the current settings."""
-    return save(deep_merge(load(), changes))
+    """Apply a nested dict of changes on top of the current settings.
+    Raises OSError when settings.json is there but cannot be read: saving
+    the changes over the defaults would wipe the site's settings."""
+    return save(deep_merge(load(strict=True), changes))

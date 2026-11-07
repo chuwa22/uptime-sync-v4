@@ -146,9 +146,9 @@ def _windows_harden(grant_current_user):
         # folder's ACL is not the one this agent left last time.
         stamp = ''
         try:
-            with open(ACL_STAMP, 'r') as f:
+            with open(ACL_STAMP, 'r', encoding='ascii') as f:
                 stamp = f.read().strip()
-        except OSError:
+        except (OSError, ValueError):   # a torn stamp: just apply the ACL again
             pass
         if grant_current_user or not stamp or stamp != _root_acl_digest(root):
             code, out = _run(root_icacls_command(root, extra))
@@ -230,7 +230,7 @@ def venv_base_home():
                 key, _, value = line.partition('=')
                 if key.strip().lower() == 'home':
                     return value.strip()
-    except OSError:
+    except (OSError, ValueError):
         pass
     return ''
 

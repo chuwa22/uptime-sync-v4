@@ -1,5 +1,6 @@
 """Small helpers shared by every part of the agent."""
 
+import codecs
 import copy
 import datetime
 import hashlib
@@ -89,10 +90,25 @@ def atomic_write_json(path, data, private=False, backup=False, compact=False):
             log.warning('Could not back up %s: %s', os.path.basename(path), e)
 
 
+def decode_text(data, errors='strict'):
+    """bytes -> str for a file a person may have saved by hand: UTF-8
+    (with or without a BOM), or UTF-16 with a BOM (what Notepad on Windows 7
+    calls "Unicode"). Anything else raises UnicodeDecodeError, which is a
+    ValueError, so callers treat it like a file that does not parse;
+    errors='replace' never raises (and still drops the BOM)."""
+    if data[:2] in (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE):
+        return data.decode('utf-16', errors)
+    return data.decode('utf-8-sig', errors)
+
+
+def _read_text(path):
+    with open(path, 'rb') as f:
+        return decode_text(f.read())
+
+
 def _keep_backup(path):
     try:
-        with open(path, 'r', encoding='utf-8-sig') as f:
-            text = f.read()
+        text = _read_text(path)
         json.loads(text)
     except (OSError, ValueError):
         return
@@ -111,10 +127,13 @@ def read_json(path, default=None, heal=True, strict=False):
     for files this agent must not move (3.x files being imported, the
     shipped defaults). strict=True: only a MISSING file gives `default`; any
     other read error (a file an antivirus or backup tool holds for a moment)
-    raises OSError, so the caller can keep what it had instead of "empty"."""
+    raises OSError, so the caller can keep what it had instead of "empty".
+    Bytes that are not UTF-8 (or UTF-16 with a BOM) count as corrupt and
+    are healed the same way: before 4.0.11 the UnicodeDecodeError escaped
+    and stopped the supervisor on every start."""
     try:
-        with open(path, 'r', encoding='utf-8-sig') as f:
-            text = f.read()
+        with open(path, 'rb') as f:
+            data = f.read()
     except FileNotFoundError:
         return copy.deepcopy(default)
     except OSError:
@@ -122,11 +141,31 @@ def read_json(path, default=None, heal=True, strict=False):
             raise
         return copy.deepcopy(default)
     try:
-        return json.loads(text)
-    except ValueError as e:
+        return json.loads(decode_text(data))
+    except ValueError as e:   # UnicodeDecodeError is a ValueError too
         if not heal:
             return copy.deepcopy(default)
         return _heal(path, default, e)
+
+
+READ_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4)
+
+
+def read_json_for_update(path, default=None):
+    """read_json for a read-modify-write (4.0.11): a file that exists but
+    cannot be opened right now (an antivirus or backup tool holds it) is
+    tried again a few times, then raises OSError. The non-strict read gave
+    `default` instead, and the caller then wrote "default + its change"
+    over the real file: the update state lost the backup path a rollback
+    needs, settings went back to defaults. A missing file is `default`; a
+    corrupt one heals as in read_json."""
+    for delay in READ_RETRY_DELAYS + (None,):
+        try:
+            return read_json(path, default, strict=True)
+        except OSError:
+            if delay is None:
+                raise
+            time.sleep(delay)
 
 
 def corrupt_copies(path):
@@ -154,8 +193,7 @@ def _heal(path, default, err):
     if bad is None:
         return read_json(path, default, heal=False)
     try:
-        with open(path + '.bak', 'r', encoding='utf-8-sig') as f:
-            text = f.read()
+        text = _read_text(path + '.bak')
         data = json.loads(text)
         atomic_write_text(path, text, private=True)
     except (OSError, ValueError):

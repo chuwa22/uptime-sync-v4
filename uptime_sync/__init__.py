@@ -13,7 +13,7 @@ def _read_version():
     try:
         with open(path, 'r', encoding='utf-8') as f:
             return f.readline().strip() or '0.0.0'
-    except OSError:
+    except (OSError, ValueError):
         return '0.0.0'
 
 
