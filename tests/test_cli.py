@@ -92,6 +92,44 @@ class HelpTests(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn('Unknown command "--engine"', err)
 
+    def test_options_work_with_dash_double_dash_or_slash(self):
+        sp = cli.build_parser()._uptime_subs
+        norm = cli._normalize_options
+        want = ['-n', '50', '--level', 'WARNING', '--proc', 'engine', '--grep', 'x']
+        for args in (['-n', '50', '--level', 'WARNING', '--proc', 'engine', '--grep', 'x'],
+                     ['/n', '50', '/level', 'WARNING', '/proc', 'engine', '/grep', 'x'],
+                     ['--n', '50', '-level', 'WARNING', '-proc', 'engine', '-grep', 'x']):
+            self.assertEqual(norm(sp['logs'], args), want, args)
+        self.assertEqual(norm(sp['logs'], ['/lines', '20']), ['--lines', '20'])
+        self.assertEqual(norm(sp['logs'], ['/lines=20']), ['--lines=20'])
+        self.assertEqual(norm(sp['status'], ['/json']), ['--json'])
+        self.assertEqual(norm(sp['import'], ['/old', '-dry-run', '/force']), ['/old', '--dry-run', '--force'])
+        self.assertEqual(norm(sp['install'], ['/no-autostart']), ['--no-autostart'])
+        for h in ('/?', '-?', '?', '-h', '/h', '--help'):
+            self.assertEqual(norm(sp['logs'], [h]), ['--help'], h)
+
+    def test_values_and_paths_are_never_rewritten(self):
+        sp = cli.build_parser()._uptime_subs
+        norm = cli._normalize_options
+        self.assertEqual(norm(sp['logs'], ['--grep', '/json']), ['--grep', '/json'])
+        self.assertEqual(norm(sp['logs'], ['/grep', '-n']), ['--grep', '-n'])
+        self.assertEqual(norm(sp['import'], ['/Users/me/Uptime Sync']), ['/Users/me/Uptime Sync'])
+        self.assertEqual(norm(sp['import'], ['--', '/force']), ['--', '/force'])
+
+    def test_help_topic_may_carry_a_prefix(self):
+        for t in ('-logs', '--logs', '/logs'):
+            rc, out, _ = run('help', t)
+            self.assertEqual(rc, 0, t)
+            self.assertIn('usage: main.py logs', out, t)
+
+    def test_slash_options_reach_the_command(self):
+        with mock.patch('uptime_sync.cli.cmd_logs', return_value=0) as logs, \
+                mock.patch('uptime_sync.cli.logsetup.setup_console'), \
+                mock.patch('uptime_sync.cli.perms.return_to_sudo_user'):
+            self.assertEqual(run('/logs', '/n', '7', '/proc', 'engine', '-grep', 'push')[0], 0)
+        a = logs.call_args[0][0]
+        self.assertEqual((a.lines, a.proc, a.grep), (7, 'engine', 'push'))
+
     def test_output_is_ascii(self):
         _, out, _ = run('help')
         out.encode('ascii')

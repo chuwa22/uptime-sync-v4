@@ -360,7 +360,10 @@ def overview(parser):
     out = ['Uptime Sync %s' % __version__, '',
            'Usage:  main.py <command> [options]',
            '        main.py help <command>     everything about one command',
-           '        main.py --version          same as `version` (also -v, -V)', '']
+           '        main.py --version          same as `version` (also -v, -V)',
+           '',
+           'Commands and options work with -, -- or / in front:',
+           '        main.py -restart    main.py --logs -n 50    main.py /logs /n 50 /proc engine', '']
     for title, names in HELP_GROUPS:
         out.append(title)
         for n in names:
@@ -441,12 +444,47 @@ def build_parser():
     return p
 
 
+def _normalize_options(sp, args):
+    """Let every option of a command be typed with -, -- or /, like the
+    command itself: `logs /n 50`, `logs -lines 50`, `status /json`,
+    `import /dry-run`, `logs /?`. Only a word that names one of this
+    command's options is rewritten, and never the value after an option that
+    takes one, so `--grep /api` and a path like `/Users/me/old` pass through."""
+    names, takes_value = {}, set()
+    for act in sp._actions:
+        for opt in act.option_strings:
+            key = opt.lstrip('-')
+            if key not in names or opt.startswith('--'):   # prefer --lines over -n for "lines"
+                names[key] = opt
+            if act.nargs != 0:
+                takes_value.add(opt)
+    out, expect_value, rest = [], False, False
+    for tok in args:
+        if rest or expect_value:
+            out.append(tok)
+            expect_value = False
+            continue
+        if tok == '--':
+            rest = True
+        elif tok in HELP_WORDS:
+            tok = '--help'
+        elif tok[:1] in ('-', '/'):
+            key, eq, val = tok.lstrip('-/').partition('=')
+            if key in names:
+                tok = names[key] + eq + val
+        out.append(tok)
+        expect_value = tok in takes_value
+    return out
+
+
 def _help(parser, topic):
     """`main.py help [command]` -> 0, or 2 for a command that does not exist."""
     subs = parser._uptime_subs
     if not topic or topic in HELP_WORDS:
         sys.stdout.write(overview(parser))
         return 0
+    if topic.lstrip('-/') in subs:
+        topic = topic.lstrip('-/')
     if topic in subs and topic not in HIDDEN_COMMANDS:
         subs[topic].print_help()
         return 0
@@ -489,6 +527,8 @@ def main(argv=None):
     if first not in parser._uptime_subs:
         _unknown(parser, first)
         return 2
+    if first not in HIDDEN_COMMANDS:   # the supervisor's own command lines stay exact
+        argv[1:] = _normalize_options(parser._uptime_subs[first], argv[1:])
     a = parser.parse_args(argv)
     if a.fn not in (cmd_run, cmd_engine, cmd_web):   # those set up their own logging
         logsetup.setup_console()
