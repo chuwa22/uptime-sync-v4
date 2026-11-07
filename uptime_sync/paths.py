@@ -49,7 +49,7 @@ STATUS_FILE = os.path.join(RUN_DIR, 'status.json')
 # reads this tuple). Everything else under ROOT belongs to the site. tools/ is
 # developer tooling for a git clone and never ships.
 SHIPPED = ('uptime_sync', 'config', 'main.py', 'install.py', 'VERSION',
-           'requirements.txt', 'README.md', 'LICENSE', 'install.bat')
+           'requirements.txt', 'README.md', 'LICENSE', 'install.bat', 'Launcher.bat')
 
 
 # The agent always runs on the interpreter inside <root>/.venv, so its

@@ -35,6 +35,12 @@ create the admin account.
 newer, runs `install.py` with it and keeps the window open so you can read the result.
 Options are passed through: `install.bat --no-autostart`, `--recreate`, `--wheels C:\wheels`.
 
+On Windows, `Launcher.bat` is a control panel: double-click it (it asks for
+administrator rights) for a menu of Status, Start, Stop, Restart, Open the web UI,
+Check every monitor now, recent logs, warnings and errors, Reset a web UI password,
+Install or repair, and Uninstall autostart. Each item runs the same
+`main.py` command you would type at a prompt.
+
 For an offline install, run `install.py --wheels <folder of .whl files>`. On Windows 7,
 use Python 3.8.10, the last release that supports it.
 
