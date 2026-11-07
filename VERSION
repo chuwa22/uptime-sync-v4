@@ -1,3 +1,7 @@
+4.0.12
+2026-11-07
+- Improvement (Settings > Reporting): a Generate link next to the API key fills in a new key: this computer's name and 12 random hex digits (e.g. desktop-ab12cd-3f9a1c7e2b40). It is unique, so two boxes cannot share a card, and nobody can guess it, which matters because uptime-monitor knows an agent without an HMAC secret by its key alone. Nothing is saved until Save; a note says so, and when a key was already set, that uptime-monitor will show the agent as a new card (paste the HMAC secret there too). With JavaScript the field is filled in place; without it the page reloads with the key filled in. Not shown when data/.env sets UPTIME_API_KEY.
+
 4.0.11
 2026-11-07
 - Fixed (self-healing): a settings, monitors or users file saved in another encoding no longer stops the agent. A file with bytes that are not UTF-8 (saved as ANSI / cp874 by Notepad) made every process crash at start, the supervisor too. read_json now treats it like any other unreadable file: moved to <file>.corrupt-<ts>, logged CRITICAL, restored from <file>.bak. UTF-16 (Notepad's "Unicode") and a UTF-8 BOM are read as they are.
