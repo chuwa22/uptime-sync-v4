@@ -57,6 +57,33 @@ def agent_running():
         sys.path.remove(ROOT)
 
 
+def stop_broken_agent(timeout=30):
+    """Stop a running agent the way `main.py stop` does (run/stopped +
+    run/shutdown), stdlib only. For a .venv that broke under a running agent
+    (the folder was synced from another machine): main.py cannot run on it,
+    so `main.py stop` is not an option. `main.py install` starts it again."""
+    sys.path.insert(0, ROOT)
+    try:
+        import time
+        from uptime_sync import paths, procs
+        os.makedirs(paths.RUN_DIR, exist_ok=True)
+        for flag in (paths.STOPPED_FLAG, paths.SHUTDOWN_FLAG):
+            open(flag, 'a').close()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not procs.InstanceLock(paths.LOCK_FILE).held_by_other():
+                time.sleep(2)     # the process outlives its lock by ~1 s
+                try:
+                    os.remove(paths.SHUTDOWN_FLAG)
+                except OSError:
+                    pass
+                return True
+            time.sleep(0.5)
+        return False
+    finally:
+        sys.path.remove(ROOT)
+
+
 def main():
     p = argparse.ArgumentParser(description='Set up Uptime Sync 4 in this folder.')
     p.add_argument('--wheels', help='folder of wheel files for an offline install')
@@ -72,7 +99,14 @@ def main():
         return 1
 
     py = venv_python()
-    rebuild = os.path.isdir(VENV) and (a.recreate or not works(py))
+    broken = os.path.isdir(VENV) and not works(py)
+    rebuild = os.path.isdir(VENV) and (a.recreate or broken)
+    if broken and agent_running():
+        step('.venv is broken but the agent still runs from it - stopping the agent')
+        if not stop_broken_agent():
+            print('[ERROR] The agent did not stop within 30 s. Stop it in Task Manager '
+                  '(pythonw.exe from this folder) and run this again.')
+            return 1
     if rebuild and agent_running():
         # Deleting .venv under a running agent removes part of it and then
         # fails on the files Windows keeps open -- the agent is left broken.
@@ -83,7 +117,7 @@ def main():
     if a.recreate and os.path.isdir(VENV):
         step('Removing the old .venv')
         shutil.rmtree(VENV)
-    if os.path.isdir(VENV) and not works(py):
+    if os.path.isdir(VENV) and broken and not a.recreate:
         step('.venv is broken - rebuilding it')
         shutil.rmtree(VENV)
     if not os.path.isdir(VENV):

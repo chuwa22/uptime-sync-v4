@@ -66,6 +66,23 @@ def venv_python(background=False):
     return os.path.join(VENV_DIR, 'bin', 'python')
 
 
+def venv_home_missing():
+    """The `home` of .venv/pyvenv.cfg when that folder is not on this
+    machine, else ''. A .venv copied from another computer (a folder synced
+    from a Mac to a Windows box) has the other machine's home, and its
+    python fails before any Python code runs ("No Python at ...")."""
+    try:
+        with open(os.path.join(VENV_DIR, 'pyvenv.cfg')) as f:
+            for line in f:
+                key, sep, value = line.partition('=')
+                if sep and key.strip().lower() == 'home':
+                    home = value.strip()
+                    return '' if not home or os.path.isdir(home) else home
+    except (OSError, UnicodeDecodeError):
+        pass
+    return ''
+
+
 def in_venv():
     """True when this process runs on <root>/.venv's interpreter."""
     def norm(p):

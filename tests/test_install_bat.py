@@ -55,7 +55,7 @@ class LauncherBatTest(unittest.TestCase):
     def test_menu_starts_no_process(self):
         # Between :menu and the prompt only cmd built-ins run.
         start, end = self.lines.index(':menu'), self.lines.index('set /p "CHOICE=   Choose: "')
-        builtins = ('echo', 'if', 'set', 'cls', 'title')
+        builtins = ('echo', 'if', 'set', 'cls', 'title', 'rem', 'for')
         for line in self.lines[start + 1:end]:
             self.assertTrue(line.split(' ', 1)[0].split('.', 1)[0].lower() in builtins, line)
 
@@ -66,6 +66,12 @@ class LauncherBatTest(unittest.TestCase):
                 self.assertIn(l.split('goto ', 1)[1].split()[0], labels, l)
             if l.startswith('call :'):
                 self.assertIn(l[6:].split()[0], labels, l)
+
+    def test_copied_venv_is_spotted_and_sent_to_install(self):
+        self.assertIn('if exist "%PY%" if defined VHOME if not exist "%VHOME%\\python.exe" set "BROKEN=1"',
+                      self.data)
+        run = self.lines.index(':run')
+        self.assertIn('if defined BROKEN (', self.lines[run:run + 8])
 
     def test_uninstall_asks_first(self):
         i = self.lines.index(':do_uninstall')

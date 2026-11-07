@@ -37,6 +37,10 @@ def ensure_venv():
         _fail('re-launched on %s but it does not run as this folder\'s .venv' % py)
     if not os.path.isfile(py):
         _fail('no .venv in %s (it holds the packages the agent needs)' % paths.ROOT)
+    home = paths.venv_home_missing()
+    if home:
+        _fail('.venv was made on another machine: it needs the Python in %s, which is not '
+              'here (was the folder copied with its .venv?)' % home)
     env = dict(os.environ)
     env[REEXEC_FLAG] = '1'
     args = [py, os.path.abspath(__file__)] + sys.argv[1:]

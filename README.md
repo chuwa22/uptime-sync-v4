@@ -25,6 +25,10 @@ runs on `.venv`'s Python. You can type `python main.py ...` with any Python:
 main.py restarts itself inside `.venv`. The system Python is used only to create
 `.venv`.
 
+`.venv` belongs to the machine that made it: do not copy it to another box (exclude it
+when you sync or copy the folder). A copied `.venv` fails with "No Python at ...";
+run `install.bat` (or `python install.py`) on that box and it is rebuilt.
+
 `.venv` still uses the system Python's standard library. If you uninstall or
 upgrade that Python, run `python main.py stop`, then `python install.py --recreate`
 (it refuses while the agent is running), then `python main.py start`.

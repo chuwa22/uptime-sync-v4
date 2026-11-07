@@ -11,6 +11,8 @@ rem
 rem Rules (lessons from the 3.x Launcher):
 rem   - nothing is spawned to draw the menu; the version comes from the
 rem     VERSION file, the web address only when you open the web UI;
+rem   - a .venv copied from another machine is spotted from pyvenv.cfg
+rem     and sent to I (install.py rebuilds it, stopping the agent first);
 rem   - an empty answer three times in a row quits: with a broken stdin
 rem     (scheduled task, piped input) set /p returns at once, and the
 rem     menu would otherwise spin at full CPU.
@@ -51,6 +53,16 @@ echo    Uptime Sync %VER%  -  control panel
 echo    %HERE%
 echo  ==========================================================
 if not exist "%PY%" echo    [WARN] Not installed yet - no .venv here. Choose I.
+rem A .venv copied from another machine (folder synced from a Mac) points
+rem at that machine's Python: its python.exe fails with "No Python at ...".
+rem Read home from pyvenv.cfg with for /f, a built-in - no process.
+set "VHOME="
+set "BROKEN="
+if exist "%HERE%.venv\pyvenv.cfg" for /f "usebackq tokens=1,* delims== " %%a in ("%HERE%.venv\pyvenv.cfg") do if /i "%%a"=="home" set "VHOME=%%b"
+if exist "%PY%" if defined VHOME if not exist "%VHOME%\python.exe" set "BROKEN=1"
+if defined BROKEN echo    [WARN] .venv was made on another machine - it needs a Python at
+if defined BROKEN echo           %VHOME%
+if defined BROKEN echo           which is not on this box. Choose I to rebuild it.
 echo.
 echo    Run it
 echo      1  Status
@@ -125,6 +137,7 @@ goto wait
 
 :do_open
 if not exist "%PY%" goto not_installed
+if defined BROKEN goto broken
 set "URL="
 set "TMPURL=%TEMP%\uptime_sync_v4_url.txt"
 "%PY%" "%MAIN%" help 2>nul | findstr /b /c:"Web UI:" > "%TMPURL%"
@@ -138,6 +151,7 @@ goto wait
 
 :do_password
 if not exist "%PY%" goto not_installed
+if defined BROKEN goto broken
 set "WHO="
 echo.
 set /p "WHO=   User name [admin]: "
@@ -152,6 +166,7 @@ goto menu
 
 :do_uninstall
 if not exist "%PY%" goto not_installed
+if defined BROKEN goto broken
 echo.
 echo    This stops Uptime Sync and removes its autostart task.
 echo    data\ - settings, monitors, users - is kept.
@@ -163,6 +178,11 @@ goto wait
 
 :cancelled
 echo [INFO] Nothing changed.
+goto wait
+
+:broken
+echo.
+echo [ERROR] .venv does not work on this box - choose I to rebuild it.
 goto wait
 
 :not_installed
@@ -179,6 +199,11 @@ goto menu
 if not exist "%PY%" (
     echo.
     echo [ERROR] Not installed yet - no .venv in this folder. Choose I first.
+    exit /b 1
+)
+if defined BROKEN (
+    echo.
+    echo [ERROR] .venv does not work on this box - choose I to rebuild it.
     exit /b 1
 )
 echo.
