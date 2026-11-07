@@ -74,6 +74,24 @@ class HelpTests(unittest.TestCase):
             self.assertEqual(rc, 0, argv)
             self.assertIn('Uptime Sync %s' % cli.__version__, out, argv)
 
+    def test_dashed_command_names_work(self):
+        for argv in (('-version',), ('--version',), ('/version',), ('-help',), ('--help',)):
+            self.assertEqual(run(*argv)[0], 0, argv)
+        with mock.patch('uptime_sync.cli.cmd_restart', return_value=0) as restart, \
+                mock.patch('uptime_sync.cli.logsetup.setup_console'), \
+                mock.patch('uptime_sync.cli.perms.return_to_sudo_user'):
+            for argv in (('-restart',), ('--restart',), ('/restart',)):
+                self.assertEqual(run(*argv)[0], 0, argv)
+            self.assertEqual(restart.call_count, 3)
+
+    def test_dashed_unknown_word_suggests_and_hidden_roles_stay_hidden(self):
+        rc, _, err = run('-restrat')
+        self.assertEqual(rc, 2)
+        self.assertIn('Unknown command "-restrat". Did you mean "restart"?', err)
+        rc, _, err = run('--engine')
+        self.assertEqual(rc, 2)
+        self.assertIn('Unknown command "--engine"', err)
+
     def test_output_is_ascii(self):
         _, out, _ = run('help')
         out.encode('ascii')

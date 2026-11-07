@@ -457,7 +457,7 @@ def _help(parser, topic):
 def _unknown(parser, word):
     import difflib
     names = [n for n in parser._uptime_subs if n not in HIDDEN_COMMANDS]
-    close = difflib.get_close_matches(word, names, n=1)
+    close = difflib.get_close_matches(word.lstrip('-/'), names, n=1)
     msg = 'Unknown command "%s".' % word
     if close:
         msg += ' Did you mean "%s"?' % close[0]
@@ -475,7 +475,18 @@ def main(argv=None):
         return _help(parser, argv[1] if len(argv) > 1 else None)
     if first in VERSION_WORDS:
         return cmd_version(None)
-    if not first.startswith('-') and first not in parser._uptime_subs:
+    if first[:1] in ('-', '/'):
+        # -restart, --restart, /restart (Windows habit) -> restart. The top
+        # level has no options of its own besides help/version, so any other
+        # dash word here is a mistyped command, not an option.
+        name = first.lstrip('-/')
+        if name == 'help':
+            return _help(parser, argv[1] if len(argv) > 1 else None)
+        if name not in parser._uptime_subs or name in HIDDEN_COMMANDS:
+            _unknown(parser, first)
+            return 2
+        argv[0] = first = name
+    if first not in parser._uptime_subs:
         _unknown(parser, first)
         return 2
     a = parser.parse_args(argv)

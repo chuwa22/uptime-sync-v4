@@ -75,7 +75,9 @@ python main.py version          (or --version, -v)
 python main.py help [command]    the list above, or every option of one command
 ```
 
-On Windows `main.py /?` works too. In zsh `?` is a wildcard, so type `help`.
+A command also works with a dash or slash in front (`-restart`, `--restart`,
+`/restart`). On Windows `main.py /?` works too. In zsh `?` is a wildcard, so
+type `help`.
 
 `stop` is sticky. It writes `run/stopped`, so neither the watchdog nor a reboot
 brings the agent back until you run `start`.

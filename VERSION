@@ -2,6 +2,7 @@
 2026-11-05
 - Improvement (CLI): `main.py help` lists the commands in groups (Run it / Set it up / Look at it) with examples and the Web UI address; `main.py help <command>` shows every option of one command, with examples. `?`, `-?`, `/?` (Windows) and `-h` do the same as `help`.
   - `--version`, `-version`, `-v`, `-V` and `/version` do the same as `version`.
+  - Every command also works with a dash or slash in front: `-restart`, `--restart` and `/restart` are `restart`. Before, `main.py -restart` failed with argparse's "unrecognized arguments".
   - An unknown command says so and suggests the closest one ("lgos" -> Did you mean "logs"?). A bad option points at `main.py help <that command>`.
   - The internal engine/web roles no longer show up as "==SUPPRESS==" in the list.
 - Fix (engine): a monitor saved, added, paused, enabled, cloned or deleted on the Monitors page is now checked within a few seconds. Before, the engine read monitors.json only at the start of each cycle, so a change waited up to `check_interval` (60 s) and the page looked as if nothing had happened.
