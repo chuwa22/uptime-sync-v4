@@ -86,7 +86,7 @@ class WebTests(unittest.TestCase):
     def test_settings_page_has_jump_links_and_folds_part_levels(self):
         self.setup_admin()
         html = self.c.get('/settings').get_data(as_text=True)
-        for anchor in ('site', 'logging', 'reporting', 'updates'):
+        for anchor in ('site', 'logging', 'reporting', 'updates', 'web'):
             self.assertIn('href="#%s"' % anchor, html)
             self.assertIn('id="%s"' % anchor, html)
         self.assertIn('<div class="fold" data-fold>', html)           # closed: nothing custom
@@ -96,6 +96,21 @@ class WebTests(unittest.TestCase):
         html = self.c.get('/settings').get_data(as_text=True)
         self.assertIn('<div class="fold" data-fold data-fold-open>', html)
         self.assertIn('2 parts with its own level: checks DEBUG, web WARNING', html)
+
+    def test_updates_card_warns_while_replies_are_unsigned(self):
+        self.setup_admin()
+        warn = 'Replies from the server are not signed yet'
+        self.assertNotIn(warn, self.c.get('/settings').get_data(as_text=True))     # not reporting: no offers
+        settings.update({'remote': {'enabled': True, 'url': 'https://mon.example.com/api/heartbeat.php'}})
+        self.assertIn(warn, self.c.get('/settings').get_data(as_text=True))        # auto, nothing signed yet
+        settings.update({'remote': {'require_signed_response': True}})
+        self.assertNotIn(warn, self.c.get('/settings').get_data(as_text=True))     # unsigned refused anyway
+        settings.update({'remote': {'require_signed_response': 'auto'}, 'update': {'enabled': False}})
+        html = self.c.get('/settings').get_data(as_text=True)
+        self.assertNotIn(warn, html)                                                # updates off
+        self.assertIn('<h2>', html)
+        self.assertIn('Web UI</h2>', html)
+        self.assertIn('Updates</h2>', html)
 
     def test_new_secret_asks_first_and_lives_in_reporting(self):
         self.setup_admin()

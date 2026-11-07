@@ -11,7 +11,8 @@
   <a class="button small" href="#site">{{ icon('monitor', 14) }}Site</a>
   <a class="button small" href="#logging">{{ icon('logs', 14) }}Logging</a>
   <a class="button small" href="#reporting">{{ icon('globe', 14) }}Reporting</a>
-  <a class="button small" href="#updates">{{ icon('download', 14) }}Updates and web</a>
+  <a class="button small" href="#updates">{{ icon('download', 14) }}Updates</a>
+  <a class="button small" href="#web">{{ icon('server', 14) }}Web UI</a>
 </p>
 <form method="post" class="form">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -100,15 +101,21 @@
   </div>
 
   <div class="card" id="updates">
-    <h2>{{ icon('download') }}Updates and web</h2>
+    <h2>{{ icon('download') }}Updates</h2>
     <label class="check"><input type="checkbox" name="update_enabled"{{ ' checked' if s['update'].enabled }}> Install updates offered by uptime-monitor</label>
-    <p class="note">The server decides when (mode, window, Force Update). The zip comes from GitHub ({{ s['update'].github_repo }}) and must match the SHA-256 in the server's signed reply.</p>
+    <p class="note">The server decides which version and when (Auto, Manual with an Install button on the Dashboard, a Scheduled window, or Force Update). The zip comes from GitHub ({{ s['update'].github_repo }}) and must match the SHA-256 the server sends in its heartbeat reply; a failed start rolls back. Off = every offer is ignored, Force Update too. Needs Send heartbeats.</p>
+    {% if s['update'].enabled and s.remote.enabled and sign_state not in ('enforced', 'required') %}<p class="note warn-note">{{ icon('alert', 14) }}Replies from the server are not signed yet, so this agent cannot tell an update offer from the server apart from one altered on the way. Paste the HMAC secret on this agent's card in uptime-monitor (see Reporting).</p>{% endif %}
+  </div>
+
+  <div class="card" id="web">
+    <h2>{{ icon('server') }}Web UI</h2>
     <div class="cols">
       <label>Web listens on <small class="muted">0.0.0.0 = every network, 127.0.0.1 = this PC only</small>
         <input name="web_host" class="mono" value="{{ s.web.host }}" placeholder="0.0.0.0"></label>
       <label>Web port <small class="muted">{{ b['web.port'][0] }}-{{ b['web.port'][1] }}, default 5000</small>
         <input name="web_port" type="number" min="{{ b['web.port'][0] }}" max="{{ b['web.port'][1] }}" value="{{ s.web.port }}" placeholder="5000"></label>
     </div>
+    <p class="note">This page is plain http: with 0.0.0.0 anyone on the network reaches the sign-in page and a password crosses the network unencrypted. Use 127.0.0.1 when you only open it on this PC. A change takes effect after a restart. uptime-monitor does not use this address.</p>
   </div>
   <div class="actions save-bar"><button class="primary">{{ icon('check') }}Save settings</button></div>
 </form>

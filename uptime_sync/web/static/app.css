@@ -291,6 +291,8 @@ fieldset.radio-group label.server-url { margin-left: 21px; }
 .cols { overflow: hidden; }
 .cols > label { display: inline-block; vertical-align: top; width: 48%; margin-right: 1.5%; }
 .note { color: #6b7686; color: var(--muted); font-size: 12.75px; margin: -4.5px 0 13.5px; }
+.note.warn-note { color: #c98a12; color: var(--warn); margin-top: 0; }
+.note.warn-note .ic { vertical-align: -2.25px; margin-right: 4.5px; }
 .lock { color: #c98a12; color: var(--warn); font-weight: 500; margin-left: 4.5px; }
 .actions { margin: 7.5px 0 15px; }
 .actions > * { margin-right: 9px; vertical-align: middle; }
