@@ -6,6 +6,7 @@ import ipaddress
 import logging
 import re
 import secrets
+import socket
 import time
 from urllib.parse import urlparse
 
@@ -249,6 +250,20 @@ def _status_payload():
 LOOPBACK = ('127.0.0.1', '::1', '::ffff:127.0.0.1')
 # The same rule as uptime-monitor's API_KEY_REGEX (includes/config.php).
 API_KEY_RE = re.compile(r'^[A-Za-z0-9_\-]{8,100}$')
+
+
+def new_api_key():
+    """A suggested api_key (4.0.12): this computer's name and 12 random hex
+    digits, e.g. desktop-ab12cd-3f9a1c7e2b40. The name tells the cards
+    apart; the 48 random bits make it unique and impossible to guess, which
+    matters because uptime-monitor knows an agent without an HMAC secret by
+    its key alone. Always matches API_KEY_RE."""
+    try:
+        host = socket.gethostname()
+    except (OSError, UnicodeError):
+        host = ''
+    name = re.sub(r'[^a-z0-9]+', '-', host.split('.')[0].lower())[:40].strip('-')
+    return '%s-%s' % (name or 'agent', secrets.token_hex(6))
 # Shown in place of a stored secret. The secret itself never goes into HTML;
 # a form that posts this text back keeps the stored one.
 SECRET_MASK = '********'
@@ -525,6 +540,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
     def settings_page():
         managed = settings.env_managed()
         s = settings.load()
+        saved_key = s.get('remote', {}).get('api_key', '')
         errors = []
         if request.method == 'POST':
             f = request.form
@@ -629,7 +645,17 @@ def register(app):  # noqa: C901 -- one place for the whole route table
             s = deep_merge(s, new)
             s['log_levels'] = levels
         sign_state, sign_since = signing.status(s.get('remote', {}))
+        # "Generate" next to the API key (4.0.12): ?new_key=1 shows the page
+        # with a new key in the field. Nothing is saved until Save; app.js
+        # fills the field in place from data-value instead, keeping edits.
+        key_suggestion = '' if 'remote.api_key' in managed else new_api_key()
+        new_key = (request.method == 'GET' and request.args.get('new_key') == '1'
+                   and 'remote.api_key' not in managed)
+        if new_key:
+            s = deep_merge(s, {'remote': {'api_key': key_suggestion}})
         return render_template('settings.html', s=s, managed=managed, errors=errors,
+                               key_suggestion=key_suggestion, new_key=new_key,
+                               had_key=bool(saved_key),
                                has_secret=bool(s.get('remote', {}).get('secret_key')),
                                secret_mask=SECRET_MASK, change_secret=request.args.get('secret') == 'change',
                                st=_status_payload(),

@@ -88,6 +88,7 @@
     </fieldset>
     <div class="cols">
       <label>API key <small class="muted">a name for this agent: 8-100 letters, digits, _ or -; the 3.x key keeps its card</small> {{ locked('remote.api_key') }}
+        {%- if 'remote.api_key' not in managed %} <a class="small-link" href="{{ url_for('settings_page', new_key=1) }}#reporting" data-fill="api_key" data-value="{{ key_suggestion }}" data-note="key-note">Generate</a>{% endif %}
         <input name="api_key" class="mono" value="{{ '' if 'remote.api_key' in managed else s.remote.api_key }}"{{ ' disabled' if 'remote.api_key' in managed }} autocomplete="off" maxlength="100" placeholder="e.g. grand-empire"></label>
       {# The stored secret never goes into the page: a set one shows as a locked mask. #}
       {% if 'remote.secret_key' in managed %}
@@ -102,6 +103,8 @@
         <input name="secret_key" type="password" class="mono" placeholder="{{ 'paste the new secret' if has_secret else 'paste the secret, or Generate a new secret below' }}" autocomplete="new-password"></label>
       {% endif %}
     </div>
+    {% if 'remote.api_key' not in managed %}<p class="note warn-note{{ '' if new_key else ' hidden' }}" id="key-note">{{ icon('alert', 14) }}New API key filled in, not saved yet: press Save to use it.
+      {%- if had_key %} uptime-monitor then shows this agent as a new card (paste the HMAC secret on that card too); the old card stays Offline until you delete it there.{% endif %}</p>{% endif %}
     <p class="note">Paste the same secret on this agent's card in uptime-monitor (key button). Until both sides have it, heartbeats are not verified.
       {%- if 'remote.secret_key' not in managed %} <a href="{{ url_for('new_secret') }}">{{ icon('key', 14) }}Generate a new secret</a>{% endif %}</p>
     <div class="cols">

@@ -264,6 +264,23 @@
     });
   });
 
+  // Settings: "Generate" next to the API key (data-fill = the input's name)
+  // puts the key the server suggested (data-value) into the field and shows
+  // the "not saved yet" note (data-note = its id), without leaving the page.
+  // Without this script the link reloads Settings with the key filled in.
+  each($all('[data-fill]'), function (a) {
+    on(a, 'click', function (e) {
+      var input = document.getElementsByName(a.getAttribute('data-fill'))[0];
+      var value = a.getAttribute('data-value');
+      var note = document.getElementById(a.getAttribute('data-note'));
+      if (!input || input.disabled || !value) { return true; }
+      input.value = value;
+      if (note) { setHidden(note, false); }
+      input.focus();
+      return cancel(e);
+    });
+  });
+
   // Toasts (base.html): a close button on each, and ok / info notices fade
   // out after TOAST_MS, paused while the pointer or keyboard focus is on
   // them. Warnings (form errors, refusals) stay until closed: they say what

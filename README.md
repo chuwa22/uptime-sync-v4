@@ -157,6 +157,12 @@ their own URL. Heartbeats go to the URL of the chosen one.
   certificate. It is allowed only for localhost and private or LAN addresses, for
   example `http://192.168.1.10/uptime-monitor/api/heartbeat.php`.
 
+**API key and HMAC secret** (Settings > Reporting): the API key names this agent
+(its card in uptime-monitor); the secret proves it is this agent and never leaves
+the box. *Generate* next to the API key fills in this computer's name plus 12
+random hex digits, which nobody can guess; press Save to use it. A new key gives
+the agent a new card, so paste the HMAC secret on that card too.
+
 ## Updates
 
 uptime-monitor decides **when** to update: the update mode and window, the

@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 
 from uptime_sync import monitors, paths, settings, util
-from uptime_sync.web import auth, create_app
+from uptime_sync.web import auth, create_app, views
 
 PW = 'correct horse battery'
 
@@ -133,6 +133,56 @@ class WebTests(unittest.TestCase):
         self.setup_admin()
         self.assertNotIn('href="/settings/new-secret"', self.c.get('/settings').get_data(as_text=True))
         self.assertEqual(self.c.get('/settings/new-secret').status_code, 302)
+
+    def test_generate_api_key_fills_the_field_but_saves_nothing(self):
+        self.setup_admin()
+        settings.update({'remote': {'api_key': 'old-key-1234'}})
+        html = self.c.get('/settings').get_data(as_text=True)
+        self.assertIn('href="/settings?new_key=1#reporting"', html)
+        value = re.search(r'data-fill="api_key" data-value="([^"]+)"', html).group(1)
+        self.assertRegex(value, views.API_KEY_RE)
+        self.assertIn('class="note warn-note hidden" id="key-note"', html)       # shown by JS or ?new_key=1
+        self.assertIn('value="old-key-1234"', html)
+        # Without JS the link reloads the page with a new key in the field.
+        html = self.c.get('/settings?new_key=1').get_data(as_text=True)
+        filled = re.search(r'<input name="api_key" class="mono" value="([^"]*)"', html).group(1)
+        self.assertRegex(filled, views.API_KEY_RE)
+        self.assertNotEqual(filled, 'old-key-1234')
+        self.assertIn('class="note warn-note" id="key-note"', html)
+        self.assertIn('new card', html)                                          # a key was set before
+        self.assertEqual(settings.load()['remote']['api_key'], 'old-key-1234')   # nothing saved
+
+    def test_generate_api_key_first_key_has_no_new_card_warning(self):
+        self.setup_admin()
+        html = self.c.get('/settings?new_key=1').get_data(as_text=True)
+        self.assertIn('id="key-note"', html)
+        self.assertNotIn('new card', html)
+
+    def test_generate_api_key_hidden_when_env_manages_it(self):
+        with open(paths.ENV_FILE, 'w') as f:
+            f.write('UPTIME_API_KEY=envkey-12345678\n')
+        self.setup_admin()
+        for path in ('/settings', '/settings?new_key=1'):
+            html = self.c.get(path).get_data(as_text=True)
+            self.assertNotIn('data-fill=', html, path)
+            self.assertNotIn('id="key-note"', html, path)
+            self.assertNotIn('envkey-12345678', html, path)                      # .env values never in HTML
+
+    def test_new_api_key_always_valid_and_unique(self):
+        names = ['DESKTOP-AB12CD', 'Weerachats-MacBook-Pro.local', '', '...', 'x' * 300,
+                 '\u0e23\u0e49\u0e32\u0e19', 'a b_c', 'POS-01.corp.example']
+        for name in names:
+            with mock.patch('socket.gethostname', return_value=name):
+                key = views.new_api_key()
+            self.assertRegex(key, views.API_KEY_RE, name)
+            self.assertFalse(key.startswith('-'), name)
+        with mock.patch('socket.gethostname', return_value='Weerachats-MacBook-Pro.local'):
+            self.assertTrue(views.new_api_key().startswith('weerachats-macbook-pro-'))
+        with mock.patch('socket.gethostname', side_effect=OSError):
+            self.assertTrue(views.new_api_key().startswith('agent-'))
+        with mock.patch('socket.gethostname', return_value=''):
+            self.assertTrue(views.new_api_key().startswith('agent-'))
+        self.assertNotEqual(views.new_api_key(), views.new_api_key())
 
     def test_viewer_is_read_only(self):
         self.setup_admin()
