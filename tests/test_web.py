@@ -324,17 +324,56 @@ class WebTests(unittest.TestCase):
         for key, value in st['text'].items():
             self.assertIn('data-field="%s">%s<' % (key, value), html)
 
-    def test_uptime_comes_from_status_then_history(self):
+    def test_uptime_comes_from_status_recent_then_history(self):
         self.setup_admin()
         a = monitors.normalize({'name': 'a', 'type': 'PING', 'target': '192.0.2.1'})
         b = monitors.normalize({'name': 'b', 'type': 'PING', 'target': '192.0.2.2'})
         monitors.save([a, b])
         util.atomic_write_json(paths.STATUS_FILE, {'updated_at': 'x', 'monitors': {
-            a['id']: {'ok': True, 'uptime': 99.5},     # this engine
-            b['id']: {'ok': False}}})                  # an engine before 4.0.9
+            a['id']: {'ok': True, 'recent': [[1, 1, 5], [2, 1, 5], [3, 1, 5], [4, 0, 0]]},  # this engine
+            b['id']: {'ok': False, 'uptime': 99.5}}})                                    # an older engine
         util.atomic_write_json(paths.HISTORY_FILE, {a['id']: [[1, 0, 0]], b['id']: [[1, 1, 0], [2, 0, 0]]})
         rows = {r['name']: r for r in json.loads(self.c.get('/api/status').get_data(as_text=True))['monitors']}
-        self.assertEqual((rows['a']['uptime'], rows['b']['uptime']), (99.5, 50.0))
+        self.assertEqual((rows['a']['uptime'], rows['b']['uptime']), (75.0, 50.0))
+        self.assertEqual((rows['a']['uptime_tone'], rows['b']['uptime_tone']), ('down', 'down'))
+
+    def test_history_bars_and_uptime_cover_the_same_checks(self):
+        # 40 checks: the 10 oldest down, the last 30 up -> 30 green bars and
+        # 100%, not the 75% the whole history would give.
+        self.setup_admin()
+        a = monitors.normalize({'name': 'a', 'type': 'PING', 'target': '192.0.2.1'})
+        n = monitors.normalize({'name': 'n', 'type': 'PING', 'target': '192.0.2.2'})
+        monitors.save([a, n])
+        recent = [[1700000000 + i * 30, 0 if i < 10 else 1, 12] for i in range(40)]
+        util.atomic_write_json(paths.STATUS_FILE, {'updated_at': 'x', 'monitors': {
+            a['id']: {'ok': True, 'recent': recent}}})
+        rows = {r['name']: r for r in json.loads(self.c.get('/api/status').get_data(as_text=True))['monitors']}
+        bars = rows['a']['bars']
+        self.assertEqual(len(bars), util.UPTIME_BARS)
+        self.assertEqual(set(b['s'] for b in bars), {'up'})
+        self.assertTrue(bars[-1]['t'].endswith(' - 12 ms'))
+        self.assertEqual((rows['a']['uptime'], rows['a']['uptime_tone']), (100.0, 'up'))
+        self.assertEqual(rows['a']['bars_label'], 'Last 30 checks: 30 up, 0 down')
+        # A monitor never checked: 30 grey slots, no uptime.
+        self.assertEqual(set(b['s'] for b in rows['n']['bars']), {'none'})
+        self.assertIsNone(rows['n']['uptime'])
+        self.assertEqual(rows['n']['bars_label'], 'No checks yet')
+        html = self.c.get('/').get_data(as_text=True)
+        self.assertEqual(html.count('<i class="bar up" title='), 30)
+        self.assertEqual(html.count('<i class="bar none">'), 30)
+        self.assertIn('<span class="pct up">100.0%</span>', html)
+        self.assertIn('<th class="hist">History</th>', html)
+
+    def test_history_bars_pad_left_and_skip_junk(self):
+        from uptime_sync.web import views
+        bars = views.history_bars([[1700000000, 0, 0], ['x', 1, 5], [1700000030, 1]])
+        self.assertEqual([b['s'] for b in bars[-2:]], ['down', 'up'])
+        self.assertEqual(len(bars), util.UPTIME_BARS)
+        self.assertEqual(bars[0], {'s': 'none', 't': ''})
+        self.assertTrue(bars[-2]['t'].endswith(' - DOWN'))
+        self.assertEqual(views.bars_uptime(bars), 50.0)
+        self.assertEqual([views.uptime_tone(p) for p in (100.0, 99.0, 98.9, 95.0, 94.9, None)],
+                         ['up', 'up', 'warn', 'warn', 'down', ''])
 
     def _sort_fixture(self):
         self.setup_admin()
@@ -343,9 +382,13 @@ class WebTests(unittest.TestCase):
                                ('web', 'HTTPS', 'example.com'), ('new', 'PING', '192.0.2.9'))]
         monitors.save(ms)
         util.atomic_write_json(paths.STATUS_FILE, {'updated_at': 'x', 'monitors': {
-            ms[0]['id']: {'ok': True, 'ms': 30, 'uptime': 99.0, 'checked_at': '2026-11-07T07:00:02+07:00'},
-            ms[1]['id']: {'ok': False, 'ms': 0, 'uptime': 55.8, 'checked_at': '2026-11-07T07:00:09+07:00'},
-            ms[2]['id']: {'ok': True, 'ms': 120, 'uptime': 100.0, 'checked_at': '2026-11-07T07:00:05+07:00'}}})
+            # uptime comes from 'recent': dns10 96.7, dns2 50.0, web 100.0
+            ms[0]['id']: {'ok': True, 'ms': 30, 'recent': [[i, 1 if i else 0, 30] for i in range(30)],
+                          'checked_at': '2026-11-07T07:00:02+07:00'},
+            ms[1]['id']: {'ok': False, 'ms': 0, 'recent': [[1, 1, 5], [2, 0, 0]],
+                          'checked_at': '2026-11-07T07:00:09+07:00'},
+            ms[2]['id']: {'ok': True, 'ms': 120, 'recent': [[1, 1, 120]],
+                          'checked_at': '2026-11-07T07:00:05+07:00'}}})
 
     def names(self, query=''):
         st = json.loads(self.c.get('/api/status' + query).get_data(as_text=True))

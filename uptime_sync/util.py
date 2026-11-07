@@ -342,13 +342,23 @@ def remove_quietly(path):
         return False
 
 
+UPTIME_BARS = 30   # history bars on the dashboard; Uptime % counts these checks only
+
+
+def recent_checks(history):
+    """The last UPTIME_BARS [time, ok, ms] entries of a monitor's history:
+    what the dashboard draws as bars and the only checks Uptime % counts,
+    so the number always matches the bars beside it."""
+    return list(history or [])[-UPTIME_BARS:]
+
+
 def uptime_pct(history):
-    """Percent of [time, ok, ms] entries that were up, one decimal; None
-    when there are none. The engine puts it in run/status.json and the web
-    uses it only when an older engine's status has no 'uptime'."""
-    if not history:
+    """Percent of the last UPTIME_BARS [time, ok, ms] entries that were up,
+    one decimal; None when there are none."""
+    h = recent_checks(history)
+    if not h:
         return None
-    return round(100.0 * sum(1 for h in history if h[1]) / len(history), 1)
+    return round(100.0 * sum(1 for e in h if e[1]) / len(h), 1)
 
 
 _session_class = None

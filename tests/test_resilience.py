@@ -666,8 +666,24 @@ class EngineWatchTests(unittest.TestCase):
         self.e._write_status()
         st = util.read_json(paths.STATUS_FILE)
         self.assertEqual(st['monitors'][a['id']]['uptime'], 75.0)
+        self.assertEqual(st['monitors'][a['id']]['recent'], [[1, 1, 5], [2, 1, 5], [3, 0, 0], [4, 1, 5]])
         self.assertIsNone(st['monitors']['new']['uptime'])
+        self.assertEqual(st['monitors']['new']['recent'], [])
         self.assertEqual(util.uptime_pct([]), None)
+
+    def test_uptime_counts_only_the_recent_checks(self):
+        # The dashboard draws the last UPTIME_BARS checks; uptime must count
+        # the same ones, not the whole 120-entry history.
+        a = monitors.normalize({'name': 'a', 'type': 'PING', 'target': '192.0.2.1'})
+        old = [[i, 0, 0] for i in range(50)]
+        new = [[50 + i, 1, 5] for i in range(util.UPTIME_BARS)]
+        self.e.results = {a['id']: {'ok': True}}
+        self.e.history = {a['id']: old + new}
+        self.e._write_status()
+        st = util.read_json(paths.STATUS_FILE)['monitors'][a['id']]
+        self.assertEqual((st['uptime'], len(st['recent'])), (100.0, util.UPTIME_BARS))
+        self.assertEqual(st['recent'][0], [50, 1, 5])
+        self.assertEqual(util.uptime_pct(old + new[:1]), round(100.0 / util.UPTIME_BARS, 1))
 
 
 class AttemptLimitTests(unittest.TestCase):

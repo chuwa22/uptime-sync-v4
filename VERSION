@@ -1,5 +1,8 @@
 4.0.9
 2026-11-05
+- Feature (Dashboard): a History column of bars, one per check, the last 30 (oldest left; green up, red down, grey not checked yet). Hover a bar for its time and response time. Uptime is now a coloured badge (green >= 99%, amber >= 95%, red below) and counts exactly those 30 checks, so the number always matches the bars beside it (it used to count the whole 120-check history).
+  - The engine sends the 30 checks in run/status.json (`recent`), so the bars move with the 15 s refresh; a web UI next to an older engine falls back to history.json.
+  - Phones: the bars take their own line in each card. Tablets (641-1000px): thinner bars and no Type column (it stays on the Monitors page), so the table fits a 768px screen. Plain inline-block, so IE8 draws them too.
 - Improvement (Settings): a shorter page.
   - The per-part log level table folds into one line ("Per-part levels: every part follows Log level", Show/Hide). It opens by itself, naming the parts, when any part has its own level. Without JavaScript (or in IE8) it is open, as before.
   - "Generate a new secret" moved next to the HMAC secret note in Reporting. It opens a confirm page first (`GET /settings/new-secret`); only its POST makes the secret. The separate card at the bottom is gone. Hidden when data/.env manages the secret.

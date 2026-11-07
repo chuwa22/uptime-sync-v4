@@ -16,8 +16,8 @@ import requests
 
 from . import __version__, heartbeat, log as logsetup, loglevel, monitors, paths, procs, settings, updater
 from .checks import Checker
-from .util import (atomic_write_json, get_following, http_session, is_newer, iso_now, read_json, redact, uptime_pct,
-                   remove_quietly, url_host)
+from .util import (atomic_write_json, get_following, http_session, is_newer, iso_now, read_json, recent_checks,
+                   redact, remove_quietly, uptime_pct, url_host)
 
 log = logging.getLogger('engine')
 
@@ -434,12 +434,13 @@ class Engine:
     def _write_status(self):
         hb = self.heartbeat
         with self._lock:
-            # uptime from the in-memory history: history.json is written only
-            # every HISTORY_SAVE_EVERY cycles, so the dashboard lagged by up to
-            # ten minutes when it read the file.
+            # recent checks + uptime from the in-memory history: history.json
+            # is written only every HISTORY_SAVE_EVERY cycles, so the dashboard
+            # lagged by up to ten minutes when it read the file.
             results = {}
             for k, v in self.results.items():
-                results[k] = dict(v, uptime=uptime_pct(self.history.get(k)))
+                recent = recent_checks(self.history.get(k))
+                results[k] = dict(v, recent=recent, uptime=uptime_pct(recent))
         try:
             atomic_write_json(paths.STATUS_FILE, {
                 'updated_at': iso_now(), 'version': __version__, 'pid': os.getpid(),

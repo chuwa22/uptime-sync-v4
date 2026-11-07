@@ -359,6 +359,37 @@
     setText(td, text);
     return td;
   }
+  // Uptime badge and history bars: same markup as dashboard.html.
+  function uptimeCell(m) {
+    var td = document.createElement('td');
+    td.className = 'num';
+    td.setAttribute('data-label', 'Uptime');
+    if (m.uptime === null || m.uptime === undefined) { setText(td, '-'); return td; }
+    var badge = document.createElement('span');
+    badge.className = 'pct ' + (m.uptime_tone || '');
+    setText(badge, m.uptime + '%');
+    td.appendChild(badge);
+    return td;
+  }
+  function barsCell(m) {
+    var td = document.createElement('td');
+    var wrap = document.createElement('span');
+    var j, b, bar, bars = m.bars || [];
+    td.className = 'hist';
+    td.setAttribute('data-label', 'History');
+    wrap.className = 'bars';
+    wrap.setAttribute('role', 'img');
+    wrap.setAttribute('aria-label', m.bars_label || '');
+    for (j = 0; j < bars.length; j++) {
+      b = bars[j];
+      bar = document.createElement('i');
+      bar.className = 'bar ' + b.s;
+      if (b.t) { bar.setAttribute('title', b.t); }
+      wrap.appendChild(bar);
+    }
+    td.appendChild(wrap);
+    return td;
+  }
   function render(st) {
     var i, m, tiles = $all('[data-tile]');
     // The server decides each tile's colour (views.tones); just apply it.
@@ -380,7 +411,7 @@
     if (!st.monitors.length) {
       var empty = document.createElement('tr');
       var etd = cell('No monitors yet.', 'empty');
-      etd.setAttribute('colSpan', '7');
+      etd.setAttribute('colSpan', '8');
       empty.appendChild(etd);
       body.appendChild(empty);
       return;
@@ -396,10 +427,11 @@
       td.appendChild(pill);
       tr.appendChild(td);
       tr.appendChild(cell(m.name, 'title'));
-      tr.appendChild(cell(m.type, '', 'Type'));
+      tr.appendChild(cell(m.type, 'c-type', 'Type'));
       tr.appendChild(cell(m.target, 'mono', 'Target'));
       tr.appendChild(cell(m.ms === null || m.ms === undefined ? '-' : m.ms + ' ms', 'num', 'Response'));
-      tr.appendChild(cell(m.uptime === null || m.uptime === undefined ? '-' : m.uptime + '%', 'num', 'Uptime'));
+      tr.appendChild(uptimeCell(m));
+      tr.appendChild(barsCell(m));
       tr.appendChild(cell(m.checked_at ? m.checked_at.slice(11, 19) : '-', 'muted', 'Checked'));
       body.appendChild(tr);
     }

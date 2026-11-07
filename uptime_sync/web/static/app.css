@@ -208,6 +208,30 @@ table.grid td.title a { font-weight: 600; }
 .pill.down:before { background: #d64545; background: var(--down); }
 .pill.unknown { color: #8a5a00; color: var(--warn-ink); background: #f8eedb; background: rgba(201, 138, 18, .16); }
 .pill.unknown:before { background: #c98a12; background: var(--warn); }
+/* Dashboard history: one bar per check, the last 30 (util.UPTIME_BARS),
+   oldest left. Uptime % beside it counts the same 30. inline-block only,
+   so IE8 draws them too. */
+table.grid td.hist { white-space: nowrap; }
+.bars { display: inline-block; white-space: nowrap; line-height: 0; vertical-align: middle; }
+.bar { display: inline-block; width: 5px; height: 18px; margin-right: 2px; border-radius: 2px;
+  background: #e2e7ee; background: var(--line); }
+.bar.up { background: #1f9d55; background: var(--up); }
+.bar.down { background: #d64545; background: var(--down); }
+.bar.up:hover, .bar.down:hover { opacity: .7; }
+/* Tablets: thinner bars (120px instead of 208px), tighter cells and no Type
+   column (the Monitors page has it), so the dashboard fits a 768px screen
+   without squeezing the name. Phones stack the rows and show Type again. */
+@media (max-width: 1000px) {
+  .bar { width: 3px; margin-right: 1px; }
+  table.dash th, table.dash td { padding-left: 9px; padding-right: 9px; }
+}
+@media (min-width: 641px) and (max-width: 1000px) {
+  table.dash .c-type { display: none; }
+}
+.pct { display: inline-block; padding: 2.25px 8.25px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.pct.up { color: #157347; color: var(--up-ink); background: #e4f4ea; background: rgba(31, 157, 85, .14); }
+.pct.warn { color: #8a5a00; color: var(--warn-ink); background: #f8eedb; background: rgba(201, 138, 18, .16); }
+.pct.down { color: #b42318; color: var(--down-ink); background: #fbe9e9; background: rgba(214, 69, 69, .14); }
 .pill.role { color: #2f6fe4; color: var(--accent); background: #e8f0fd; background: rgba(47, 111, 228, .12); }
 .pill.role:before { display: none; }
 
@@ -466,6 +490,8 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
     table.stack td.lead { order: -1; }
     table.levels td.lead { width: auto; flex: 0 0 165px; }
     table.stack td.wide, table.stack td.empty, table.stack td.row-actions { flex-basis: 100%; }
+    table.stack td.hist { flex-basis: 100%; }
+    .bar { width: 4px; margin-right: 2px; }
     table.stack td.empty { text-align: center; }
     table.stack td.row-actions { text-align: left; white-space: normal; }
     table.stack td[data-label]::before { content: attr(data-label); margin-right: 6px;

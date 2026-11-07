@@ -1,6 +1,7 @@
 """Routes. Every state-changing route is POST (CSRF-checked in
 __init__.csrf_guard) and admin-only."""
 
+import datetime
 import ipaddress
 import logging
 import re
@@ -11,7 +12,8 @@ from urllib.parse import urlparse
 from flask import abort, flash, jsonify, redirect, render_template, request, session, url_for
 
 from .. import __version__, log as logsetup, loglevel, logstore, monitors, paths, procs, settings, signing, updater
-from ..util import active_server_url, deep_merge, is_local_host, is_local_server, read_json, touch, uptime_pct
+from ..util import (UPTIME_BARS, active_server_url, deep_merge, is_local_host, is_local_server, read_json,
+                    recent_checks, touch)
 from . import auth
 
 log = logging.getLogger('web')
@@ -155,26 +157,66 @@ def sort_rows(rows, sorts, key, direction):
     return have + [r for r in rows if fn(r) is None]
 
 
+def uptime_tone(pct):
+    """Colour of the Uptime badge: up >= 99, warn >= 95, else down."""
+    if pct is None:
+        return ''
+    return 'up' if pct >= 99 else 'warn' if pct >= 95 else 'down'
+
+
+def history_bars(recent):
+    """UPTIME_BARS slots, oldest first, for the dashboard's history bars:
+    {'s': 'up'|'down'|'none', 't': tooltip}. Missing checks pad the left as
+    'none', so a new monitor fills in from the right like Uptime Kuma."""
+    bars = []
+    for e in recent[-UPTIME_BARS:]:
+        try:
+            at = datetime.datetime.fromtimestamp(int(e[0])).strftime('%Y-%m-%d %H:%M:%S')
+            ok, ms = bool(e[1]), int(e[2]) if len(e) > 2 else 0
+        except (TypeError, ValueError, IndexError, OverflowError, OSError):
+            continue
+        bars.append({'s': 'up' if ok else 'down', 't': '%s - %s' % (at, '%d ms' % ms if ok else 'DOWN')})
+    return [{'s': 'none', 't': ''}] * (UPTIME_BARS - len(bars)) + bars
+
+
+def bars_uptime(bars):
+    """Uptime % of exactly the checks the bars show; None when there are none.
+    Same rounding as util.uptime_pct, which the engine writes to status."""
+    up = len([b for b in bars if b['s'] == 'up'])
+    down = len([b for b in bars if b['s'] == 'down'])
+    return round(100.0 * up / (up + down), 1) if up + down else None
+
+
+def _bars_label(bars):
+    up = len([b for b in bars if b['s'] == 'up'])
+    down = len([b for b in bars if b['s'] == 'down'])
+    if not up + down:
+        return 'No checks yet'
+    return 'Last %d checks: %d up, %d down' % (up + down, up, down)
+
+
 def _status_payload():
     status, alive = _engine_state()
     results = status.get('monitors', {})
-    history = None     # history.json only for an engine that predates status 'uptime'
+    history = None     # history.json only for an engine that predates status 'recent'
     rows = []
     for m in monitors.load():
         r = results.get(m['id'], {})
-        if 'uptime' in r:
-            uptime = r['uptime']
-        else:
+        recent = r.get('recent')
+        if not isinstance(recent, list):
             if history is None:
                 history = read_json(paths.HISTORY_FILE, {}) or {}
-            uptime = uptime_pct(history.get(m['id'], []))
+            recent = recent_checks(history.get(m['id'], []))
+        bars = history_bars(recent)
+        uptime = bars_uptime(bars)
         rows.append({
             'id': m['id'], 'name': m['name'], 'type': m['type'], 'target': m['target'],
             'enabled': m['enabled'],
             'state': ('paused' if not m['enabled'] else
                       'unknown' if 'ok' not in r else 'up' if r['ok'] else 'down'),
             'ms': r.get('ms'), 'checked_at': r.get('checked_at', ''),
-            'uptime': uptime,
+            'uptime': uptime, 'uptime_tone': uptime_tone(uptime),
+            'bars': bars, 'bars_label': _bars_label(bars),
         })
     s = settings.load()
     hb = status.get('heartbeat', {})
