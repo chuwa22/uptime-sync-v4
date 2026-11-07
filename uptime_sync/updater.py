@@ -318,13 +318,35 @@ def _undo(moved_out, out_dir, moved_in, in_dir):
     return problems
 
 
+# What the OS autostart needs to reach recover_interrupted(): main.py, and
+# the package it imports. A kill while either is out of ROOT leaves an
+# install nothing can start, so they leave last and come back first (4.0.11).
+# Launcher.bat goes with them: it is what tells the user, in that state,
+# where the old code is.
+_BOOT = ('uptime_sync', 'main.py', 'Launcher.bat')
+
+
+def _boot_last(names):
+    """names with _BOOT at the end (Launcher.bat the very last): the order
+    for moving OUT of ROOT. reversed() of it is the order for moving back."""
+    return [n for n in names if n not in _BOOT] + [n for n in _BOOT if n in names]
+
+
+def _boot_first(names):
+    """names with Launcher.bat, main.py, then uptime_sync first: the order
+    for moving IN."""
+    return list(reversed([n for n in _BOOT if n in names])) + [n for n in names if n not in _BOOT]
+
+
 def _swap(names_out, out_dir, in_dir, names_in):
     """ROOT/names_out -> out_dir, then in_dir/names_in -> ROOT. All or
-    nothing: on any error the moves are undone and the error re-raised."""
+    nothing: on any error the moves are undone and the error re-raised.
+    Every move out still precedes every move in (recovery relies on it);
+    within each, the _BOOT names are out for as few moves as possible."""
     moved_out, moved_in = [], []
     try:
-        _move(names_out, paths.ROOT, out_dir, moved_out)
-        _move(names_in, in_dir, paths.ROOT, moved_in)
+        _move(_boot_last(names_out), paths.ROOT, out_dir, moved_out)
+        _move(_boot_first(names_in), in_dir, paths.ROOT, moved_in)
     except Exception:
         if not _undo(moved_out, out_dir, moved_in, in_dir):
             _drop_failed_attempt(out_dir)

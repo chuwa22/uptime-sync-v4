@@ -277,5 +277,80 @@ class RestoreRerunTests(_FakeInstall):
         self.assert_cleaned(backup)
 
 
+
+class BootOrderTests(_FakeInstall):
+    """main.py and uptime_sync are out of ROOT for as few moves as possible:
+    they leave last and come back first, in an update and in a rollback."""
+
+    def setUp(self):
+        super().setUp()
+        quiet(self, 'update')
+
+    stage_zip = RestoreRerunTests.stage_zip
+    applied = RestoreRerunTests.applied
+
+    def moves(self):
+        real = os.replace
+        seen = []
+
+        def spy(src, dst):
+            seen.append((src, dst))
+            return real(src, dst)
+        return seen, mock.patch('os.replace', spy)
+
+    def check(self, seen):
+        root = os.path.normcase(os.path.abspath(paths.ROOT))
+
+        def parent(path):
+            return os.path.normcase(os.path.dirname(os.path.abspath(path)))
+        out = [os.path.basename(src) for src, dst in seen if parent(src) == root]
+        came = [os.path.basename(dst) for src, dst in seen if parent(dst) == root]
+        boot = [n for n in updater._BOOT if n in out]
+        self.assertIn('main.py', boot)
+        self.assertEqual(out[-len(boot):], boot)
+        self.assertEqual(came[:len(boot)], list(reversed(boot)))
+
+    def test_update_moves_boot_files_last_out_first_in(self):
+        self.stage_zip(zip_with(_read('requirements.txt')))
+        seen, spy = self.moves()
+        with spy, mock.patch.object(updater, '_smoke_test', return_value=(True, '')):
+            self.assertEqual(updater.apply(), NEXT)
+        self.check(seen)
+
+    def test_rollback_moves_boot_files_last_out_first_in(self):
+        self.applied(new_requirements=False)
+        seen, spy = self.moves()
+        with spy:
+            self.assertTrue(updater.rollback('test'))
+        self.check(seen)
+        self.assertEqual(read(os.path.join(paths.ROOT, 'main.py')), '# old\n')
+
+    def test_launcher_names_a_cut_off_update(self):
+        with open(os.path.join(_env.REPO, 'Launcher.bat'), 'rb') as f:
+            bat = f.read().decode('ascii')
+        self.assertIn('if not exist "%MAIN%" set "NOCODE=1"', bat)
+        self.assertIn('backups\\', bat)
+        # The Launcher itself must still be there in that state.
+        names = sorted(paths.SHIPPED)
+        self.assertEqual(updater._boot_last(names)[-3:], ['uptime_sync', 'main.py', 'Launcher.bat'])
+        self.assertEqual(updater._boot_first(names)[:3], ['Launcher.bat', 'main.py', 'uptime_sync'])
+        self.assertEqual(sorted(updater._boot_last(names)), names)
+
+
+class VenvCfgEncodingTests(unittest.TestCase):
+    def test_non_ascii_home_read_as_utf8(self):
+        # venv writes pyvenv.cfg as UTF-8; a home with a Thai name must
+        # still be found (it was read with the locale codec).
+        _env.reset()
+        home = os.path.join(paths.DATA_DIR, 'Python \u0e17\u0e14\u0e2a\u0e2d\u0e1a')
+        os.makedirs(home)
+        cfg = os.path.join(paths.VENV_DIR, 'pyvenv.cfg')
+        self.addCleanup(shutil.rmtree, paths.VENV_DIR, True)
+        write_bytes(cfg, ('home = %s\n' % home).encode('utf-8'))
+        self.assertEqual(paths.venv_home_missing(), '')
+        write_bytes(cfg, b'home = \xff\xfe broken\n')
+        self.assertEqual(paths.venv_home_missing(), '')
+
+
 if __name__ == '__main__':
     unittest.main()

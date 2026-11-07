@@ -298,7 +298,10 @@ when set (the tests use this), else the checkout folder.
   - `updater.apply()` writes status `Applying` before the first move, and
     `updater.recover_interrupted()` runs at every supervisor start, right after
     the lock. Every move out happens before any move in. Keep that order, because
-    recovery relies on it to tell old files from new ones.
+    recovery relies on it to tell old files from new ones. Within each half,
+    `_BOOT` (uptime_sync, main.py, Launcher.bat) moves out last and in first
+    (4.0.11): while main.py is gone nothing can start to run the recovery, and
+    Launcher.bat is what tells the user where the old code is.
   - A restore (`rollback()`, or `recover_interrupted()` undoing an
     install) is re-runnable (4.0.11): `_save_record()` writes
     `rolling_back` {backup, trash, back, out} before it moves anything, and a

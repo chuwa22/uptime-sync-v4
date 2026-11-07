@@ -72,13 +72,15 @@ def venv_home_missing():
     from a Mac to a Windows box) has the other machine's home, and its
     python fails before any Python code runs ("No Python at ...")."""
     try:
-        with open(os.path.join(VENV_DIR, 'pyvenv.cfg')) as f:
+        # venv writes it as UTF-8; the locale codec (cp1252) would garble a
+        # non-ASCII home and report a working .venv as copied (4.0.11).
+        with open(os.path.join(VENV_DIR, 'pyvenv.cfg'), encoding='utf-8') as f:
             for line in f:
                 key, sep, value = line.partition('=')
                 if sep and key.strip().lower() == 'home':
                     home = value.strip()
                     return '' if not home or os.path.isdir(home) else home
-    except (OSError, UnicodeDecodeError):
+    except (OSError, ValueError):
         pass
     return ''
 

@@ -8,6 +8,9 @@
   - The final state ("Failed", rolled back to the old version) is written before pip and clean-up; pip and the leftover folders are finished at the next start when that was cut short.
   - When the state cannot be written (full disk), nothing is deleted: the backup stays for the next start.
   - An empty backup next to code that is not the old version is left alone (RollbackFailed) instead of being swapped.
+- Improvement (update swap): main.py, uptime_sync and Launcher.bat leave the folder last and come back first, in an update and in a rollback. A power cut in the middle of a swap used to be able to leave no main.py (it moved out early and back late), and then nothing could start to put the old code back.
+  - Launcher.bat says so when main.py or uptime_sync\ is missing, and where the copy is (the newest backups\v<version>-<date> folder).
+- Fixed (copied .venv check): .venv/pyvenv.cfg is read as UTF-8, as venv writes it. A Python installed under a non-ASCII path no longer looks like a .venv copied from another machine.
 - Improvement (log volume): an update waiting for its window (scheduled) or for Install (manual) is logged at INFO once per offer, then at DEBUG. It used to log INFO on every heartbeat.
 4.0.10
 2026-11-07

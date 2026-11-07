@@ -102,6 +102,15 @@ echo    Uptime Sync %VER%  -  control panel
 echo    %HERE%
 echo  ==========================================================
 if not exist "%PY%" echo    [WARN] Not installed yet - no .venv here. Choose I.
+rem An update cut off mid-swap (power cut) can leave no main.py: nothing
+rem then starts to put the old code back. Say where the copy is.
+set "NOCODE="
+if not exist "%MAIN%" set "NOCODE=1"
+if not exist "%HERE%uptime_sync\__init__.py" set "NOCODE=1"
+if defined NOCODE echo    [ERROR] main.py or uptime_sync\ is missing - an update was cut off.
+if defined NOCODE echo            Copy back the files of the newest backups\v^<version^>-^<date^>
+if defined NOCODE echo            folder - not a failed-v or interrupted-v one, those hold the
+if defined NOCODE echo            new build - then choose I. data\ is not touched by an update.
 rem A .venv copied from another machine (folder synced from a Mac) points
 rem at that machine's Python: its python.exe fails with "No Python at ...".
 rem Read home from pyvenv.cfg with for /f, a built-in - no process.
