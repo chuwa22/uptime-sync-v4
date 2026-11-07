@@ -341,7 +341,11 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         from flask import session
         name, _ = auth.current_user()
         if name:
-            auth.revoke_sessions(name)
+            try:
+                auth.revoke_sessions(name)
+            except OSError as e:
+                # users.json held for a moment: this browser still signs out.
+                log.warning('Sign-out of %s could not end the other sessions: %s', name, e)
         session.clear()
         return redirect(url_for('login'))
 
@@ -387,8 +391,20 @@ def register(app):  # noqa: C901 -- one place for the whole route table
 
     # -- monitors --------------------------------------------------------------
 
+    def _monitors_for_change():
+        """monitors.json for a change that is saved back. Unreadable right
+        now (held by another program): change nothing and say so, instead
+        of saving the change over an empty list (4.0.11)."""
+        try:
+            return monitors.load(strict=True)
+        except OSError as e:
+            log.warning('monitors.json could not be read, nothing changed: %s', e)
+            flash('monitors.json could not be read just now (another program may hold it) - '
+                  'nothing was changed. Try again.', 'warn')
+            abort(redirect(url_for('monitors_list')))
+
     def _find(mid):
-        items = monitors.load()
+        items = _monitors_for_change()
         for i, m in enumerate(items):
             if m['id'] == mid:
                 return items, i
@@ -447,7 +463,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                 continue
             if not value.isdigit() or not lo <= int(value) <= hi:
                 errors.append('%s must be a whole number from %d to %d.' % (label, lo, hi))
-        items = monitors.load()
+        items = _monitors_for_change()
         if any(o['name'].lower() == m['name'].lower() and o['id'] != m['id'] for o in items):
             errors.append('Another monitor already has that name.')
         if errors:
@@ -595,7 +611,16 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                                (new['web']['host'] or s['web'].get('host')) != s['web'].get('host'))
                 if not new['web']['host']:
                     del new['web']['host']
-                merged = deep_merge(settings.load(), new)
+                try:
+                    current = settings.load(strict=True)
+                except OSError as e:
+                    # Saving over a read that failed would put every other
+                    # setting back to its default (4.0.11).
+                    log.warning('settings.json could not be read, nothing saved: %s', e)
+                    flash('settings.json could not be read just now (another program may hold '
+                          'it) - nothing was saved. Try again.', 'warn')
+                    return redirect(url_for('settings_page'))
+                merged = deep_merge(current, new)
                 merged['log_levels'] = levels   # replaced, not merged: '' removes an override
                 settings.save(merged)
                 flash('Settings saved.' + (' Restart the service for the new web address to take '
@@ -622,7 +647,12 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         if request.method == 'GET':        # the confirm step; only a POST changes anything
             return render_template('secret.html', secret=None)
         secret = secrets.token_urlsafe(32)
-        settings.update({'remote': {'secret_key': secret}})
+        try:
+            settings.update({'remote': {'secret_key': secret}})
+        except OSError as e:
+            log.warning('settings.json could not be read, no new secret: %s', e)
+            flash('settings.json could not be read just now - no new secret was made. Try again.', 'warn')
+            return redirect(url_for('settings_page'))
         return render_template('secret.html', secret=secret)
 
     # -- account / logs --------------------------------------------------------

@@ -60,6 +60,7 @@ class Engine:
         self.monitors = []
         self._monitor_stamp = None
         self._woken_for = None               # the stamp _watch last woke the loop for
+        self._settings_mtime = False         # settings.json mtime as _watch last saw it (False: not yet)
         self.results = {}
         h = read_json(paths.HISTORY_FILE, {})
         self.history = h if isinstance(h, dict) else {}
@@ -127,6 +128,7 @@ class Engine:
         while not self.stop_event.wait(1.0):
             loglevel.refresh()
             self._wake_on_monitor_change()
+            self._wake_on_interval_change()
             busy = self._hb_busy_since
             if busy is not None and time.monotonic() - busy > HEARTBEAT_STUCK_SECONDS:
                 # requests' timeout is per read: a server that trickles its
@@ -159,6 +161,27 @@ class Engine:
             except OSError:
                 out.append(None)
         return tuple(out)
+
+    def _wake_on_interval_change(self):
+        """A saved check_interval takes effect now, not after a sleep of the
+        old one (up to an hour): end the wait when settings.json changed and
+        its interval differs from the one in use (4.0.11)."""
+        try:
+            mtime = os.path.getmtime(paths.SETTINGS_FILE)
+        except OSError:
+            mtime = None
+        if self._settings_mtime is False or mtime == self._settings_mtime:
+            self._settings_mtime = mtime       # the first look only records it
+            return
+        try:
+            # strict: a held file must not read as the default interval
+            interval = settings.load(strict=True)['check_interval']
+        except OSError:
+            return                             # stamp not kept: look again in a second
+        self._settings_mtime = mtime
+        if interval != self.settings.get('check_interval'):
+            log.info('check_interval changed to %ds - starting a cycle now', interval)
+            self._wake.set()
 
     def _wake_on_monitor_change(self):
         """monitors.json or data/.env changed since the last load: end the
@@ -447,6 +470,9 @@ class Engine:
             atomic_write_json(paths.STATUS_FILE, {
                 'updated_at': iso_now(), 'version': __version__, 'pid': os.getpid(),
                 'started_at': int(self.start_time), 'monitors': results,
+                # The interval this engine is cycling on: the supervisor's
+                # stall check must not use a lower one saved since (4.0.11).
+                'check_interval': self.settings.get('check_interval'),
                 'heartbeat': {'last_ok': hb.last_ok, 'failures': hb.failures, 'error': hb.last_error,
                               'last_try': hb.last_try},
             })
@@ -537,9 +563,15 @@ class Engine:
         level = loglevel.normalize((reply.get('settings') or {}).get('log_level'))
         current = settings.load()
         if level and level != current.get('log_level'):
-            log.warning('Log level set by server: %s -> %s', current.get('log_level'), level)
-            settings.update({'log_level': level})
-            loglevel.apply(dict(current, log_level=level))
+            try:
+                settings.update({'log_level': level})
+            except OSError as e:
+                # Unreadable for now: try again on the next beat, rather
+                # than save the level over the defaults (4.0.11).
+                log.debug('Log level from server not saved yet: %s', e)
+            else:
+                log.warning('Log level set by server: %s -> %s', current.get('log_level'), level)
+                loglevel.apply(dict(current, log_level=level))
         if reply.get('restart_requested'):
             log.warning('[RESTART] Requested by the server')
             self.stop(updater.EXIT_RESTART)

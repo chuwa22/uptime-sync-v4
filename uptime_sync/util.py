@@ -148,6 +148,26 @@ def read_json(path, default=None, heal=True, strict=False):
         return _heal(path, default, e)
 
 
+READ_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4)
+
+
+def read_json_for_update(path, default=None):
+    """read_json for a read-modify-write (4.0.11): a file that exists but
+    cannot be opened right now (an antivirus or backup tool holds it) is
+    tried again a few times, then raises OSError. The non-strict read gave
+    `default` instead, and the caller then wrote "default + its change"
+    over the real file: the update state lost the backup path a rollback
+    needs, settings went back to defaults. A missing file is `default`; a
+    corrupt one heals as in read_json."""
+    for delay in READ_RETRY_DELAYS + (None,):
+        try:
+            return read_json(path, default, strict=True)
+        except OSError:
+            if delay is None:
+                raise
+            time.sleep(delay)
+
+
 def corrupt_copies(path):
     """Quarantined <path>.corrupt-<ts> files, oldest first."""
     directory, base = os.path.split(path)

@@ -331,6 +331,16 @@ when set (the tests use this), else the checkout folder.
   - `monitors.load(strict=True)` raises on a file that exists but cannot be
     read; the engine then keeps its monitors. Use `read_json(strict=True)`
     wherever "unreadable for a moment" must not mean "empty".
+  - Every read that is saved back goes through `util.read_json_for_update()`
+    (4.0.11: strict, short retries, then OSError): `settings.update()` /
+    `load(strict=True)`, `monitors.load(strict=True)`,
+    `auth.load_users(strict=True)`, `updater.set_state()`. A non-strict read
+    there turns a held file into defaults written over the real one.
+    `set_state()` falls back to the state this process last read or wrote
+    (`_known_state`) rather than raise mid-update. An unreadable signing
+    latch counts as latched.
+  - The engine writes the `check_interval` it runs on into run/status.json;
+    the supervisor's stall limit uses the larger of that and the setting.
 - **Reporting server URL (4.0.9).** `remote.url` is the Public URL and
   `remote.local_url` is the Local one. Always read the URL in use through
   `util.active_server_url(remote)`: heartbeat, signing latch and updater all do.

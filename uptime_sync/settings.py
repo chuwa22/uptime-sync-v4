@@ -17,7 +17,7 @@ import re
 import threading
 
 from . import loglevel, paths
-from .util import atomic_write_json, decode_text, deep_merge, diff_from, read_json
+from .util import atomic_write_json, decode_text, deep_merge, diff_from, read_json, read_json_for_update
 
 # setting path -> environment variable that overrides it
 ENV_SETTINGS = (
@@ -219,16 +219,19 @@ def _warn_once(name, raw, used):
                     name, raw, '/'.join(loglevel.LEVELS), used)
 
 
-def load_site():
-    """data/settings.json only (what this site changed)."""
-    data = read_json(paths.SETTINGS_FILE, {})
+def load_site(strict=False):
+    """data/settings.json only (what this site changed). strict=True (for a
+    read-modify-write): raise OSError when it exists but stays unreadable,
+    instead of reading as "nothing changed" (read_json_for_update)."""
+    data = read_json_for_update(paths.SETTINGS_FILE, {}) if strict else read_json(paths.SETTINGS_FILE, {})
     return data if isinstance(data, dict) else {}
 
 
-def load():
-    """Merged settings with .env credentials applied. A fresh copy."""
+def load(strict=False):
+    """Merged settings with .env credentials applied. A fresh copy.
+    strict=True before a save: see load_site()."""
     base = defaults()
-    merged = deep_merge(base, load_site())
+    merged = deep_merge(base, load_site(strict))
     _fix_types(merged, base)
     _coerce(merged, base)
     loglevel.coerce(merged, _warn_once)
@@ -258,5 +261,7 @@ def save(merged):
 
 
 def update(changes):
-    """Apply a nested dict of changes on top of the current settings."""
-    return save(deep_merge(load(), changes))
+    """Apply a nested dict of changes on top of the current settings.
+    Raises OSError when settings.json is there but cannot be read: saving
+    the changes over the defaults would wipe the site's settings."""
+    return save(deep_merge(load(strict=True), changes))

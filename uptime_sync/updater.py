@@ -22,6 +22,7 @@ uptime_sync/__init__.py. The engine then exits with EXIT_UPDATE and the
 supervisor -- which is not running the code being replaced -- swaps.
 """
 
+import copy
 import datetime
 import logging
 import os
@@ -34,8 +35,8 @@ from urllib.parse import urljoin, urlparse
 from . import __version__, paths, procs
 from .signing import sign
 from .util import (MIN_FREE_BYTES, BodyTooLarge, atomic_write_json, http_session, is_newer, is_version,
-                   iso_now, iter_body, read_json, redact, remove_quietly, server_tls_verify, sha256_file,
-                   active_server_url)
+                   iso_now, iter_body, read_json, read_json_for_update, redact, remove_quietly,
+                   server_tls_verify, sha256_file, active_server_url)
 
 log = logging.getLogger('update')
 
@@ -249,14 +250,47 @@ def download_and_stage(url, version, sha256, settings):
 
 # -- swap / rollback (runs in the supervisor) --------------------------------
 
+# The update state as this process last read or wrote it: what set_state()
+# merges onto while another program holds the file (4.0.11).
+_known_state = None
+
+
 def state():
-    return read_json(paths.UPDATE_STATE_FILE, {}) or {}
+    global _known_state
+    try:
+        s = read_json(paths.UPDATE_STATE_FILE, {}, strict=True) or {}
+    except OSError:
+        return copy.deepcopy(_known_state) if _known_state is not None else {}
+    if isinstance(s, dict):
+        _known_state = copy.deepcopy(s)
+        return s
+    return {}
 
 
 def set_state(**fields):
-    s = state()
+    """Merge fields into data/update-state.json.
+
+    4.0.11: the file is read with read_json_for_update(). Before, a moment
+    when an antivirus held it read as {}, and `fields` alone were written
+    over the record: backup / previous / installed gone, so no rollback.
+    Still held after the retries: merge onto the state this process last
+    saw (the supervisor reads it at every start) and say so. Only a
+    process that has never seen it raises OSError -- raising after a swap
+    would leave 'Applying' and roll a good update back at the next start."""
+    global _known_state
+    try:
+        s = read_json_for_update(paths.UPDATE_STATE_FILE, {})
+    except OSError as e:
+        if _known_state is None:
+            raise
+        log.warning('[UPDATE] update-state.json could not be read (%s) - updating the copy '
+                    'from earlier in this process', e)
+        s = copy.deepcopy(_known_state)
+    if not isinstance(s, dict):
+        s = {}
     s.update(fields)
     atomic_write_json(paths.UPDATE_STATE_FILE, s)
+    _known_state = copy.deepcopy(s)
     return s
 
 
