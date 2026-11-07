@@ -216,12 +216,25 @@ class WebTests(unittest.TestCase):
     def test_logout_revokes_a_copied_cookie(self):
         self.setup_admin()
         token = self.csrf('/settings')
-        cookie = self.c.get_cookie('session')
+        name = self.app.config['SESSION_COOKIE_NAME']
+        cookie = self.c.get_cookie(name)
         stolen = self.app.test_client()
-        stolen.set_cookie('session', cookie.value)
+        stolen.set_cookie(name, cookie.value)
         self.assertEqual(stolen.get('/settings').status_code, 200)
         self.c.post('/logout', data={'csrf': token})
         self.assertEqual(stolen.get('/settings').status_code, 302)
+
+    def test_session_cookie_is_not_flasks_default_name(self):
+        # A 3.x web UI on the same host (another port) sets Flask's default
+        # 'session' cookie; browsers share cookies across ports, so that one
+        # must not be read, overwritten or mistaken for ours.
+        self.assertEqual(self.app.config['SESSION_COOKIE_NAME'], 'uptime_sync_v4')
+        self.setup_admin()
+        token = self.csrf('/settings')
+        self.c.set_cookie('session', 'eyJjc3JmIjoib3RoZXItYXBwIn0.x.y')   # what the 3.x UI writes
+        self.assertEqual(self.c.get('/settings').status_code, 200)       # still signed in
+        self.assertEqual(self.c.post('/logout', data={'csrf': token}).status_code, 302)  # CSRF intact
+        self.assertEqual(self.c.get_cookie('session').value, 'eyJjc3JmIjoib3RoZXItYXBwIn0.x.y')  # theirs untouched
 
     def test_bad_csrf_value_is_400_not_500(self):
         self.setup_admin()

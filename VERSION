@@ -1,5 +1,6 @@
 4.0.9
 2026-11-05
+- Fixed (Web UI): with an Uptime Sync 3.x web UI open on the same host (another port), signing in to one signed you out of the other, or failed with "Invalid or missing CSRF token". Browsers share cookies across ports and both used Flask's default `session` cookie. The 4.x cookie is now `uptime_sync_v4`. Everyone signs in once more after this update.
 - Feature (Dashboard): a History column of bars, one per check, the last 30 (oldest left; green up, red down, grey not checked yet). Hover a bar for its time and response time. Uptime is now a coloured badge (green >= 99%, amber >= 95%, red below) and counts exactly those 30 checks, so the number always matches the bars beside it (it used to count the whole 120-check history).
   - The engine sends the 30 checks in run/status.json (`recent`), so the bars move with the 15 s refresh; a web UI next to an older engine falls back to history.json.
   - Phones: the bars take their own line in each card. Tablets (641-1000px): thinner bars and no Type column (it stays on the Monitors page), so the table fits a 768px screen. Plain inline-block, so IE8 draws them too.

@@ -26,6 +26,11 @@ def create_app():
     app = Flask(__name__, static_folder='static', template_folder='templates')
     app.config.update(
         SECRET_KEY=auth.app_secret_key(),
+        # Browsers keep cookies per host, not per port: a 3.x web UI on
+        # localhost:5000 and this one on localhost:5088 shared Flask's default
+        # 'session' cookie, so signing in to one replaced the other's session
+        # and CSRF token ("Invalid or missing CSRF token").
+        SESSION_COOKIE_NAME='uptime_sync_v4',
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='Lax',
         PERMANENT_SESSION_LIFETIME=datetime.timedelta(hours=12),
