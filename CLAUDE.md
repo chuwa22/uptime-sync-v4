@@ -1,9 +1,41 @@
 # CLAUDE.md
 
-Uptime Sync 4 is a pure-Python rewrite of Uptime Sync 3.x. It has no PowerShell
-or batch files and runs on Windows 7 to 11 (32- and 64-bit), Linux and macOS. It
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Uptime Sync 4 is a pure-Python rewrite of Uptime Sync 3.x. It has no PowerShell,
+and its only batch file is `Launcher.bat` (a menu that runs `main.py` commands).
+It runs on Windows 7 to 11 (32- and 64-bit), Linux and macOS. It
 talks to the same uptime-monitor server using the same heartbeat protocol (v1).
 README.md covers usage. This file covers the rules for changing the code.
+
+## Commands
+
+```bash
+.venv38/bin/python -m unittest discover -s tests -t .        # all tests on 3.8 (also run on .venv)
+.venv38/bin/python -m unittest tests.test_core                # one module
+.venv38/bin/python -m unittest tests.test_core.UtilTests      # one class (append .test_name for one test)
+.venv38/bin/python -m pyflakes uptime_sync tests main.py tools  # lint (pyflakes is in .venv38, not .venv)
+git config core.hooksPath tools/git-hooks                     # once per clone: blocks data/, secrets, *.db
+python tools/build-release.py                                 # dist/uptime-sync-v<ver>.zip + .sha256
+python tools/build-release.py --publish                       # GitHub release (needs gh, clean pushed HEAD)
+```
+
+Run the commands from the repo root (`-t .` matters: tests import `tests._env`).
+`build-release.py` refuses uncommitted changes in `paths.SHIPPED` unless
+`--allow-dirty`, and takes the version from the first block of `VERSION`.
+
+## How it runs
+
+```
+OS autostart -> main.py run (supervisor, one per folder: OS file lock)
+                  |- main.py engine   checks, pushes, heartbeat, downloads updates
+                  '- main.py web      the web UI (waitress, port 5000)
+```
+
+`engine` and `web` are hidden CLI commands the supervisor starts as children; it
+restarts a dead child with a 1, 2, 5, 10, 30, 60 s backoff, and applies or rolls
+back updates between child starts. `paths.ROOT` comes from `UPTIME_SYNC_ROOT`
+when set (the tests use this), else the checkout folder.
 
 ## Layout
 
@@ -330,10 +362,10 @@ README.md covers usage. This file covers the rules for changing the code.
 
 ## Testing
 
-- **Unit tests:** `.venv38/bin/python -m unittest discover -s tests -t .` (also run
-  them on a current Python). `tests/_env.py` points `UPTIME_SYNC_ROOT` at a temp
-  copy. Import it first in every test module.
-- **Lint:** `python -m pyflakes uptime_sync tests main.py tools`.
+- **Unit tests:** see Commands; run them on `.venv38` and on a current Python.
+  `tests/_env.py` points `UPTIME_SYNC_ROOT` at a temp copy (config/ + VERSION)
+  and clears the `UPTIME_*` env overrides; `_env.reset()` empties data/, run/,
+  logs/ between tests. Import it first in every test module.
 - **Packages:** after changing a pin in requirements.txt, run
   `python tools/pin-hashes.py` (hashes) and `python tools/pin-hashes.py --check`
   (needs uv; resolves Windows / Linux / macOS on 3.8-3.14). Then install it into
