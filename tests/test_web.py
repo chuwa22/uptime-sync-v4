@@ -335,7 +335,13 @@ class WebTests(unittest.TestCase):
         html = self.c.get('/').get_data(as_text=True)
         st = json.loads(self.c.get('/api/status').get_data(as_text=True))
         for key, value in st['text'].items():
+            if key == 'heartbeat_try':      # Settings > Reporting only
+                continue
             self.assertIn('data-field="%s">%s<' % (key, value), html)
+        st = json.loads(self.c.get('/api/status').get_data(as_text=True))
+        settings_html = self.c.get('/settings').get_data(as_text=True)
+        for key in ('heartbeat', 'heartbeat_sub', 'heartbeat_try'):
+            self.assertIn('data-field="%s">%s<' % (key, st['text'][key]), settings_html)
 
     def test_uptime_comes_from_status_recent_then_history(self):
         self.setup_admin()
@@ -603,7 +609,7 @@ class ServerTypeTests(unittest.TestCase):
         form = {'csrf': token, 'site_name': '', 'check_interval': '60', 'max_workers': '10',
                 'log_retention_days': '14', 'log_level': 'INFO', 'web_port': '5000', 'web_host': '',
                 'heartbeat_interval': '60', 'require_signed': 'auto', 'remote_url': public,
-                'local_url': local, 'api_key': 'k', 'server_type': server_type}
+                'local_url': local, 'api_key': 'agent-key-1', 'server_type': server_type}
         if enabled:
             form['remote_enabled'] = 'on'
         return self.c.post('/settings', data=form)

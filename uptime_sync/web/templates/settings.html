@@ -65,6 +65,14 @@
 
   <div class="card" id="reporting">
     <h2>{{ icon('globe') }}Reporting to uptime-monitor</h2>
+    {# Live: app.js refreshes it from /api/status every 15 s, like the Dashboard. #}
+    <div class="tile tile-wide tone-{{ st.tones.heartbeat }}" data-tile="heartbeat" data-tile-base="tile tile-wide" data-status-url="{{ url_for('api_status') }}">
+      <span class="tile-ic">{{ icon('heart', 18) }}</span>
+      <div class="label">Connection to uptime-monitor <small>(saved settings, refreshed every 15 s)</small></div>
+      <div class="value" data-field="heartbeat">{{ st.text.heartbeat }}</div>
+      <div class="sub muted" data-field="heartbeat_sub">{{ st.text.heartbeat_sub }}</div>
+      <div class="sub muted" data-field="heartbeat_try">{{ st.text.heartbeat_try }}</div>
+    </div>
     <label class="check"><input type="checkbox" name="remote_enabled"{{ ' checked' if s.remote.enabled }}> Send heartbeats</label>
     {% set st = 'local' if s.remote.server_type == 'local' else 'public' %}
     <fieldset class="radio-group">
@@ -79,10 +87,20 @@
         <input name="local_url" class="mono" value="{{ s.remote.local_url }}" placeholder="http://192.168.1.10/uptime-monitor/api/heartbeat.php" data-selects="server-local"></label>
     </fieldset>
     <div class="cols">
-      <label>API key <small class="muted">from this agent's card in uptime-monitor</small> {{ locked('remote.api_key') }}
-        <input name="api_key" class="mono" value="{{ '' if 'remote.api_key' in managed else s.remote.api_key }}"{{ ' disabled' if 'remote.api_key' in managed }} autocomplete="off"></label>
-      <label>HMAC secret <small class="muted">{{ '(set - leave empty to keep)' if has_secret else '(not set)' }}</small> {{ locked('remote.secret_key') }}
-        <input name="secret_key" type="password" class="mono" placeholder="{{ 'set - leave empty to keep' if has_secret else 'not set' }}"{{ ' disabled' if 'remote.secret_key' in managed }} autocomplete="new-password"></label>
+      <label>API key <small class="muted">a name for this agent: 8-100 letters, digits, _ or -; the 3.x key keeps its card</small> {{ locked('remote.api_key') }}
+        <input name="api_key" class="mono" value="{{ '' if 'remote.api_key' in managed else s.remote.api_key }}"{{ ' disabled' if 'remote.api_key' in managed }} autocomplete="off" maxlength="100" placeholder="e.g. grand-empire"></label>
+      {# The stored secret never goes into the page: a set one shows as a locked mask. #}
+      {% if 'remote.secret_key' in managed %}
+      <label>HMAC secret {{ locked('remote.secret_key') }}
+        <input type="password" class="mono" disabled></label>
+      {% elif has_secret and not change_secret %}
+      <label>HMAC secret <small class="ok-text">{{ icon('check', 14) }}set</small> <a class="small-link" href="{{ url_for('settings_page', secret='change') }}#reporting">Change</a>
+        <input class="mono" value="{{ secret_mask }}" disabled aria-label="HMAC secret is set"></label>
+      {% else %}
+      <label>HMAC secret <small class="muted">{{ '(set - paste a new one, or leave empty to keep it)' if has_secret else '(not set - heartbeats are not verified)' }}</small>
+        {%- if has_secret %} <a class="small-link" href="{{ url_for('settings_page') }}#reporting">Cancel</a>{% endif %}
+        <input name="secret_key" type="password" class="mono" placeholder="{{ 'paste the new secret' if has_secret else 'paste the secret, or Generate a new secret below' }}" autocomplete="new-password"></label>
+      {% endif %}
     </div>
     <p class="note">Paste the same secret on this agent's card in uptime-monitor (key button). Until both sides have it, heartbeats are not verified.
       {%- if 'remote.secret_key' not in managed %} <a href="{{ url_for('new_secret') }}">{{ icon('key', 14) }}Generate a new secret</a>{% endif %}</p>

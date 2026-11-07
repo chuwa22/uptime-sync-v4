@@ -23,6 +23,11 @@ from . import __version__, paths, signing, updater
 from .util import (MIN_FREE_BYTES, BodyTooLarge, active_server_url, free_bytes, http_session,
                    is_local_server, iso_now, iter_body, redact, server_tls_verify, url_host)
 
+try:
+    from urllib.parse import urljoin, urlsplit
+except ImportError:   # pragma: no cover
+    from urlparse import urljoin, urlsplit
+
 # verify=False is used only where the admin chose it (a Local server, a
 # monitor with ssl_verify off); urllib3 would otherwise write a warning
 # to the child's stderr log on every request.
@@ -95,6 +100,7 @@ class Heartbeat:
         self._logged_verdict = None
         self._latch_warned = False
         self.last_ok = None           # epoch of the last 200 reply
+        self.last_try = None          # epoch of the last attempt, whatever came of it
         self.last_error = ''
         # One keep-alive connection to the server instead of a new TCP + TLS
         # handshake every beat.
@@ -114,7 +120,9 @@ class Heartbeat:
         url = active_server_url(remote)
         secret = (remote.get('secret_key') or '').strip()
         if not url or not remote.get('api_key'):
+            self.last_error = 'no API key or server URL set'
             return None
+        self.last_try = time.time()
         body = json.dumps(build_payload(settings, self.start_time, healthy)).encode('utf-8')
         headers = {'Content-Type': 'application/json', 'Accept-Encoding': 'identity'}
         sig = ''
@@ -134,9 +142,9 @@ class Heartbeat:
         if 500 <= r.status_code < 600:
             return self._fail('server returned HTTP %d' % r.status_code)
         if r.status_code != 200:
-            self.last_error = 'HTTP %d' % r.status_code
-            log.warning('Heartbeat: server returned HTTP %d - check api_key / secret_key '
-                        '(not backing off: the same request fails the same way)', r.status_code)
+            self.last_error = 'HTTP %d%s' % (r.status_code, _reason(r, raw, url))
+            log.warning('Heartbeat: server returned %s - check the server URL, api_key and secret '
+                        '(not backing off: the same request fails the same way)', self.last_error)
             return None
         if raw is None:
             return self._fail('reply too large or too slow (over %d KB / %ds)' % (MAX_REPLY // 1024,
@@ -241,6 +249,25 @@ def _read_body(r):
     finally:
         r.close()
     return b''.join(chunks)
+
+
+def _reason(r, raw, url):
+    """Why a non-200 reply failed, in words an admin can act on: where a
+    redirect points (http -> https is the usual one), or the server's own
+    error text ("Invalid or missing api_key", "Invalid signature")."""
+    if 300 <= r.status_code < 400:
+        loc = r.headers.get('Location') or ''
+        if not loc:
+            return ''
+        u = urlsplit(urljoin(url, loc))
+        # scheme://host/path only: no userinfo, no query (it may hold a token)
+        return ' - the server redirects to %s; put that URL in Settings' % _clean(
+            '%s://%s%s' % (u.scheme, u.hostname or '', (':%d' % u.port) if u.port else '') + u.path, 200)
+    try:
+        err = json.loads((raw or b'').decode('utf-8')).get('error')
+    except (ValueError, AttributeError, UnicodeDecodeError):
+        err = None
+    return ': %s' % _clean(err, 120) if isinstance(err, str) and err.strip() else ''
 
 
 def _clean(text, limit=300):

@@ -7,6 +7,7 @@ the supervisor acts on (updater.EXIT_UPDATE / EXIT_RESTART).
 
 import collections
 import concurrent.futures
+import json
 import logging
 import os
 import threading
@@ -33,6 +34,7 @@ HOUSEKEEPING_SECONDS = 3600
 # checked within about a second instead of at the next check_interval; a
 # burst of saves still runs at most one extra cycle per this many seconds.
 MONITOR_CHANGE_MIN_GAP = 5
+HB_SETTINGS_POLL = 5        # s between looks at Settings while the heartbeat waits
 LOW_DISK_RETENTION_DAYS = 3
 
 
@@ -445,7 +447,8 @@ class Engine:
             atomic_write_json(paths.STATUS_FILE, {
                 'updated_at': iso_now(), 'version': __version__, 'pid': os.getpid(),
                 'started_at': int(self.start_time), 'monitors': results,
-                'heartbeat': {'last_ok': hb.last_ok, 'failures': hb.failures, 'error': hb.last_error},
+                'heartbeat': {'last_ok': hb.last_ok, 'failures': hb.failures, 'error': hb.last_error,
+                              'last_try': hb.last_try},
             })
             self._status_warned = False
         except OSError as e:
@@ -485,7 +488,8 @@ class Engine:
     def _heartbeat_loop(self):
         self.stop_event.wait(3)
         while not self.stop_event.is_set():
-            s = self.settings
+            s = settings.load()
+            sent_with = _remote_key(s)
             try:
                 enabled = bool(s.get('remote', {}).get('enabled'))
             except Exception:   # settings.load() fixes types; never let this thread die
@@ -504,7 +508,27 @@ class Engine:
                     self._hb_busy_since = None
             else:
                 wait = 30
-            self.stop_event.wait(wait)
+            self._wait_for_beat(wait, sent_with)
+
+    def _wait_for_beat(self, wait, sent_with):
+        """Sleep until the next beat, but beat at once when Reporting is
+        changed in Settings: a fixed API key or URL is confirmed (or not) in
+        seconds, instead of after the interval or a 10 min backoff."""
+        deadline = time.monotonic() + wait
+        while not self.stop_event.is_set():
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return
+            self.stop_event.wait(min(HB_SETTINGS_POLL, left))
+            try:
+                changed = _remote_key(settings.load()) != sent_with
+            except Exception:
+                changed = False
+            if changed:
+                log.info('Reporting settings changed - sending a heartbeat now')
+                self.heartbeat.failures = 0
+                self.heartbeat.next_override = None
+                return
 
     def _act_on(self, reply, s):
         # The server sets the global level only; per-part log_levels stay.
@@ -594,6 +618,14 @@ class Engine:
                 self._updating.release()
         log.warning('[UPDATE] v%s verified and staged - handing over to the supervisor', version)
         self.stop(updater.EXIT_UPDATE)
+
+
+def _remote_key(s):
+    """What the heartbeat was sent with: a change means beat again now."""
+    try:
+        return json.dumps(s.get('remote', {}), sort_keys=True, default=str)
+    except Exception:
+        return ''
 
 
 def main(supervised=False, parent_pid=0):

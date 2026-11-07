@@ -346,7 +346,7 @@
     draw();
   });
 
-  // Dashboard: refresh from /api/status every 15 s.
+  // Dashboard (and the Settings heartbeat tile): refresh from /api/status every 15 s.
   var tiles = $all('[data-status-url]')[0];
   if (!tiles || !window.XMLHttpRequest || !window.JSON) { return; }
   var url = tiles.getAttribute('data-status-url');
@@ -395,11 +395,11 @@
     // The server decides each tile's colour (views.tones); just apply it.
     for (i = 0; i < tiles.length; i++) {
       var tone = st.tones && st.tones[tiles[i].getAttribute('data-tile')];
-      if (tone) { tiles[i].className = 'tile tone-' + tone; }
+      if (tone) { tiles[i].className = (tiles[i].getAttribute('data-tile-base') || 'tile') + ' tone-' + tone; }
     }
     // The words come from the server (views.tile_text), the same ones the
     // first paint used.
-    var names = ['engine', 'engine_sub', 'counts', 'heartbeat', 'heartbeat_sub', 'signing', 'signing_sub'];
+    var names = ['engine', 'engine_sub', 'counts', 'heartbeat', 'heartbeat_sub', 'heartbeat_try', 'signing', 'signing_sub'];
     for (i = 0; i < names.length; i++) {
       if (st.text && st.text[names[i]] !== undefined) { setText(field(names[i]), st.text[names[i]]); }
     }

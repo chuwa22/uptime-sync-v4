@@ -83,7 +83,10 @@ def tile_text(p):
     since = p['signing']['since']
     if not hb['enabled']:
         hb_value, hb_sub = 'Off', 'reporting disabled'
+        hb_try = 'Turn on Send heartbeats and save.'
     else:
+        hb_try = ('last attempt ' + _ago(hb.get('last_try'), p['now']) if hb.get('last_try')
+                  else 'no attempt yet - the first one goes out a few seconds after saving')
         hb_value = ('Failing' if hb['failures'] else 'Error' if hb.get('error') else
                     'OK' if hb['last_ok'] else 'Waiting')
         hb_sub = (hb['error'] + ' - ' if hb.get('error') else '') + 'last OK ' + _ago(hb['last_ok'], p['now'])
@@ -91,7 +94,7 @@ def tile_text(p):
         'engine': 'Running' if p['engine']['running'] else 'Stopped',
         'engine_sub': 'last cycle ' + (updated[11:19] if updated else '-'),
         'counts': '%d / %d' % (p['counts']['up'], p['counts']['enabled']),
-        'heartbeat': hb_value, 'heartbeat_sub': hb_sub,
+        'heartbeat': hb_value, 'heartbeat_sub': hb_sub, 'heartbeat_try': hb_try,
         'signing': p['signing']['state'],
         'signing_sub': 'since ' + since[:10] if since else '',
     }
@@ -230,6 +233,7 @@ def _status_payload():
         'heartbeat': {
             'enabled': bool(s.get('remote', {}).get('enabled')),
             'last_ok': hb.get('last_ok'), 'failures': hb.get('failures', 0), 'error': hb.get('error', ''),
+            'last_try': hb.get('last_try'),
         },
         'signing': {'state': sign_state, 'since': sign_since},
         'update': {'pending': pending['version'] if pending else '',
@@ -243,6 +247,11 @@ def _status_payload():
 
 
 LOOPBACK = ('127.0.0.1', '::1', '::ffff:127.0.0.1')
+# The same rule as uptime-monitor's API_KEY_REGEX (includes/config.php).
+API_KEY_RE = re.compile(r'^[A-Za-z0-9_\-]{8,100}$')
+# Shown in place of a stored secret. The secret itself never goes into HTML;
+# a form that posts this text back keeps the stored one.
+SECRET_MASK = '********'
 LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
 
 
@@ -568,8 +577,12 @@ def register(app):  # noqa: C901 -- one place for the whole route table
             new['remote']['local_url'] = local_url
             if 'remote.api_key' not in managed:
                 new['remote']['api_key'] = f.get('api_key', '').strip()
-            if 'remote.secret_key' not in managed and f.get('secret_key', '').strip():
-                new['remote']['secret_key'] = f.get('secret_key', '').strip()
+                if new['remote']['api_key'] and not API_KEY_RE.match(new['remote']['api_key']):
+                    errors.append('API key must be 8-100 letters, digits, _ or - (no spaces): '
+                                  'uptime-monitor refuses anything else. e.g. grand-empire')
+            secret = f.get('secret_key', '').strip()
+            if 'remote.secret_key' not in managed and secret and secret != SECRET_MASK:
+                new['remote']['secret_key'] = secret
             if new['remote']['enabled'] and not errors:
                 merged = settings.load()
                 merged_remote = dict(merged.get('remote', {}), **new['remote'])
@@ -593,6 +606,8 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         sign_state, sign_since = signing.status(s.get('remote', {}))
         return render_template('settings.html', s=s, managed=managed, errors=errors,
                                has_secret=bool(s.get('remote', {}).get('secret_key')),
+                               secret_mask=SECRET_MASK, change_secret=request.args.get('secret') == 'change',
+                               st=_status_payload(),
                                sign_state=sign_state, sign_since=sign_since,
                                log_levels=loglevel.LEVELS, log_parts=loglevel.COMPONENTS,
                                level_choices=loglevel.choices, bounds=settings.BOUNDS,
