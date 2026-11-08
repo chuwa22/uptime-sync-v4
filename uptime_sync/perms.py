@@ -46,7 +46,25 @@ def _dirs():
 
 # -- POSIX -------------------------------------------------------------------
 
+def _posix_executables():
+    """Give paths.EXECUTABLE back its x bit (wherever it is readable) when
+    an update or an unzip tool dropped it (4.0.13). Not a security setting,
+    so a failure is not a problem to report."""
+    for name in paths.EXECUTABLE:
+        path = os.path.join(paths.ROOT, name)
+        try:
+            if os.path.islink(path) or not os.path.isfile(path):
+                continue
+            mode = os.stat(path).st_mode & 0o777
+            want = mode | ((mode & 0o444) >> 2)
+            if want != mode:
+                os.chmod(path, want)
+        except OSError:
+            pass
+
+
 def _posix_harden():
+    _posix_executables()
     problems = []
     for top in _dirs():
         for root, dirs, files in os.walk(top):

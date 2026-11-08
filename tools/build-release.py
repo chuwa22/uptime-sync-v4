@@ -39,7 +39,8 @@ FORBIDDEN = re.compile(
     r'|(^|/)secret\.key$|\.db$|\.log$|\.pem$|\.pfx$|\.p12$'
     r'|__pycache__|\.pyc$|\.DS_Store$'
 )
-REQUIRED = ('VERSION', 'main.py', 'Launcher.bat', 'requirements.txt', 'uptime_sync/__init__.py',
+REQUIRED = ('VERSION', 'main.py', 'Launcher.bat', 'Launcher.command', 'requirements.txt',
+            'uptime_sync/__init__.py',
             'uptime_sync/bootstrap.py',
             'config/defaults.json',
             'uptime_sync/supervisor.py', 'uptime_sync/updater.py')
@@ -47,6 +48,27 @@ REQUIRED = ('VERSION', 'main.py', 'Launcher.bat', 'requirements.txt', 'uptime_sy
 
 def git(*args):
     return subprocess.check_output(('git',) + args, cwd=PROJECT_ROOT).decode('utf-8')
+
+
+def git_executables(names):
+    """Tracked files whose git mode is 100755 (Launcher.command)."""
+    out = set()
+    for line in git('ls-files', '-s', '--', *names).splitlines():
+        meta, _, path = line.partition('\t')
+        if meta.split(' ', 1)[0] == '100755':
+            out.add(path)
+    return out
+
+
+def add_file(zf, name, executable):
+    """Store the mode from git, not from the disk: a checkout on Windows
+    (or with core.fileMode off) has no x bit, and the zip must still carry
+    0755 for Launcher.command. updater._safe_extract() and Finder's
+    Archive Utility both apply it."""
+    info = zipfile.ZipInfo.from_file(os.path.join(PROJECT_ROOT, name), arcname=name)
+    info.external_attr = ((0o100755 if executable else 0o100644) & 0xFFFF) << 16
+    with open(os.path.join(PROJECT_ROOT, name), 'rb') as f:
+        zf.writestr(info, f.read(), compress_type=zipfile.ZIP_DEFLATED)
 
 
 def top_version_block():
@@ -78,6 +100,7 @@ def main():
         return 1
 
     files = [f for f in git('ls-files', '--', *SHIPPED).splitlines() if f]
+    executable = git_executables(SHIPPED)
     blocked = [f for f in files if FORBIDDEN.search(f)]
     if blocked:
         print('[ERROR] Refusing to ship site data / secrets / build junk:')
@@ -108,7 +131,7 @@ def main():
     zip_path = os.path.join(dist, name)
     with zipfile.ZipFile(zip_path + '.tmp', 'w', compression=zipfile.ZIP_DEFLATED) as zf:
         for f in sorted(files):
-            zf.write(os.path.join(PROJECT_ROOT, f), arcname=f)
+            add_file(zf, f, f in executable)
     os.replace(zip_path + '.tmp', zip_path)
 
     sha = hashlib.sha256()

@@ -17,7 +17,7 @@ system Python:
 |---|---|---|
 | Windows | Double-click `Launcher.bat` and choose **I** (it asks for administrator rights), or `py -3 main.py install` from an **elevated** prompt | Task Scheduler task `UptimeSync4` (at boot, plus every minute as a watchdog), runs as SYSTEM |
 | Linux | `sudo python3 main.py install` | systemd unit `uptime-sync.service`. Without sudo it creates a user unit instead |
-| macOS | `sudo python3 main.py install` | LaunchDaemon `com.uptimesync.agent`. Without sudo it creates a LaunchAgent that runs only while you are logged in |
+| macOS | Double-click `Launcher.command` and choose **I** (it asks for your Mac password), or `sudo python3 main.py install` in Terminal | LaunchDaemon `com.uptimesync.agent`. Without sudo it creates a LaunchAgent that runs only while you are logged in |
 
 Run with the system Python, `main.py install` first creates `.venv/` in the folder and
 installs `requirements.txt` into it (`uptime_sync/bootstrap.py`), then carries on inside
@@ -29,11 +29,11 @@ main.py restarts itself inside `.venv`. The system Python is used only to create
 
 `.venv` belongs to the machine that made it: do not copy it to another box (exclude it
 when you sync or copy the folder). A copied `.venv` fails with "No Python at ...";
-run `Launcher.bat` -> I (or `python main.py install`) on that box and it is rebuilt.
+run `Launcher.bat` / `Launcher.command` -> I (or `python main.py install`) on that box and it is rebuilt.
 
 `.venv` still uses the system Python's standard library. If you uninstall or
 upgrade that Python, run `python main.py install --recreate` with the new system Python
-(Windows: Launcher.bat -> R). It stops the agent, rebuilds `.venv` and starts it again.
+(Windows: Launcher.bat -> R, macOS: Launcher.command -> R). It stops the agent, rebuilds `.venv` and starts it again.
 It then registers autostart and starts the agent. Open `http://<box>:5000/` and
 create the admin account.
 
@@ -47,6 +47,28 @@ administrator rights) for a menu of Status, Start, Stop, Restart, Open the web U
 Check every monitor now, recent logs, warnings and errors, Reset a web UI password,
 Install or repair, Rebuild .venv, and Uninstall autostart. Each item runs the same
 `main.py` command you would type at a prompt.
+
+On macOS, `Launcher.command` is the same control panel: double-click it in Finder
+and it opens in Terminal, with the same menu. **I** finds the system `python3`
+(3.8 or newer; if there is none, install it from
+[python.org](https://www.python.org/downloads/macos/) or run `xcode-select --install`)
+and runs `sudo python3 main.py install`, so it asks for your Mac password and
+autostart is a LaunchDaemon that starts at boot. A folder installed without sudo
+(a LaunchAgent) is repaired as one, without sudo. Start, Restart and Uninstall use
+sudo when the service is a LaunchDaemon. Without the menu:
+`./Launcher.command install`, with the same options as `Launcher.bat install`.
+
+The first time, macOS may refuse to open it:
+
+- **"cannot be opened because it is from an unidentified developer"** (a folder
+  unzipped from a download is quarantined): right-click `Launcher.command` >
+  Open, then Open. On macOS 15 and later: double-click it once, then System
+  Settings > Privacy & Security > **Open Anyway**. Or, in Terminal, in the folder:
+  `xattr -d com.apple.quarantine Launcher.command`
+- **"you do not have appropriate access privileges"** (the unzip tool dropped the
+  executable bit): `chmod +x Launcher.command`, or run it as
+  `bash Launcher.command`. The agent puts the bit back itself at every start, so
+  this is needed once at most, before the first install.
 
 For an offline install, run `main.py install --wheels <folder of .whl files>`. On Windows 7,
 use Python 3.8.10, the last release that supports it.

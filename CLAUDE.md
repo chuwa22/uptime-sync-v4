@@ -4,6 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Uptime Sync 4 is a pure-Python rewrite of Uptime Sync 3.x. It has no PowerShell,
 and its only batch file is `Launcher.bat` (a menu that runs `main.py` commands).
+`Launcher.command` (4.0.13) is the same menu for macOS.
 It runs on Windows 7 to 11 (32- and 64-bit), Linux and macOS. It
 talks to the same uptime-monitor server using the same heartbeat protocol (v1).
 README.md covers usage. This file covers the rules for changing the code.
@@ -43,7 +44,14 @@ when set (the tests use this), else the checkout folder.
   - `main.py`: CLI (`uptime_sync/cli.py`).
   - `main.py install` on the system Python: `bootstrap.py` builds `.venv`
     (standard library only), then main.py re-launches into `.venv` for
-    `cli.cmd_install`. Windows wraps it in `Launcher.bat` (I / R / `install`).
+    `cli.cmd_install`. Windows wraps it in `Launcher.bat` (I / R / `install`),
+    macOS in `Launcher.command` (the same menu, sudo for a LaunchDaemon).
+  - `Launcher.command` runs on the macOS bash 3.2 and on zsh (no arrays,
+    `[[ ]]`, `local`, `read -p`), LF, ASCII, git mode 100755. It is in
+    `paths.EXECUTABLE`: build-release stores git's mode in the zip,
+    `updater._safe_extract()` applies the x bit and `perms.harden()` puts it
+    back at every start. A change to the Launcher.bat menu goes into both
+    (`tests/test_launcher_command.py` compares them).
 - **Process roles:**
   - `supervisor.py`: the process the OS starts.
   - `engine.py`: checks, pushes and heartbeat.
