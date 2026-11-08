@@ -140,3 +140,34 @@ class HelpTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StatusPythonTests(unittest.TestCase):
+    """`main.py status` says which Python runs: this one, the .venv one the
+    agent runs on, and the base install .venv was made from (4.0.13)."""
+
+    def test_status_names_the_interpreters(self):
+        import argparse
+        import json
+        import sys
+        from uptime_sync import procs
+
+        def status(as_json):
+            # cmd_status itself: cli.main would also set up console logging.
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = cli.cmd_status(argparse.Namespace(json=as_json))
+            return rc, out.getvalue()
+        with mock.patch('uptime_sync.cli._running', return_value=(None, False)):
+            rc, out = status(False)
+            self.assertEqual(rc, 3)
+            self.assertIn('  python      %s' % sys.executable, out)
+            self.assertIn('  base        %s' % sys.base_prefix, out)
+            self.assertIn('-bit)', out.splitlines()[0])
+            rc, out = status(True)
+        info = json.loads(out)
+        self.assertEqual(info['python_exe'], sys.executable)
+        self.assertEqual(info['agent_python'], procs.background_python())
+        self.assertEqual(info['python_base'], sys.base_prefix)
+        self.assertIn(info['python_bits'], (32, 64))
+        self.assertIn('python', info)   # the 4.0.0 field stays

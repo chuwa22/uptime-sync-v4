@@ -4,7 +4,8 @@ main.py calls prepare() when `main.py install` is started by a Python that
 is not .venv's (the system Python, 3.8 or newer):
 
     Windows (elevated):  py -3 main.py install      (or Launcher.bat -> I)
-    Linux / macOS:       sudo python3 main.py install
+    macOS:               sudo python3 main.py install   (or Launcher.command -> I)
+    Linux:               sudo python3 main.py install
 
 prepare() creates .venv/ (or rebuilds it when it is broken or --recreate is
 given) and installs requirements.txt into it. main.py then re-launches

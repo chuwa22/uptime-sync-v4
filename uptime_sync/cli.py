@@ -142,6 +142,10 @@ def cmd_status(a):
         'version': __version__,
         'root': paths.ROOT,
         'python': sys.version.split()[0],
+        'python_bits': 64 if sys.maxsize > 2 ** 32 else 32,
+        'python_exe': sys.executable,
+        'agent_python': procs.background_python(),
+        'python_base': sys.base_prefix,
         'running': running,
         'supervisor_pid': pid,
         'engine_pid': _child_pid('engine'),
@@ -157,8 +161,14 @@ def cmd_status(a):
         info['monitors'] = st.get('monitors', {})
         _say(json.dumps(info, indent=2))
         return 0 if running else 3
-    _say('Uptime Sync %s  (python %s)' % (__version__, info['python']))
+    _say('Uptime Sync %s  (python %s, %d-bit)' % (__version__, info['python'], info['python_bits']))
     _say('  root        %s' % paths.ROOT)
+    # Which interpreter: the agent runs only on .venv's, which was made from
+    # the base install (a venv python on Windows starts the base one).
+    _say('  python      %s' % info['python_exe'])
+    if os.path.normcase(info['agent_python']) != os.path.normcase(info['python_exe']):
+        _say('  agent runs  %s' % info['agent_python'])
+    _say('  base        %s' % info['python_base'])
     _say('  supervisor  %s' % ('running, pid %s' % pid if running else 'NOT running'))
     for role in ('engine', 'web'):
         _say('  %-11s %s' % (role, 'pid %s' % info[role + '_pid'] if info[role + '_pid'] else '-'))
@@ -433,7 +443,7 @@ def build_parser():
     sp.add_argument('--json', action='store_true', help='print JSON instead of text')
     sp = add('install', cmd_install, 'build .venv, register autostart, start (run it with the system Python)',
              _epilog('py -3 main.py install            (Windows, elevated; or Launcher.bat -> I)',
-                     'sudo python3 main.py install     (Linux / macOS)',
+                     'sudo python3 main.py install     (Linux / macOS; or Launcher.command -> I)',
                      'main.py install --wheels C:\\wheels   (offline)'))
     sp.add_argument('--no-autostart', action='store_true', help='do not register autostart')
     sp.add_argument('--recreate', action='store_true',

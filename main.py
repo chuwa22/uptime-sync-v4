@@ -9,7 +9,8 @@ this file re-launches itself on .venv's python with the same arguments.
 (uptime_sync/bootstrap.py, stdlib only), then re-launches the same way:
 
     Windows (elevated):  py -3 main.py install      or Launcher.bat -> I
-    Linux / macOS:       sudo python3 main.py install
+    macOS:               sudo python3 main.py install   or Launcher.command -> I
+    Linux:               sudo python3 main.py install
 """
 
 import os
@@ -31,7 +32,7 @@ def _fail(msg):
     if sys.stderr:   # None under pythonw
         sys.stderr.write('[ERROR] %s\n' % msg)
         sys.stderr.write('[INFO] Fix: run  python main.py install  in %s with the system Python '
-                         '(Windows: Launcher.bat, then I)\n' % paths.ROOT)
+                         '(Windows: Launcher.bat, macOS: Launcher.command, then I)\n' % paths.ROOT)
     sys.exit(1)
 
 

@@ -330,10 +330,12 @@ class BootOrderTests(_FakeInstall):
             bat = f.read().decode('ascii')
         self.assertIn('if not exist "%MAIN%" set "NOCODE=1"', bat)
         self.assertIn('backups\\', bat)
-        # The Launcher itself must still be there in that state.
+        # The Launchers themselves must still be there in that state.
         names = sorted(paths.SHIPPED)
-        self.assertEqual(updater._boot_last(names)[-3:], ['uptime_sync', 'main.py', 'Launcher.bat'])
-        self.assertEqual(updater._boot_first(names)[:3], ['Launcher.bat', 'main.py', 'uptime_sync'])
+        self.assertEqual(updater._boot_last(names)[-4:],
+                         ['uptime_sync', 'main.py', 'Launcher.bat', 'Launcher.command'])
+        self.assertEqual(updater._boot_first(names)[:4],
+                         ['Launcher.command', 'Launcher.bat', 'main.py', 'uptime_sync'])
         self.assertEqual(sorted(updater._boot_last(names)), names)
 
 

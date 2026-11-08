@@ -154,6 +154,26 @@ def _safe_extract(zip_path, dest):
             if total > MAX_ZIP_BYTES * 3:
                 raise UpdateRefused('zip expands to more than %d MB' % (MAX_ZIP_BYTES * 3 // 2 ** 20))
         z.extractall(dest)
+        if os.name != 'nt':
+            _restore_exec_bits(z.infolist(), dest)
+
+
+def _restore_exec_bits(infos, dest):
+    """zipfile drops the Unix mode, so Launcher.command would arrive
+    without its x bit and Finder would refuse to run it (4.0.13).
+    build-release.py stores git's mode in the zip. Only the x bit is taken
+    from it, and only where the file is readable: the rest of the mode
+    stays what our umask made it. (A 4.0.12 updater does not do this;
+    perms.harden() fixes paths.EXECUTABLE at the next start.)"""
+    for info in infos:
+        if info.is_dir() or not (info.external_attr >> 16) & 0o111:
+            continue
+        target = os.path.join(dest, info.filename.replace('\\', '/'))
+        try:
+            mode = os.stat(target).st_mode & 0o777
+            os.chmod(target, mode | ((mode & 0o444) >> 2))
+        except OSError:
+            pass
 
 
 def validate_staging(version):
@@ -355,19 +375,19 @@ def _undo(moved_out, out_dir, moved_in, in_dir):
 # What the OS autostart needs to reach recover_interrupted(): main.py, and
 # the package it imports. A kill while either is out of ROOT leaves an
 # install nothing can start, so they leave last and come back first (4.0.11).
-# Launcher.bat goes with them: it is what tells the user, in that state,
-# where the old code is.
-_BOOT = ('uptime_sync', 'main.py', 'Launcher.bat')
+# Launcher.bat and Launcher.command (macOS, 4.0.13) go with them: they are
+# what tells the user, in that state, where the old code is.
+_BOOT = ('uptime_sync', 'main.py', 'Launcher.bat', 'Launcher.command')
 
 
 def _boot_last(names):
-    """names with _BOOT at the end (Launcher.bat the very last): the order
+    """names with _BOOT at the end (the launchers the very last): the order
     for moving OUT of ROOT. reversed() of it is the order for moving back."""
     return [n for n in names if n not in _BOOT] + [n for n in _BOOT if n in names]
 
 
 def _boot_first(names):
-    """names with Launcher.bat, main.py, then uptime_sync first: the order
+    """names with the launchers, main.py, then uptime_sync first: the order
     for moving IN."""
     return list(reversed([n for n in _BOOT if n in names])) + [n for n in names if n not in _BOOT]
 
