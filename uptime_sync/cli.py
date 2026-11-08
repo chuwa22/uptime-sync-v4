@@ -142,6 +142,10 @@ def cmd_status(a):
         'version': __version__,
         'root': paths.ROOT,
         'python': sys.version.split()[0],
+        'python_bits': 64 if sys.maxsize > 2 ** 32 else 32,
+        'python_exe': sys.executable,
+        'agent_python': procs.background_python(),
+        'python_base': sys.base_prefix,
         'running': running,
         'supervisor_pid': pid,
         'engine_pid': _child_pid('engine'),
@@ -157,8 +161,14 @@ def cmd_status(a):
         info['monitors'] = st.get('monitors', {})
         _say(json.dumps(info, indent=2))
         return 0 if running else 3
-    _say('Uptime Sync %s  (python %s)' % (__version__, info['python']))
+    _say('Uptime Sync %s  (python %s, %d-bit)' % (__version__, info['python'], info['python_bits']))
     _say('  root        %s' % paths.ROOT)
+    # Which interpreter: the agent runs only on .venv's, which was made from
+    # the base install (a venv python on Windows starts the base one).
+    _say('  python      %s' % info['python_exe'])
+    if os.path.normcase(info['agent_python']) != os.path.normcase(info['python_exe']):
+        _say('  agent runs  %s' % info['agent_python'])
+    _say('  base        %s' % info['python_base'])
     _say('  supervisor  %s' % ('running, pid %s' % pid if running else 'NOT running'))
     for role in ('engine', 'web'):
         _say('  %-11s %s' % (role, 'pid %s' % info[role + '_pid'] if info[role + '_pid'] else '-'))
