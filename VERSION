@@ -1,3 +1,7 @@
+4.1.1
+2026-11-09
+- Fixed (Settings): "Check every (s)" did not say what it times. It is now "Monitor check every (s)", with the hint "every monitor is checked and pushed to Uptime Kuma this often"; its form error names it the same way. "Heartbeat every (s)" gets the hint "this agent reports to uptime-monitor this often", so the two intervals are not taken for each other.
+
 4.1.0
 2026-11-09
 - Feature (Logs): the newest Logs page follows new lines by itself. Every 3 s it asks the web UI for lines newer than the top one; they slide in above the others and the oldest drop off the bottom, without reloading the page, so nothing blinks, a folded or unfolded message stays as it was and a text selection is kept. A small grey note beside the line count says so ("New lines appear every 3 s"); untick it to pause (remembered in this browser). Level, process, search and page size keep applying. Scrolled down inside the log box, the lines being read stay in view.
