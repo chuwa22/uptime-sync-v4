@@ -4,7 +4,7 @@
 <div class="pager">
   {%- if newest %}<a class="button small" href="{{ newest }}" title="Newest lines">{{ icon('refresh', 14) }}Newest</a>{% else %}<span class="button small disabled" aria-disabled="true">{{ icon('refresh', 14) }}Newest</span>{% endif -%}
   {%- if newer %}<a class="button small" href="{{ newer }}">&larr; Newer</a>{% else %}<span class="button small disabled" aria-disabled="true">&larr; Newer</span>{% endif -%}
-  {%- if older %}<a class="button small" href="{{ older }}">Older &rarr;</a>{% else %}<span class="button small disabled" aria-disabled="true">Older &rarr;</span>{% endif -%}
+  {%- if older %}<a class="button small" href="{{ older }}" data-pager-older>Older &rarr;</a>{% else %}<span class="button small disabled" aria-disabled="true" data-pager-older>Older &rarr;</span>{% endif -%}
 </div>
 {%- endmacro %}
 {% block content %}
@@ -26,22 +26,22 @@
   </form>
 </div>
 <div class="logbar">
-  <p class="muted small">
-    {%- if rows %}{{ rows | length }} line{{ '' if rows | length == 1 else 's' }}, {{ rows[0].time }} back to {{ rows[-1].time }}, newest first.
-    {%- else %}No lines on this page.{% endif %}
-    {%- if window %} A search reads {{ '{:,}'.format(span) }} lines at a time; Older searches the next ones.{% endif -%}
+  <p class="muted small"><span data-log-summary>{{ summary }}</span>
+    {#- Shown by app.js, which does the refreshing; without it the page stays still. -#}
+    {%- if live %} <label class="live hidden" data-log-live title="Untick to pause"><input type="checkbox" checked>New lines appear every {{ live_ms // 1000 }} s</label>{% endif -%}
   </p>
   {{ pager() }}
 </div>
 <div class="card flush">
   {#- Scrolls inside its own box (header row stays in view), so the page
       stays one screen long whatever the page size. -#}
-  <div class="logscroll" tabindex="0" role="region" aria-label="Log lines">
+  <div class="logscroll" tabindex="0" role="region" aria-label="Log lines"
+       {%- if live %} data-live-url="{{ live }}" data-live-ms="{{ live_ms }}"{% endif %}>
   <table class="logtable stack">
     <thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Message</th></tr></thead>
-    <tbody>
+    <tbody data-log-rows>
     {% for r in rows %}
-      <tr class="{{ 'l-err' if r.level in ('ERROR', 'CRITICAL') else 'l-warn' if r.level == 'WARNING' else '' }}">
+      <tr class="{{ r.cls }}" data-id="{{ r.id }}">
         <td class="nowrap muted">{{ r.time }}</td><td><span class="lvl lvl-{{ r.level | lower }}">{{ r.level }}</span></td>
         <td class="nowrap">{{ r.proc }}/{{ r.logger }}</td><td class="wide"><pre class="msg"{% if r.more %} data-more="{{ r.more }}"{% endif %}>{{ r.msg }}</pre></td>
       </tr>

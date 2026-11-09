@@ -379,10 +379,14 @@ table.logtable pre.msg { margin: 0; white-space: pre-wrap; word-wrap: break-word
 /* Logs page: the table scrolls in its own box, so a page of 500 lines is
    still one screen; a pager above and below. app.js folds a message longer
    than 3 lines (data-more) behind a "N more lines" button. */
-.logscroll { max-height: 600px; overflow: auto; }
+/* overflow-anchor: app.js keeps the lines in view when new ones come in above;
+   the browser doing it too would move them twice. */
+.logscroll { max-height: 600px; overflow: auto; overflow-anchor: none; }
 .logbar { overflow: hidden; margin: 0 0 10.5px; }
 .logbar p { float: left; margin: 6px 0; }
 .pager { float: right; }
+.logbar label.live { display: inline; margin: 0 0 0 9px; font-weight: 400; font-size: 12.75px; white-space: nowrap; }
+.logbar label.live input { display: inline; width: auto; margin: 0 4.5px 0 0; vertical-align: middle; }
 .pager .button { margin-left: 4.5px; }
 .button.small { padding: 3.75px 10.5px; font-size: 12.3px; }
 .button.small .ic, .button.small .ic8 { vertical-align: -2.25px; margin-right: 4.5px; }

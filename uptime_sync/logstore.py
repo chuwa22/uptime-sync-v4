@@ -422,6 +422,11 @@ def _id_range():
         return None, None
 
 
+def last_id():
+    """The newest row id in logs.db, None when empty or unreadable."""
+    return _id_range()[1]
+
+
 def page(min_level=0, proc='', text='', before_id=None, limit=200, span=SEARCH_SPAN):
     """One Logs page: (rows, older, window).
 

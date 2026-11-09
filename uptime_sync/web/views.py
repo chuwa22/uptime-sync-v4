@@ -22,6 +22,27 @@ LOG_LEVELS = loglevel.VALUES
 LOG_PAGE_SIZES = (50, 100, 200, 500)   # rows per Logs page, offered on the page
 LOG_PAGE = 50                           # the default
 LOG_CLAMP_LINES = 3                     # longer messages fold (app.js)
+LOG_LIVE_MS = 3000                      # the newest Logs page polls /api/logs this often (app.js)
+
+
+def log_row_class(level):
+    """The Logs table row class for a level name: the page and app.js's
+    auto-refresh both take it from here."""
+    if level in ('ERROR', 'CRITICAL'):
+        return 'l-err'
+    return 'l-warn' if level == 'WARNING' else ''
+
+
+def log_summary(rows, window, span):
+    """The line above the Logs table, for the page and its auto-refresh."""
+    if rows:
+        text = '%d line%s, %s back to %s, newest first.' % (
+            len(rows), '' if len(rows) == 1 else 's', rows[0]['time'], rows[-1]['time'])
+    else:
+        text = 'No lines on this page.'
+    if window:
+        text += ' A search reads {:,} lines at a time; Older searches the next ones.'.format(span)
+    return text
 
 
 def _engine_state():
@@ -708,9 +729,8 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         return render_template('account.html', error=error, user=user, name=name,
                                min_len=auth.MIN_PASSWORD)
 
-    @app.route('/logs')
-    @auth.admin_required
-    def logs():
+    def _log_filters():
+        """(level, proc, text, n) from the query string, each one checked."""
         level = request.args.get('level', 'INFO')
         if level not in LOG_LEVELS:
             level = 'INFO'
@@ -718,34 +738,74 @@ def register(app):  # noqa: C901 -- one place for the whole route table
         if proc not in logsetup.PROCS:
             proc = ''
         text = (request.args.get('q') or '')[:200]
-        before = request.args.get('before', type=int)
-        if before is not None and not 0 < before < 2 ** 63:
-            before = None    # sqlite integers are 64-bit; bigger raises OverflowError
         n = request.args.get('n', type=int)
         if n not in LOG_PAGE_SIZES:
             n = LOG_PAGE
-        min_level = LOG_LEVELS[level]
-        rows, older_id, window = logstore.page(min_level=min_level, proc=proc, text=text,
-                                               before_id=before, limit=n)
+        return level, proc, text, n
 
-        def link(before_id):
-            return url_for('logs', level=level, proc=proc or None, q=text or None,
-                           n=n if n != LOG_PAGE else None, before=before_id)
+    def _id_arg(name):
+        value = request.args.get(name, type=int)
+        if value is not None and not 0 < value < 2 ** 63:
+            return None    # sqlite integers are 64-bit; bigger raises OverflowError
+        return value
+
+    def _log_link(level, proc, text, n, before_id=None):
+        return url_for('logs', level=level, proc=proc or None, q=text or None,
+                       n=n if n != LOG_PAGE else None, before=before_id)
+
+    def _log_page(level, proc, text, n, before=None):
+        """One Logs page, as the template and /api/logs both show it."""
+        rows, older_id, window = logstore.page(min_level=LOG_LEVELS[level], proc=proc, text=text,
+                                               before_id=before, limit=n)
+        for r in rows:
+            extra = r['msg'].count('\n') + 1 - LOG_CLAMP_LINES
+            r['more'] = extra if extra > 0 else 0
+            r['cls'] = log_row_class(r['level'])
+        return {'rows': rows, 'window': window,
+                'older': _log_link(level, proc, text, n, older_id) if older_id else None,
+                'summary': log_summary(rows, window, logstore.SEARCH_SPAN)}
+
+    @app.route('/logs')
+    @auth.admin_required
+    def logs():
+        level, proc, text, n = _log_filters()
+        before = _id_arg('before')
+        pg = _log_page(level, proc, text, n, before)
+        rows = pg['rows']
         newer = None
         if before:
             # rows[0] is this page's newest line; an empty page sits just below `before`
             top = rows[0]['id'] if rows else before - 1
-            newer = link(logstore.newer(min_level, proc, text, top, n))
-        for r in rows:
-            extra = r['msg'].count('\n') + 1 - LOG_CLAMP_LINES
-            r['more'] = extra if extra > 0 else 0
+            newer = _log_link(level, proc, text, n,
+                              logstore.newer(LOG_LEVELS[level], proc, text, top, n))
+        # Only the newest page follows new lines (app.js, every LOG_LIVE_MS):
+        # an older page stays where the user paged to.
+        live = None if before else url_for('api_logs', level=level, proc=proc or None, q=text or None,
+                                           n=n if n != LOG_PAGE else None)
         return render_template('logs.html', rows=rows, level=level, proc=proc, q=text, n=n,
                                sizes=LOG_PAGE_SIZES, levels=list(LOG_LEVELS), procs=logsetup.PROCS,
-                               newest=link(None) if before else None, newer=newer,
-                               older=link(older_id) if older_id else None,
-                               window=window, span=logstore.SEARCH_SPAN,
+                               newest=_log_link(level, proc, text, n) if before else None, newer=newer,
+                               older=pg['older'], summary=pg['summary'],
+                               live=live, live_ms=LOG_LIVE_MS,
                                recording=loglevel.describe(settings.load()),
                                stats=logstore.stats(), files=logsetup.text_files())
+
+    @app.route('/api/logs')
+    @auth.admin_required
+    def api_logs():
+        """The newest Logs page for app.js's auto-refresh. With ?top=<id> (the
+        newest line the page shows) it first asks for one line above it, which
+        reads only the new rows, and answers {"changed": false} when there is
+        none: the poll runs every few seconds, a whole page only when needed."""
+        level, proc, text, n = _log_filters()
+        top = request.args.get('top', type=int)        # 0: the page shows no lines
+        if top is not None and 0 <= top < 2 ** 63 \
+                and not logstore.query(LOG_LEVELS[level], proc, text, limit=1, floor=top + 1) \
+                and (logstore.last_id() or 0) >= top:     # a replaced logs.db starts at id 1 again
+            return jsonify({'changed': False})
+        pg = _log_page(level, proc, text, n)
+        return jsonify({'changed': True, 'rows': pg['rows'], 'older': pg['older'],
+                        'summary': pg['summary']})
 
     @app.route('/logs/file/<name>')
     @auth.admin_required

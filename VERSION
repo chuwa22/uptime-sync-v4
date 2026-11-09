@@ -1,3 +1,9 @@
+4.1.0
+2026-11-09
+- Feature (Logs): the newest Logs page follows new lines by itself. Every 3 s it asks the web UI for lines newer than the top one; they slide in above the others and the oldest drop off the bottom, without reloading the page, so nothing blinks, a folded or unfolded message stays as it was and a text selection is kept. A small grey note beside the line count says so ("New lines appear every 3 s"); untick it to pause (remembered in this browser). Level, process, search and page size keep applying. Scrolled down inside the log box, the lines being read stay in view.
+  - Older pages stay still: only the page with no Older/Newer position refreshes. Paused while the browser tab is hidden. Without JavaScript the page is as before.
+  - New: `GET /api/logs` (admin), the same filters as /logs plus `top=<id>`. It reads only the rows above `top` and answers `{"changed": false}` when there is nothing new, so the poll costs next to nothing; the whole newest page is sent only when it changed.
+
 4.0.13
 2026-11-08
 - Feature (macOS): `Launcher.command`, the control panel Windows has in Launcher.bat. Double-click it in Finder and it opens in Terminal with the same menu: Status, Start, Stop, Restart, Open the web UI, Check every monitor now, recent logs, warnings and errors, Reset a web UI password, Install or repair, Rebuild .venv, Uninstall autostart. Each item runs the matching `main.py` command on .venv's python.

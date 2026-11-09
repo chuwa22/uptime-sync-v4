@@ -347,7 +347,7 @@
   // Logs: a message longer than 3 lines (data-more = the lines past 3, set
   // by the server) shows its first lines and a button for the rest, so one
   // traceback does not push the page down. Without this script it shows whole.
-  each($all('pre.msg[data-more]'), function (pre) {
+  function foldMsg(pre) {
     var extra = pre.getAttribute('data-more');
     var btn = document.createElement('button');
     var open = false;
@@ -361,7 +361,150 @@
     on(btn, 'click', function (e) { open = !open; draw(); return cancel(e); });
     pre.parentNode.insertBefore(btn, pre.nextSibling);
     draw();
-  });
+  }
+  each($all('pre.msg[data-more]'), foldMsg);
+
+  // Logs, newest page only (the server sets data-live-url): every
+  // data-live-ms ask /api/logs?top=<newest id shown> for new lines. Nothing
+  // new = {"changed": false} and nothing on the page moves. New lines are
+  // put in above the old ones and the oldest drop off the bottom; rows that
+  // stay are left where they are (their folds, a text selection), so the
+  // page never blinks. Scrolled down inside the box, the lines being read
+  // stay in view. Paused while the tab is hidden or the box is unticked
+  // (remembered in this browser). The summary and Older link come from the
+  // server, like the first paint.
+  var LIVE_KEY = 'uptime-sync-logs-live';
+  var live = $all('[data-live-url]')[0];
+  var liveRows = $all('[data-log-rows]')[0];
+  var liveBox = $all('[data-log-live]')[0];
+  if (live && liveRows && liveBox && window.XMLHttpRequest && window.JSON) {
+    (function () {
+      var liveUrl = live.getAttribute('data-live-url');
+      var liveMs = parseInt(live.getAttribute('data-live-ms'), 10) || 3000;
+      var tick = liveBox.getElementsByTagName('input')[0];
+      var busy = false;
+      var stopped = false;
+      try { if (window.localStorage.getItem(LIVE_KEY) === 'off') { tick.checked = false; } } catch (err) { /* on */ }
+      setHidden(liveBox, false);
+      on(tick, 'click', function () {
+        try { window.localStorage.setItem(LIVE_KEY, tick.checked ? 'on' : 'off'); } catch (err) { /* this page only */ }
+        if (tick.checked) { poll(); }
+      });
+
+      function rowsOf() {
+        var out = [], kids = liveRows.childNodes, i;
+        for (i = 0; i < kids.length; i++) { if (kids[i].nodeType === 1) { out.push(kids[i]); } }
+        return out;
+      }
+      function topId() {
+        var first = rowsOf()[0];
+        return (first && first.getAttribute('data-id')) || '0';   // 0: no lines shown yet
+      }
+      function td(cls, text) {
+        var c = document.createElement('td');
+        if (cls) { c.className = cls; }
+        if (text !== null) { setText(c, text); }
+        return c;
+      }
+      // Same cells as logs.html.
+      function logRow(r) {
+        var tr = document.createElement('tr');
+        var lvl = document.createElement('span');
+        var msgCell = td('wide', null);
+        var pre = document.createElement('pre');
+        tr.className = r.cls || '';
+        tr.setAttribute('data-id', String(r.id));
+        tr.appendChild(td('nowrap muted', r.time));
+        lvl.className = 'lvl lvl-' + String(r.level).toLowerCase();
+        setText(lvl, r.level);
+        var lvlCell = td('', null);
+        lvlCell.appendChild(lvl);
+        tr.appendChild(lvlCell);
+        tr.appendChild(td('nowrap', r.proc + '/' + r.logger));
+        pre.className = 'msg';
+        setText(pre, r.msg);
+        msgCell.appendChild(pre);
+        tr.appendChild(msgCell);
+        if (r.more) { pre.setAttribute('data-more', String(r.more)); foldMsg(pre); }
+        return tr;
+      }
+      // The Older control is a link, or a disabled span on the last page.
+      function setOlder(href) {
+        each($all('[data-pager-older]'), function (el) {
+          var isLink = el.tagName.toLowerCase() === 'a';
+          if (href && isLink) { el.setAttribute('href', href); return; }
+          if (!href && !isLink) { return; }
+          var swap = document.createElement(href ? 'a' : 'span');
+          swap.className = href ? 'button small' : 'button small disabled';
+          if (href) { swap.setAttribute('href', href); } else { swap.setAttribute('aria-disabled', 'true'); }
+          swap.setAttribute('data-pager-older', '');
+          while (el.firstChild) { swap.appendChild(el.firstChild); }
+          el.parentNode.replaceChild(swap, el);
+        });
+      }
+      function apply(st) {
+        var keep = {}, have = {}, i, old = rowsOf(), anchor = null, anchorTop = 0;
+        for (i = 0; i < st.rows.length; i++) { keep[String(st.rows[i].id)] = true; }
+        // Scrolled down: hold the first line still on the page where it is.
+        if (live.scrollTop > 0) {
+          for (i = 0; i < old.length; i++) {
+            if (keep[old[i].getAttribute('data-id')]) { anchor = old[i]; anchorTop = anchor.offsetTop - live.scrollTop; break; }
+          }
+        }
+        for (i = 0; i < old.length; i++) {
+          var id = old[i].getAttribute('data-id');
+          if (id && keep[id]) { have[id] = old[i]; } else { liveRows.removeChild(old[i]); }
+        }
+        // The rows come newest first; walk them beside the rows kept.
+        var cursor = rowsOf()[0] || null;
+        for (i = 0; i < st.rows.length; i++) {
+          var row = have[String(st.rows[i].id)];
+          if (row && row === cursor) {
+            cursor = nextRow(cursor);
+          } else if (row) {
+            liveRows.insertBefore(row, cursor);
+          } else {
+            liveRows.insertBefore(logRow(st.rows[i]), cursor);
+          }
+        }
+        // app.css turns the browser's own scroll anchoring off for this box.
+        if (anchor) { live.scrollTop = anchor.offsetTop - anchorTop; }
+        setText($all('[data-log-summary]')[0], st.summary);
+        setOlder(st.older);
+      }
+      function nextRow(el) {
+        el = el.nextSibling;
+        while (el && el.nodeType !== 1) { el = el.nextSibling; }
+        return el;
+      }
+      function poll() {
+        if (busy || stopped || !tick.checked || document.hidden) { return; }
+        var xhr = new XMLHttpRequest();
+        try {
+          xhr.open('GET', liveUrl + (liveUrl.indexOf('?') < 0 ? '?' : '&') + 'top=' + topId() +
+                   '&_=' + new Date().getTime(), true);
+          xhr.setRequestHeader('Accept', 'application/json');
+        } catch (err) {
+          stopped = true;   // old IE: "Access is denied"; the page still works
+          return;
+        }
+        busy = true;
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState !== 4) { return; }
+          busy = false;
+          if (xhr.status === 401) { window.location.reload(); return; }   // signed out: the sign-in page
+          if (xhr.status === 403) { stopped = true; return; }
+          var st = null;
+          if (xhr.status === 200) {
+            try { st = JSON.parse(xhr.responseText); } catch (err) { st = null; }
+          }
+          if (st && st.changed && st.rows) { apply(st); }
+        };
+        try { xhr.send(null); } catch (err) { busy = false; }
+      }
+      window.setInterval(poll, liveMs);
+    })();
+  }
 
   // Dashboard (and the Settings heartbeat tile): refresh from /api/status every 15 s.
   var tiles = $all('[data-status-url]')[0];
