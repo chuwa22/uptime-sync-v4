@@ -1,3 +1,7 @@
+4.1.4
+2026-11-10
+- Fixed (web): http://<host>:5000/dashboard answered "Not Found": the dashboard is at /, and a bookmark that opened /dashboard (as some older ones do) hit the bare 404 page. /dashboard now sends the browser to / (sign-in first when signed out), keeping any sort in the address.
+
 4.1.3
 2026-11-09
 - Fixed (web): 4.1.2 lined up side-by-side fields by their inputs, but then a wrapped hint pushed its title above its neighbour's (Monitor check every next to Parallel checks). Now both line up: titles level at the top, inputs level at the bottom, the spare height between title and input. Checked on Settings and the monitor form at 375, 768, 900, 1024 and 1440 px: no row off by a pixel, no sideways scroll; phones keep one field per line with no gap. IE keeps the inputs lined up.
