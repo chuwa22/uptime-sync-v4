@@ -319,9 +319,11 @@ fieldset.radio-group label.check small { display: block; margin: 3px 0 0 21px; }
 fieldset.radio-group legend small { font-weight: 400; }
 fieldset.radio-group label.server-url { margin-left: 21px; }
 .cols { overflow: hidden; }
-/* Side by side fields line up by their inputs (bottom), not their titles: a
-   hint that wraps to a second line must not push one input below the other.
-   Every .cols label ends with its input or select. */
+/* Side by side fields: each .cols label is <span class="lbl">title and hint</span>
+   then its input or select. A hint that wraps to a second line must not push
+   one input below the other. IE lines the inputs up at the bottom; browsers
+   with grid (below) keep the titles level at the top too, the space going
+   between title and input. */
 .cols > label { display: inline-block; vertical-align: bottom; width: 48%; margin-right: 1.5%; }
 .note { color: #6b7686; color: var(--muted); font-size: 12.75px; margin: -4.5px 0 13.5px; }
 .note.warn-note { color: #c98a12; color: var(--warn); margin-top: 0; }
@@ -474,8 +476,9 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
   fieldset.radio-group label.check small { flex-basis: 100%; }
   .checks { display: flex; gap: 22.5px; flex-wrap: wrap; }
   .checks label { margin-right: 0; }
-  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 15px; align-items: end; }
-  .cols > label { width: auto; margin-right: 0; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 15px; }
+  .cols > label { width: auto; margin-right: 0; display: flex; flex-direction: column; }
+  .cols > label > .lbl { flex: 1 0 auto; }
   .actions { display: flex; gap: 9px; align-items: center; }
   .actions > * { margin-right: 0; }
   form.filters { display: flex; flex-wrap: wrap; gap: 7.5px; align-items: center; }

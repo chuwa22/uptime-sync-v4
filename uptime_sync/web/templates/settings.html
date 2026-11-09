@@ -21,9 +21,9 @@
     <label>Site name <small class="muted">shown in the top bar, e.g. Head office - server room</small>
       <input name="site_name" value="{{ s.site_name }}" maxlength="100" placeholder="Head office - server room"></label>
     <div class="cols">
-      <label>Monitor check every (s) <small class="muted">and push to Uptime Kuma, {{ b['check_interval'][0] }}-{{ b['check_interval'][1] }}, usually 60</small>
+      <label><span class="lbl">Monitor check every (s) <small class="muted">and push to Uptime Kuma, {{ b['check_interval'][0] }}-{{ b['check_interval'][1] }}, usually 60</small></span>
         <input name="check_interval" type="number" min="{{ b['check_interval'][0] }}" max="{{ b['check_interval'][1] }}" value="{{ s.check_interval }}" placeholder="60"></label>
-      <label>Parallel checks <small class="muted">monitors checked at once, {{ b['max_workers'][0] }}-{{ b['max_workers'][1] }}</small>
+      <label><span class="lbl">Parallel checks <small class="muted">monitors checked at once, {{ b['max_workers'][0] }}-{{ b['max_workers'][1] }}</small></span>
         <input name="max_workers" type="number" min="{{ b['max_workers'][0] }}" max="{{ b['max_workers'][1] }}" value="{{ s.max_workers }}" placeholder="10"></label>
     </div>
   </div>
@@ -31,9 +31,9 @@
   <div class="card" id="logging">
     <h2>{{ icon('logs') }}Logging</h2>
     <div class="cols">
-      <label>Log level <small class="muted">every part, unless it has its own below</small>
+      <label><span class="lbl">Log level <small class="muted">every part, unless it has its own below</small></span>
         <select name="log_level">{% for l in log_levels %}<option{{ ' selected' if l == s.log_level }}>{{ l }}</option>{% endfor %}</select></label>
-      <label>Keep logs (days) <small class="muted">{{ b['log_retention_days'][0] }}-{{ b['log_retention_days'][1] }}</small>
+      <label><span class="lbl">Keep logs (days) <small class="muted">{{ b['log_retention_days'][0] }}-{{ b['log_retention_days'][1] }}</small></span>
         <input name="log_retention_days" type="number" min="{{ b['log_retention_days'][0] }}" max="{{ b['log_retention_days'][1] }}" value="{{ s.log_retention_days }}" placeholder="14"></label>
     </div>
     {#- Per-part levels: folded behind one line (app.js) unless a part has its
@@ -87,19 +87,19 @@
         <input name="local_url" class="mono" value="{{ s.remote.local_url }}" placeholder="http://192.168.1.10/uptime-monitor/api/heartbeat.php" data-selects="server-local"></label>
     </fieldset>
     <div class="cols">
-      <label>API key <small class="muted">a name for this agent: 8-100 letters, digits, _ or -; the 3.x key keeps its card</small> {{ locked('remote.api_key') }}
-        {%- if 'remote.api_key' not in managed %} <a class="small-link" href="{{ url_for('settings_page', new_key=1) }}#reporting" data-fill="api_key" data-value="{{ key_suggestion }}" data-note="key-note">Generate</a>{% endif %}
+      <label><span class="lbl">API key <small class="muted">a name for this agent: 8-100 letters, digits, _ or -; the 3.x key keeps its card</small> {{ locked('remote.api_key') }}
+        {%- if 'remote.api_key' not in managed %} <a class="small-link" href="{{ url_for('settings_page', new_key=1) }}#reporting" data-fill="api_key" data-value="{{ key_suggestion }}" data-note="key-note">Generate</a>{% endif %}</span>
         <input name="api_key" class="mono" value="{{ '' if 'remote.api_key' in managed else s.remote.api_key }}"{{ ' disabled' if 'remote.api_key' in managed }} autocomplete="off" maxlength="100" placeholder="e.g. grand-empire"></label>
       {# The stored secret never goes into the page: a set one shows as a locked mask. #}
       {% if 'remote.secret_key' in managed %}
-      <label>HMAC secret {{ locked('remote.secret_key') }}
+      <label><span class="lbl">HMAC secret {{ locked('remote.secret_key') }}</span>
         <input type="password" class="mono" disabled></label>
       {% elif has_secret and not change_secret %}
-      <label>HMAC secret <small class="ok-text">{{ icon('check', 14) }}set</small> <a class="small-link" href="{{ url_for('settings_page', secret='change') }}#reporting">Change</a>
+      <label><span class="lbl">HMAC secret <small class="ok-text">{{ icon('check', 14) }}set</small> <a class="small-link" href="{{ url_for('settings_page', secret='change') }}#reporting">Change</a></span>
         <input class="mono" value="{{ secret_mask }}" disabled aria-label="HMAC secret is set"></label>
       {% else %}
-      <label>HMAC secret <small class="muted">{{ '(set - paste a new one, or leave empty to keep it)' if has_secret else '(not set - heartbeats are not verified)' }}</small>
-        {%- if has_secret %} <a class="small-link" href="{{ url_for('settings_page') }}#reporting">Cancel</a>{% endif %}
+      <label><span class="lbl">HMAC secret <small class="muted">{{ '(set - paste a new one, or leave empty to keep it)' if has_secret else '(not set - heartbeats are not verified)' }}</small>
+        {%- if has_secret %} <a class="small-link" href="{{ url_for('settings_page') }}#reporting">Cancel</a>{% endif %}</span>
         <input name="secret_key" type="password" class="mono" placeholder="{{ 'paste the new secret' if has_secret else 'paste the secret, or Generate a new secret below' }}" autocomplete="new-password"></label>
       {% endif %}
     </div>
@@ -108,16 +108,16 @@
     <p class="note">Paste the same secret on this agent's card in uptime-monitor (key button). Until both sides have it, heartbeats are not verified.
       {%- if 'remote.secret_key' not in managed %} <a href="{{ url_for('new_secret') }}">{{ icon('key', 14) }}Generate a new secret</a>{% endif %}</p>
     <div class="cols">
-      <label>Heartbeat every (s) <small class="muted">to uptime-monitor, {{ b['remote.heartbeat_interval'][0] }}-{{ b['remote.heartbeat_interval'][1] }}, usually 60</small>
+      <label><span class="lbl">Heartbeat every (s) <small class="muted">to uptime-monitor, {{ b['remote.heartbeat_interval'][0] }}-{{ b['remote.heartbeat_interval'][1] }}, usually 60</small></span>
         <input name="heartbeat_interval" type="number" min="{{ b['remote.heartbeat_interval'][0] }}" max="{{ b['remote.heartbeat_interval'][1] }}" value="{{ s.remote.heartbeat_interval }}" placeholder="60"></label>
-      <label>Require signed replies
+      <label><span class="lbl">Require signed replies</span>
         <select name="require_signed">
           {% set rs = s.remote.require_signed_response %}
           <option value="auto"{{ ' selected' if rs not in [true, false] }}>auto - once the server has signed one</option>
           <option value="true"{{ ' selected' if rs is sameas true }}>always</option>
           <option value="false"{{ ' selected' if rs is sameas false }}>never</option>
         </select></label>
-      <label>Signing state <input value="{{ sign_state }}{{ ' since ' ~ sign_since if sign_since }}" disabled></label>
+      <label><span class="lbl">Signing state</span> <input value="{{ sign_state }}{{ ' since ' ~ sign_since if sign_since }}" disabled></label>
     </div>
   </div>
 
@@ -131,9 +131,9 @@
   <div class="card" id="web">
     <h2>{{ icon('server') }}Web UI</h2>
     <div class="cols">
-      <label>Web listens on <small class="muted">0.0.0.0 = every network, 127.0.0.1 = this PC only</small>
+      <label><span class="lbl">Web listens on <small class="muted">0.0.0.0 = every network, 127.0.0.1 = this PC only</small></span>
         <input name="web_host" class="mono" value="{{ s.web.host }}" placeholder="0.0.0.0"></label>
-      <label>Web port <small class="muted">{{ b['web.port'][0] }}-{{ b['web.port'][1] }}, default 5000</small>
+      <label><span class="lbl">Web port <small class="muted">{{ b['web.port'][0] }}-{{ b['web.port'][1] }}, default 5000</small></span>
         <input name="web_port" type="number" min="{{ b['web.port'][0] }}" max="{{ b['web.port'][1] }}" value="{{ s.web.port }}" placeholder="5000"></label>
     </div>
     <p class="note">This page is plain http: with 0.0.0.0 anyone on the network reaches the sign-in page and a password crosses the network unencrypted. Use 127.0.0.1 when you only open it on this PC. A change takes effect after a restart. uptime-monitor does not use this address.</p>
