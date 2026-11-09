@@ -403,6 +403,12 @@ def register(app):  # noqa: C901 -- one place for the whole route table
     def dashboard():
         return render_template('dashboard.html', st=_sorted_status())
 
+    @app.route('/dashboard')
+    def dashboard_alias():
+        # Older bookmarks open /dashboard; the dashboard is /. A plain 302
+        # (never 301: browsers keep a 301 for good), query string kept.
+        return redirect(url_for('dashboard', **request.args.to_dict()))
+
     @app.route('/api/status')
     @auth.login_required
     def api_status():

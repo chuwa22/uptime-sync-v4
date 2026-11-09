@@ -36,6 +36,16 @@ class WebTests(unittest.TestCase):
         self.assertIn('/login', r.headers['Location'])
         self.assertIn('/setup', self.c.get('/login').headers['Location'])
 
+    def test_dashboard_path_goes_to_the_dashboard(self):
+        r = self.c.get('/dashboard?sort=name&dir=desc')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r.headers['Location'].split('://', 1)[-1].split('/', 1)[-1],
+                         '?sort=name&dir=desc')
+        self.setup_admin()
+        r = self.c.get('/dashboard', follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.request.path, '/')
+
     def test_short_password_refused(self):
         token = re.search(r'name="csrf" value="([^"]+)"',
                           self.c.get('/setup').get_data(as_text=True)).group(1)
