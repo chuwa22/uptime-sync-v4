@@ -632,6 +632,24 @@ class OldBrowserTests(unittest.TestCase):
     def test_base_template_asks_ie_for_its_best_mode(self):
         self.assertIn('<meta http-equiv="X-UA-Compatible" content="IE=edge">', _read('templates', 'base.html'))
 
+    def test_side_by_side_fields_line_up_by_their_inputs(self):
+        # app.css aligns .cols fields at the bottom (grid and IE fallback), so a
+        # wrapped hint cannot push one input below the other. That holds only
+        # while every label there ends with its control.
+        self.assertIn('.cols > label { display: inline-block; vertical-align: bottom;', self.css)
+        _, inside = _supports_split(self.css)
+        self.assertRegex(inside, r'\.cols \{[^}]*align-items: end;')
+        seen = 0
+        for name in os.listdir(os.path.join(WEB, 'templates')):
+            html = _read('templates', name)
+            for block in re.findall(r'<div class="cols"[^>]*>(.*?)\n\s*</div>', html, re.S):
+                for label in re.findall(r'<label\b[^>]*>(.*?)</label>', block, re.S):
+                    seen += 1
+                    end = label.rstrip()
+                    self.assertTrue(end.endswith('</select>') or end.endswith('</textarea>')
+                                    or re.search(r'<input\b[^<]*>$', end), '%s: %s' % (name, end[-80:]))
+        self.assertGreater(seen, 10)
+
     def test_app_js_is_es3(self):
         for name in ('app.js', 'theme.js'):
             js = re.sub(r'/\*.*?\*/|//[^\n]*', '', _read('static', name), flags=re.S)
