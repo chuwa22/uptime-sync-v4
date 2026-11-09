@@ -546,7 +546,7 @@ class NumericBoundsTests(unittest.TestCase):
         r = self.post(check_interval='5', max_workers='999')
         self.assertEqual(r.status_code, 200)
         html = r.get_data(as_text=True)
-        self.assertIn('Check every must be a whole number from 10 to 86400.', html)
+        self.assertIn('Monitor check every must be a whole number from 10 to 86400.', html)
         self.assertIn('Parallel checks must be a whole number from 1 to 64.', html)
         self.assertEqual(settings.load()['check_interval'], 60)
 

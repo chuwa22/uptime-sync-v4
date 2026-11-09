@@ -576,7 +576,7 @@ def register(app):  # noqa: C901 -- one place for the whole route table
             }
             # Bounds from settings.BOUNDS, the table load() enforces: an
             # out-of-range value is an error, never silently clamped.
-            for field, name, label in (('check_interval', 'check_interval', 'Check every'),
+            for field, name, label in (('check_interval', 'check_interval', 'Monitor check every'),
                                        ('max_workers', 'max_workers', 'Parallel checks'),
                                        ('log_retention_days', 'log_retention_days', 'Keep logs'),
                                        ('heartbeat_interval', 'remote.heartbeat_interval', 'Heartbeat every'),

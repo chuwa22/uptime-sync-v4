@@ -21,7 +21,7 @@
     <label>Site name <small class="muted">shown in the top bar, e.g. Head office - server room</small>
       <input name="site_name" value="{{ s.site_name }}" maxlength="100" placeholder="Head office - server room"></label>
     <div class="cols">
-      <label>Check every (s) <small class="muted">{{ b['check_interval'][0] }}-{{ b['check_interval'][1] }}, usually 60</small>
+      <label>Monitor check every (s) <small class="muted">every monitor is checked and pushed to Uptime Kuma this often, {{ b['check_interval'][0] }}-{{ b['check_interval'][1] }}, usually 60</small>
         <input name="check_interval" type="number" min="{{ b['check_interval'][0] }}" max="{{ b['check_interval'][1] }}" value="{{ s.check_interval }}" placeholder="60"></label>
       <label>Parallel checks <small class="muted">monitors checked at once, {{ b['max_workers'][0] }}-{{ b['max_workers'][1] }}</small>
         <input name="max_workers" type="number" min="{{ b['max_workers'][0] }}" max="{{ b['max_workers'][1] }}" value="{{ s.max_workers }}" placeholder="10"></label>
@@ -108,7 +108,7 @@
     <p class="note">Paste the same secret on this agent's card in uptime-monitor (key button). Until both sides have it, heartbeats are not verified.
       {%- if 'remote.secret_key' not in managed %} <a href="{{ url_for('new_secret') }}">{{ icon('key', 14) }}Generate a new secret</a>{% endif %}</p>
     <div class="cols">
-      <label>Heartbeat every (s) <small class="muted">{{ b['remote.heartbeat_interval'][0] }}-{{ b['remote.heartbeat_interval'][1] }}, usually 60</small>
+      <label>Heartbeat every (s) <small class="muted">this agent reports to uptime-monitor this often, {{ b['remote.heartbeat_interval'][0] }}-{{ b['remote.heartbeat_interval'][1] }}, usually 60</small>
         <input name="heartbeat_interval" type="number" min="{{ b['remote.heartbeat_interval'][0] }}" max="{{ b['remote.heartbeat_interval'][1] }}" value="{{ s.remote.heartbeat_interval }}" placeholder="60"></label>
       <label>Require signed replies
         <select name="require_signed">
