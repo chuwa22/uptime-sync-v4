@@ -1108,7 +1108,71 @@ class LogsPageTests(unittest.TestCase):
         self.assertIn('<pre class="msg" data-more="3">boom', html)
         self.assertIn('class="logscroll"', html)
         js = _read('static', 'app.js')
-        self.assertIn("each($all('pre.msg[data-more]')", js)
+        self.assertIn("each($all('pre.msg[data-more]'), foldMsg)", js)
+        self.assertIn('foldMsg(pre)', js)              # live rows fold the same way
+
+    def api(self, url):
+        r = self.c.get(url)
+        self.assertEqual(r.status_code, 200, url)
+        return json.loads(r.get_data(as_text=True))
+
+    def add(self, *msgs, **kw):
+        from uptime_sync import logstore
+        conn = logstore.connect()
+        with conn:
+            conn.executemany('INSERT INTO logs (ts, proc, level, logger, msg) VALUES (?, ?, ?, ?, ?)',
+                             [(1700000300, 'engine', kw.get('level', 20), 'x', m) for m in msgs])
+        conn.close()
+
+    def test_only_the_newest_page_refreshes(self):
+        html = self.page('/logs?level=WARNING&q=boom')
+        self.assertIn('data-live-url="/api/logs?level=WARNING&amp;q=boom"', html)
+        self.assertIn('data-live-ms="3000"', html)
+        self.assertIn('New lines appear every 3 s', html)
+        self.assertIn('class="live hidden" data-log-live', html)   # app.js shows it
+        self.assertIn('<tr class="l-err" data-id="250">', html)
+        older = self.links(self.page('/logs'))['Older &rarr;']
+        html = self.page(older)
+        self.assertNotIn('data-live-url', html)
+        self.assertNotIn('data-log-live', html)
+
+    def test_api_logs_answers_only_when_there_is_something_new(self):
+        self.assertEqual(self.api('/api/logs?top=250'), {'changed': False})
+        self.add('new one')
+        st = self.api('/api/logs?top=250')
+        self.assertTrue(st['changed'])
+        self.assertEqual(len(st['rows']), 50)
+        self.assertEqual(st['rows'][0]['msg'], 'new one')
+        self.assertEqual(st['rows'][0]['id'], 251)
+        self.assertEqual(st['rows'][1]['cls'], 'l-err')
+        self.assertEqual(st['rows'][1]['more'], 3)
+        self.assertIn('before=202', st['older'])                       # just below the last row sent
+        self.assertTrue(st['summary'].startswith('50 lines, '))
+        self.assertEqual(self.api('/api/logs?top=251'), {'changed': False})
+
+    def test_api_logs_keeps_the_filters(self):
+        self.add('quiet')                                              # INFO: not a WARNING+ line
+        self.assertEqual(self.api('/api/logs?level=WARNING&top=250'), {'changed': False})
+        self.add('loud', level=30)
+        st = self.api('/api/logs?level=WARNING&n=100&top=250')
+        self.assertEqual([r['msg'] for r in st['rows']], ['loud', 'boom\nTraceback\n  a\n  b\n  c\nValueError'])
+        self.assertIsNone(st['older'])
+        self.assertEqual(st['summary'][:9], '2 lines, ')
+        self.assertEqual(self.api('/api/logs?q=nothing-like-it&top=0'), {'changed': False})   # empty page
+        self.add('nothing-like-it now')
+        self.assertEqual(len(self.api('/api/logs?q=nothing-like-it&top=0')['rows']), 1)
+
+    def test_api_logs_after_logs_db_was_replaced(self):
+        # A quarantined logs.db starts again at id 1: an old top must not freeze the page.
+        st = self.api('/api/logs?top=999999')
+        self.assertTrue(st['changed'])
+        self.assertEqual(st['rows'][0]['id'], 250)
+        self.assertTrue(self.api('/api/logs')['changed'])               # no top: the page
+        self.assertTrue(self.api('/api/logs?top=99999999999999999999999')['changed'])
+
+    def test_api_logs_needs_an_admin(self):
+        self.c.post('/logout', data={'csrf': WebTests.csrf(self, '/logs')})
+        self.assertEqual(self.c.get('/api/logs?top=1').status_code, 401)
 
 if __name__ == '__main__':
     unittest.main()

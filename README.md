@@ -131,7 +131,8 @@ The supervisor restarts a child that dies, with a backoff of 1, 2, 5, 10, 30 and
 - **Exit codes:** 0 means "stopped on purpose", so the OS leaves the agent alone.
   Any other exit is a crash, and the OS restarts it.
 - **Logs:** they go to `logs/logs.db` (SQLite). The web UI's Logs page and
-  `main.py logs` read them there.
+  `main.py logs` read them there. The newest Logs page shows new lines every
+  3 s by itself (untick "New lines appear every 3 s" to pause).
 - **Text logs:** two kinds appear only when something went wrong.
   - `logs/<proc>-stderr.log` holds output from a process that crashed before it
     could log.
