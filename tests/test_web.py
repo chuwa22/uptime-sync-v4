@@ -226,7 +226,7 @@ class WebTests(unittest.TestCase):
 
     def test_port_only_for_types_that_use_it(self):
         html = _read('templates', 'monitor_form.html')
-        self.assertIn('<label data-for-types="TCP HTTP HTTPS">Port', html)
+        self.assertIn('<label data-for-types="TCP HTTP HTTPS"><span class="lbl">Port', html)
         for t in ('DNS', 'PING'):
             self.assertIsNone(monitors.normalize({'type': t, 'port': 8080})['port'], t)
         self.assertEqual(monitors.normalize({'type': 'TCP PORT', 'port': '8080'})['port'], 8080)
@@ -633,18 +633,23 @@ class OldBrowserTests(unittest.TestCase):
         self.assertIn('<meta http-equiv="X-UA-Compatible" content="IE=edge">', _read('templates', 'base.html'))
 
     def test_side_by_side_fields_line_up_by_their_inputs(self):
-        # app.css aligns .cols fields at the bottom (grid and IE fallback), so a
-        # wrapped hint cannot push one input below the other. That holds only
-        # while every label there ends with its control.
+        # A wrapped hint must not push one input below the other: IE lines
+        # .cols inputs up at the bottom; with grid each label is a column whose
+        # .lbl (title + hint) takes the spare height, so titles stay level at
+        # the top and inputs at the bottom. That holds only while every label
+        # there is <span class="lbl">...</span> and then its control.
         self.assertIn('.cols > label { display: inline-block; vertical-align: bottom;', self.css)
         _, inside = _supports_split(self.css)
-        self.assertRegex(inside, r'\.cols \{[^}]*align-items: end;')
+        self.assertIn('.cols > label { width: auto; margin-right: 0; display: flex; flex-direction: column; }', inside)
+        self.assertIn('.cols > label > .lbl { flex: 1 0 auto; }', inside)
         seen = 0
         for name in os.listdir(os.path.join(WEB, 'templates')):
             html = _read('templates', name)
             for block in re.findall(r'<div class="cols"[^>]*>(.*?)\n\s*</div>', html, re.S):
                 for label in re.findall(r'<label\b[^>]*>(.*?)</label>', block, re.S):
                     seen += 1
+                    self.assertTrue(re.match(r'<span class="lbl">((?!<input|<select|<textarea).)*</span>\s*<(input|select|textarea)\b',
+                                             label, re.S), '%s: %s' % (name, label[:80]))
                     end = label.rstrip()
                     self.assertTrue(end.endswith('</select>') or end.endswith('</textarea>')
                                     or re.search(r'<input\b[^<]*>$', end), '%s: %s' % (name, end[-80:]))

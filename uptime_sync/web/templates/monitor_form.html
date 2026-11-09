@@ -14,18 +14,18 @@
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <input type="hidden" name="id" value="{{ '' if is_new else m.id }}">
   <div class="cols">
-    <label>Name <small class="muted">e.g. WAN1 - Google DNS</small>
+    <label><span class="lbl">Name <small class="muted">e.g. WAN1 - Google DNS</small></span>
       <input name="name" value="{{ m.name }}" required maxlength="100" placeholder="WAN1 - Google DNS"></label>
-    <label>Type
+    <label><span class="lbl">Type</span>
       <select name="type" data-type-select>
         {% for t in types %}<option value="{{ t }}"{{ ' selected' if t == m.type }}>{{ t }}</option>{% endfor %}
       </select></label>
   </div>
   <div class="cols">
-    <label>Target <small class="muted">host name or IP, no http://, e.g. 8.8.8.8 or example.com (HTTP: ignored when Monitor URL is set)</small>
+    <label><span class="lbl">Target <small class="muted">host name or IP, no http://, e.g. 8.8.8.8 or example.com (HTTP: ignored when Monitor URL is set)</small></span>
       <input name="target" value="{{ m.target }}" class="mono" placeholder="8.8.8.8"
         data-ph="PING=192.168.1.1|DNS=1.1.1.1|TCP=192.168.1.10|HTTP=intranet.local|HTTPS=example.com"></label>
-    <label data-for-types="TCP HTTP HTTPS">Port <small class="muted">required for TCP PORT (e.g. 3389), optional for HTTP(S)</small>
+    <label data-for-types="TCP HTTP HTTPS"><span class="lbl">Port <small class="muted">required for TCP PORT (e.g. 3389), optional for HTTP(S)</small></span>
       <input name="port" type="number" min="{{ limits.port[0] }}" max="{{ limits.port[1] }}" value="{{ m.port if m.port is not none else '' }}"
         placeholder="3389" data-ph="TCP=3389|HTTP=80 (default)|HTTPS=443 (default)"></label>
   </div>
@@ -35,18 +35,18 @@
       Paste it as Kuma shows it: the agent replaces ?status=&amp;msg=&amp;ping= itself. ${NAME} reads NAME from data/.env</small>
     <input name="push_url" value="{{ m.push_url }}" required class="mono" placeholder="https://kuma.example.com/api/push/${KUMA_WAN1}"></label>
   <div class="cols" data-for-types="DNS">
-    <label>DNS probe <small class="muted">when Target is a DNS server IP; a host name is just resolved</small>
+    <label><span class="lbl">DNS probe <small class="muted">when Target is a DNS server IP; a host name is just resolved</small></span>
       <select name="dns_method">
         {% for v, t in [('auto', 'auto - DNS query, ping if no answer'), ('query', 'query - DNS query only'), ('ping', 'ping - ICMP only')] %}
         <option value="{{ v }}"{{ ' selected' if v == m.dns_method }}>{{ t }}</option>{% endfor %}
       </select></label>
-    <label>Query name <small class="muted">the name asked for; empty = google.com</small>
+    <label><span class="lbl">Query name <small class="muted">the name asked for; empty = google.com</small></span>
       <input name="dns_query_name" value="{{ m.dns_query_name }}" class="mono" placeholder="google.com"></label>
   </div>
   <div class="cols">
-    <label>Timeout (s) <small class="muted">per attempt, {{ limits.timeout[0] }}-{{ limits.timeout[1] }}</small>
+    <label><span class="lbl">Timeout (s) <small class="muted">per attempt, {{ limits.timeout[0] }}-{{ limits.timeout[1] }}</small></span>
       <input name="timeout" type="number" min="{{ limits.timeout[0] }}" max="{{ limits.timeout[1] }}" value="{{ m.timeout }}" placeholder="10"></label>
-    <label>Attempts <small class="muted">tries before reporting down, {{ limits.retry_count[0] }}-{{ limits.retry_count[1] }}</small>
+    <label><span class="lbl">Attempts <small class="muted">tries before reporting down, {{ limits.retry_count[0] }}-{{ limits.retry_count[1] }}</small></span>
       <input name="retry_count" type="number" min="{{ limits.retry_count[0] }}" max="{{ limits.retry_count[1] }}" value="{{ m.retry_count }}" placeholder="3"></label>
   </div>
   <label data-for-types="HTTP HTTPS">Request headers <small class="muted">optional, one "Name: value" per line, e.g. Authorization: Bearer ${API_TOKEN}</small>

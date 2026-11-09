@@ -1,3 +1,8 @@
+4.1.3
+2026-11-09
+- Fixed (web): 4.1.2 lined up side-by-side fields by their inputs, but then a wrapped hint pushed its title above its neighbour's (Monitor check every next to Parallel checks). Now both line up: titles level at the top, inputs level at the bottom, the spare height between title and input. Checked on Settings and the monitor form at 375, 768, 900, 1024 and 1440 px: no row off by a pixel, no sideways scroll; phones keep one field per line with no gap. IE keeps the inputs lined up.
+  - Code: every label in a .cols row is <span class="lbl">title and hint</span> and then its control; a test keeps it that way.
+
 4.1.2
 2026-11-09
 - Fixed (web): two fields side by side (Settings, monitor form) did not line up when one hint wrapped to a second line: that field's input sat lower than its neighbour's (Monitor check every next to Parallel checks). Fields in a row now line up by their inputs, in IE too. The Monitor check every and Heartbeat every hints are shorter ("and push to Uptime Kuma", "to uptime-monitor").
