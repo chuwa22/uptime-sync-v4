@@ -23,7 +23,9 @@ python tools/build-release.py --publish                       # GitHub release (
 
 Run the commands from the repo root (`-t .` matters: tests import `tests._env`).
 `build-release.py` refuses uncommitted changes in `paths.SHIPPED` unless
-`--allow-dirty`, and takes the version from the first block of `VERSION`.
+`--allow-dirty`, and takes the version from the first block of `VERSION`. It
+also refuses a block that breaks the Semantic Versioning rule below
+(`tools/semver_check.py`).
 
 ## How it runs
 
@@ -391,6 +393,22 @@ when set (the tests use this), else the checkout folder.
 - **users.json** is written with `backup='mirror'`: its .bak is the current
   file, never the previous one (an old hash, a deleted user, an old epoch).
 - **VERSION is prepend-only.** Never edit or remove older entries.
+- **Semantic Versioning (after 4.0.13).** A version is MAJOR.MINOR.PATCH, and a new
+  block goes up exactly one step from the one below it (4.0.13 -> 4.0.14,
+  4.1.0 or 5.0.0). The label at the start of each top-level line decides the
+  smallest step:
+  - MAJOR (`Breaking`): a heartbeat `API_VERSION` bump, a dropped OS or Python
+    (the 3.8 floor, Windows 7), data an older version cannot read after a
+    rollback, or an update that needs a step by hand.
+  - MINOR (`Feature`, `New`, `Improvement`, `Change`): anything new that stays
+    compatible: a feature, a setting, a page, a behaviour change.
+  - PATCH (`Fix`, `Fixed`, `Security`, `Performance`, `Docs`, `Tests`, `Code`):
+    fixes only.
+
+  A larger step than needed is allowed. Indented sub-lines are not checked.
+  Versions up to 4.0.13 put features in PATCH releases; they stay as they are
+  (prepend-only). uptime-monitor offers any x.y.z by the `github-download`
+  capability, not by the major number, so a 5.0.0 needs no server change.
 
 ## Testing
 

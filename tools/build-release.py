@@ -5,6 +5,9 @@
     python tools/build-release.py --publish    # ... and create GitHub release v<ver>
     python tools/build-release.py --allow-dirty
 
+The top VERSION block must be a one-step Semantic Versioning bump whose
+labels fit it (tools/semver_check.py): a Feature needs at least MINOR.
+
 Only git-tracked files under paths.SHIPPED go in (the same tuple the
 updater swaps), so data/, logs/, .venv/ and anything gitignored can never
 ship; a regex block-list on top catches site files committed by mistake.
@@ -31,6 +34,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 os.environ.pop('UPTIME_SYNC_ROOT', None)
 from uptime_sync.paths import SHIPPED  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import semver_check  # noqa: E402
 
 FORBIDDEN = re.compile(
     r'(^|/)(data|logs|run|backups|update_staging|dist|\.venv[^/]*)(/|$)'
@@ -91,6 +96,13 @@ def main():
     version, notes = top_version_block()
     if not re.match(r'^\d+\.\d+\.\d+$', version):
         print('[ERROR] VERSION first line is not x.y.z: %r' % version)
+        return 1
+    with open(os.path.join(PROJECT_ROOT, 'VERSION'), 'r', encoding='utf-8') as f:
+        problems = semver_check.check(f.read())
+    if problems:
+        # MAJOR.MINOR.PATCH: see tools/semver_check.py and CLAUDE.md.
+        for p in problems:
+            print('[ERROR] VERSION: ' + p)
         return 1
 
     dirty = git('status', '--porcelain', '--', *SHIPPED).strip()
