@@ -319,7 +319,10 @@ fieldset.radio-group label.check small { display: block; margin: 3px 0 0 21px; }
 fieldset.radio-group legend small { font-weight: 400; }
 fieldset.radio-group label.server-url { margin-left: 21px; }
 .cols { overflow: hidden; }
-.cols > label { display: inline-block; vertical-align: top; width: 48%; margin-right: 1.5%; }
+/* Side by side fields line up by their inputs (bottom), not their titles: a
+   hint that wraps to a second line must not push one input below the other.
+   Every .cols label ends with its input or select. */
+.cols > label { display: inline-block; vertical-align: bottom; width: 48%; margin-right: 1.5%; }
 .note { color: #6b7686; color: var(--muted); font-size: 12.75px; margin: -4.5px 0 13.5px; }
 .note.warn-note { color: #c98a12; color: var(--warn); margin-top: 0; }
 .note.warn-note .ic { vertical-align: -2.25px; margin-right: 4.5px; }
@@ -471,7 +474,7 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #9aa4b2; }
   fieldset.radio-group label.check small { flex-basis: 100%; }
   .checks { display: flex; gap: 22.5px; flex-wrap: wrap; }
   .checks label { margin-right: 0; }
-  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 15px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 15px; align-items: end; }
   .cols > label { width: auto; margin-right: 0; }
   .actions { display: flex; gap: 9px; align-items: center; }
   .actions > * { margin-right: 0; }
