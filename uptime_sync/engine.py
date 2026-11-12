@@ -18,7 +18,7 @@ import requests
 from . import __version__, heartbeat, log as logsetup, loglevel, monitors, paths, procs, settings, updater
 from .checks import Checker
 from .util import (atomic_write_json, get_following, http_session, is_newer, iso_now, read_json, recent_checks,
-                   redact, remove_quietly, uptime_pct, url_host)
+                   redact, remove_quietly, slept_during, uptime_pct, url_host)
 
 log = logging.getLogger('engine')
 
@@ -29,6 +29,7 @@ PUSH_WINDOW = 10
 STUCK_CYCLES = 3               # a check running this many intervals -> restart the engine
 PUSH_REMINDER_SECONDS = 3600   # a push that keeps failing is logged again this often
 HEARTBEAT_STUCK_SECONDS = 600  # one beat in flight this long -> restart the engine
+WATCH_SECONDS = 1.0            # _watch wakes this often
 HOUSEKEEPING_SECONDS = 3600
 # A saved monitor (web UI or a hand edit of monitors.json / data/.env) is
 # checked within about a second instead of at the next check_interval; a
@@ -73,6 +74,7 @@ class Engine:
         self._lock = threading.Lock()   # results + history: written by check threads
         self._inflight = {}             # monitor id -> monotonic start of its running check
         self._hb_busy_since = None      # monotonic start of the beat in flight
+        self._resumed_at = None         # monotonic time _watch saw the computer wake (4.3.1)
         self._monitor_read_error = None
         self._cycles = 0
         self._last_state = {}           # monitor id -> (ok, push code, error), to log only changes
@@ -123,13 +125,30 @@ class Engine:
         self.stop_event.set()
         self._wake.set()
 
+    def _since_wake(self, started):
+        """A monotonic start time, moved up to the last wake from sleep."""
+        woke = self._resumed_at
+        if started is None or woke is None:
+            return started
+        return max(started, woke)
+
     def _watch(self):
         """Stop on run/engine.stop, on an install click, or when orphaned."""
-        while not self.stop_event.wait(1.0):
+        while True:
+            before = time.monotonic()
+            if self.stop_event.wait(WATCH_SECONDS):
+                break
+            slept = slept_during(before, WATCH_SECONDS)
+            if slept:
+                # Windows' monotonic() counted the sleep: a beat or a check
+                # in flight when the lid shut is not stuck. Their age now
+                # counts from the wake (only this thread writes it).
+                self._resumed_at = time.monotonic()
+                log.debug('The computer was asleep for about %ds', slept)
             loglevel.refresh()
             self._wake_on_monitor_change()
             self._wake_on_interval_change()
-            busy = self._hb_busy_since
+            busy = self._since_wake(self._hb_busy_since)
             if busy is not None and time.monotonic() - busy > HEARTBEAT_STUCK_SECONDS:
                 # requests' timeout is per read: a server that trickles its
                 # reply, or a hung TLS handshake, can hold the beat for ever,
@@ -250,7 +269,8 @@ class Engine:
         with self._lock:
             todo = [m for m in self.monitors if m['id'] not in self._inflight]
             busy = [m for m in self.monitors if m['id'] in self._inflight]
-            stuck = [m for m in busy if now - self._inflight[m['id']] > STUCK_CYCLES * interval]
+            stuck = [m for m in busy
+                     if now - self._since_wake(self._inflight[m['id']]) > STUCK_CYCLES * interval]
             for m in todo:
                 self._inflight[m['id']] = now
         if busy:
