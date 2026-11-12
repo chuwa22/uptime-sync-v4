@@ -206,6 +206,12 @@ table.grid th { padding-top: 9px; padding-bottom: 9px; font-size: 11.25px; color
   letter-spacing: .04em; font-weight: 600; background: #f1f5f9; background: var(--code); }
 table.grid tr:last-child td { border-bottom: 0; }
 table.grid .num { text-align: right; white-space: nowrap; }
+/* Target and Push URL cells (.mono): a URL has no break points, so a long one
+   took the name's room and pushed the last columns off the card on a tablet
+   or a 1024px screen. Let it wrap anywhere, never narrower than these. The
+   five icon buttons stay on one line. */
+table.grid td.mono { word-break: break-all; min-width: 110px; }
+table.grid td.push { min-width: 130px; }
 /* Dashboard, Monitors: column titles sort the table (_sort.html, views.sort_rows). */
 table.grid th a.sort { color: #64748b; color: var(--muted); text-decoration: none; white-space: nowrap; }
 table.grid th a.sort:hover, table.grid th a.sort:focus { color: #1e293b; color: var(--text); }
@@ -453,6 +459,9 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #94a3b8; }
   button, .button, input, select, textarea, .topbar .nav a { transition: background-color .15s, border-color .15s, color .15s, box-shadow .15s; }
   input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus { outline: 0;
     border-color: #0284c7; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(2, 132, 199, .2); box-shadow: 0 0 0 3px var(--accent-line); }
+  /* One height for every field, so two side by side line up at the top as well
+     as the bottom (a select, or a .mono input, is otherwise 1-2px shorter). */
+  input:not([type=checkbox]):not([type=radio]), select { min-height: 38.5px; }
   input[type=checkbox], input[type=radio] { accent-color: #0284c7; accent-color: var(--accent); }
   .flash { display: flex; align-items: flex-start; gap: 9px; }
   .flash .ic { flex: none; margin: 1.5px 0 0; }
@@ -515,15 +524,16 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #94a3b8; }
   form.filters { display: flex; flex-wrap: wrap; gap: 7.5px; align-items: center; }
   form.filters select, form.filters input, form.filters button { margin: 0; }
 
-  /* Tablets: a push URL has no break points, so let it wrap. The five icon
-     buttons (about 175px) stay on one line. */
-  @media (max-width: 1000px) {
-    table.grid td.push { word-break: break-all; min-width: 150px; }
-  }
   /* Phones: each row of a table.stack becomes a small card. The name
      (td.title) leads, the status (td.lead) sits at its right, the other
      cells flow below with their data-label, td.wide takes a line of its own. */
   @media (max-width: 640px) {
+    /* Top bar: tighter links, so the menu takes two even lines on a phone
+       instead of leaving the theme button alone on a third. */
+    .topbar { padding: 10.5px 16px; gap: 6px; }
+    .topbar .nav { gap: 2px; margin: 0 -7.5px; }
+    .topbar .nav a { padding: 6px 7.5px; }
+    .topbar .nav .ic { margin-right: 4.5px; }
     .logscroll { max-height: 70vh; min-height: 0; }
     .toasts { bottom: 12px; left: 16px; right: 16px; width: auto; max-width: none; }
     table.stack thead { display: none; }
