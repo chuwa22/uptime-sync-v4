@@ -1,6 +1,6 @@
 4.2.2
 2026-11-13
-- Fixed (web): the version beside the site name (and under the sign-in box) is plain grey text again, not bold and without the blue frame and background 4.2.0 gave it.
+- Fixed (web): the version beside the site name (and under the sign-in box) is plain grey text again, not bold and without the blue frame and background 4.2.0 gave it. In the top bar it sits on the same line as the name's letters instead of floating at mid-height.
 
 4.2.1
 2026-11-13
