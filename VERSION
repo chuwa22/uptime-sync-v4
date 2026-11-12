@@ -1,3 +1,7 @@
+4.2.2
+2026-11-13
+- Fixed (web): the version beside the site name (and under the sign-in box) is plain grey text again, not bold and without the blue frame and background 4.2.0 gave it. In the top bar it sits on the same line as the name's letters instead of floating at mid-height.
+
 4.2.1
 2026-11-13
 - Fixed (web): checked at every width from 320 to 1440 px. A long Target or Push URL (no break points) made the Dashboard and Monitors tables wider than their card from 768 to about 1100 px: the name was squeezed to a sliver and Checked or the row buttons sat off to the right behind a sideways scroll. Those cells now wrap anywhere, with a minimum width, so every column fits. On phones the top menu takes two even lines (before, the theme button could sit alone on a third). Two fields side by side now line up exactly at the top too: a list, or a field in the code font, was 1-2 px shorter.

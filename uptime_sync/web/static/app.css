@@ -111,9 +111,8 @@ h2 { font-size: 15.75px; margin: 0 0 12px; }
 .topbar .nav a.active { color: #0284c7; color: var(--accent); font-weight: 600;
   background: #e0f2fe; background: var(--accent-soft); border-color: #bae6fd; border-color: var(--accent-line); text-decoration: none; }
 .brand .ver { margin-left: 7.5px; }
-.ver { padding: 0 6.75px; font-size: 11.25px; font-weight: 600; line-height: 18px; letter-spacing: 0;
-  border-radius: 6px; color: #0284c7; color: var(--accent); background: #e0f2fe; background: var(--accent-soft);
-  border: 1px solid #bae6fd; border: 1px solid var(--accent-line); }
+/* The version (top bar, sign-in foot): plain grey text, no pill (4.2.2). */
+.ver { font-size: 12px; font-weight: 400; letter-spacing: 0; color: #64748b; color: var(--muted); }
 
 /* User menu. Without app.js (IE, no JS) the name is a link to Account and
    Sign out sits next to it; the dropdown look is .user-menu.js, in @supports. */
@@ -483,10 +482,12 @@ input:-ms-input-placeholder, textarea:-ms-input-placeholder { color: #94a3b8; }
   /* overflow: visible -- the float clearing (IE) would clip the user menu. */
   .topbar { display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap;
     overflow: visible; }
-  .brand { display: flex; align-items: center; padding: 0; }
+  /* The version sits on the name's baseline (smaller type, so centring
+     left it floating); the dot stays in the middle. */
+  .brand { display: flex; align-items: baseline; padding: 0; }
+  .brand .dot { align-self: center; }
   .topbar .nav { display: flex; align-items: center; gap: 4.5px; flex-wrap: wrap; }
   .topbar .nav a { margin-left: 0; }
-  .ver { display: inline-block; }
   .user-menu.js { position: relative; display: block; }
   .user-menu.js .caret { display: inline-block; width: 0; height: 0; margin-left: 6px; vertical-align: middle;
     border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid; }
