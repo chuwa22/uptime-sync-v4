@@ -186,6 +186,8 @@ class WebTests(unittest.TestCase):
                 key = views.new_api_key()
             self.assertRegex(key, views.API_KEY_RE, name)
             self.assertFalse(key.startswith('-'), name)
+            self.assertEqual(len(key), 43, name)                               # 4.3.0: always 43
+            self.assertRegex(key, r'^[a-z0-9-]{1,22}-[0-9a-f]{20,41}$', name)    # name, then 80+ random bits
         with mock.patch('socket.gethostname', return_value='Weerachats-MacBook-Pro.local'):
             self.assertTrue(views.new_api_key().startswith('weerachats-macbook-pro-'))
         with mock.patch('socket.gethostname', side_effect=OSError):

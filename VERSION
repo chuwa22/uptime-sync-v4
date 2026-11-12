@@ -1,3 +1,8 @@
+4.3.0
+2026-11-13
+- Change (Settings): *Generate* next to the API key now makes a 43-character key, `<this computer's name>-<random hex>` (e.g. `desktop-ab12cd-c62bbb7c364e954b05df7241f377`), the length of a 3.x key. uptime-monitor 3.3.0 shows a key of that length as its first 8 and last 4 characters, so every card looks alike. The name is cut to 22 characters so at least 20 random hex digits (80 bits) follow it. 4.0.12 made the name plus 12 hex digits.
+  - Keys already in use are not changed, and any key of 8-100 letters, digits, _ or - is still accepted. Changing the key gives the agent a new card on uptime-monitor: set the same HMAC secret on the new card (the agent keeps expecting signed replies) and delete the old card.
+
 4.2.2
 2026-11-13
 - Fixed (web): the version beside the site name (and under the sign-in box) is plain grey text again, not bold and without the blue frame and background 4.2.0 gave it. In the top bar it sits on the same line as the name's letters instead of floating at mid-height.

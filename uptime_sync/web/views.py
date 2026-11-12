@@ -273,18 +273,26 @@ LOOPBACK = ('127.0.0.1', '::1', '::ffff:127.0.0.1')
 API_KEY_RE = re.compile(r'^[A-Za-z0-9_\-]{8,100}$')
 
 
+API_KEY_LEN = 43        # new_api_key() (4.3.0): the length of a 3.x key
+API_KEY_NAME_MAX = 22   # so at least 20 random hex digits (80 bits) follow it
+
+
 def new_api_key():
-    """A suggested api_key (4.0.12): this computer's name and 12 random hex
-    digits, e.g. desktop-ab12cd-3f9a1c7e2b40. The name tells the cards
-    apart; the 48 random bits make it unique and impossible to guess, which
-    matters because uptime-monitor knows an agent without an HMAC secret by
-    its key alone. Always matches API_KEY_RE."""
+    """A suggested api_key (4.3.0): this computer's name, a dash, and random
+    hex digits up to 43 characters in all, e.g.
+    desktop-ab12cd-3f9a1c7e2b40d5e6f7a8b9c0d1e2f3a, the length of a 3.x key,
+    so uptime-monitor (3.3.0) shows every card's key the same way: the first
+    8 and the last 4. The name tells the cards apart; it is cut to 22
+    characters so at least 80 random bits follow, which matters because
+    uptime-monitor knows an agent without an HMAC secret by its key alone.
+    Always matches API_KEY_RE."""
     try:
         host = socket.gethostname()
     except (OSError, UnicodeError):
         host = ''
-    name = re.sub(r'[^a-z0-9]+', '-', host.split('.')[0].lower())[:40].strip('-')
-    return '%s-%s' % (name or 'agent', secrets.token_hex(6))
+    name = re.sub(r'[^a-z0-9]+', '-', host.split('.')[0].lower())
+    name = name.strip('-')[:API_KEY_NAME_MAX].strip('-') or 'agent'
+    return '%s-%s' % (name, secrets.token_hex(API_KEY_LEN)[:API_KEY_LEN - len(name) - 1])
 # Shown in place of a stored secret. The secret itself never goes into HTML;
 # a form that posts this text back keeps the stored one.
 SECRET_MASK = '********'
