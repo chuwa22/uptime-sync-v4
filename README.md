@@ -182,9 +182,12 @@ their own URL. Heartbeats go to the URL of the chosen one.
 
 **API key and HMAC secret** (Settings > Reporting): the API key names this agent
 (its card in uptime-monitor); the secret proves it is this agent and never leaves
-the box. *Generate* next to the API key fills in this computer's name plus 12
-random hex digits, which nobody can guess; press Save to use it. A new key gives
-the agent a new card, so paste the HMAC secret on that card too.
+the box. *Generate* next to the API key fills in this computer's name, a dash
+and random hex digits, 43 characters in all (the length of a 3.x key, so
+uptime-monitor 3.3.0 shows every card's key as the first 8 and the last 4); the
+random part nobody can guess. Press Save to use it. A new key gives the agent a
+new card, so paste the HMAC secret on that card too (the agent still expects
+signed replies), and delete the old card.
 
 ## Updates
 
