@@ -835,6 +835,17 @@ class PhoneLayoutTests(unittest.TestCase):
         self.assertIn('@media (max-width: 640px)', inside)
         self.assertNotIn('max-width: 640px', outside)
 
+    def test_long_urls_wrap_instead_of_widening_the_table(self):
+        # 4.2.1: a long Target or Push URL pushed Dashboard / Monitors wider
+        # than the card at 768-1100px. Both cells are .mono (template and app.js).
+        css = re.sub(r'/\*.*?\*/', '', _read('static', 'app.css'), flags=re.S)
+        outside, _ = _supports_split(css)
+        self.assertIn('table.grid td.mono { word-break: break-all;', outside)   # every width, IE too
+        self.assertIn("cell(m.target, 'mono', 'Target')", _read('static', 'app.js'))
+        for path in ('/', '/monitors'):
+            html = self.c.get(path).get_data(as_text=True)
+            self.assertRegex(html, r'<td class="mono[^"]*" data-label="Target">1\.1\.1\.1', path)
+
 
 class ThemeToggleTests(unittest.TestCase):
     """The light/dark button: a choice saved in this browser, else the system."""
