@@ -860,7 +860,7 @@ class ThemeToggleTests(unittest.TestCase):
         css = _read('static', 'app.css')
         self.assertIn(':root:not([data-theme="light"])', css)   # system dark, unless light was picked
         self.assertIn(':root[data-theme="dark"]', css)
-        dark_vars = re.findall(r'--bg: #11151c[^}]*', css)
+        dark_vars = re.findall(r'--bg: #0f172a[^}]*', css)
         self.assertEqual(len(dark_vars), 2)
         def norm(text):
             return ' '.join(text.split()).rstrip(';')

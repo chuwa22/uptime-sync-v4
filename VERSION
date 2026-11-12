@@ -1,3 +1,9 @@
+4.2.0
+2026-11-12
+- Change (web): the web UI now looks like uptime-monitor. Slate colours with a sky-blue accent, the brand name and the sign-in title in its blue-to-green gradient, primary buttons in the same gradient, 12 px cards, tiles with a thin coloured edge that lift under the mouse, rounded badges with a glowing status dot, and the top bar stays at the top while a page scrolls (not on phones). Dark mode is uptime-monitor's: deep navy with a soft blue and green glow, and see-through blurred cards. Light or dark still follows the system unless the toggle picked one.
+  - Old browsers: IE8 to IE11 get the same colours on plain cards (no gradient, blur or glow), and every page works as before. Without JavaScript too.
+  - Code: CSS and one span (.brand .name) only. New theme variables (--glass, --glow, --brand-from/to, --accent-soft/faint/line, --hover, --lift) are defined in both dark blocks; every var() line still follows its light-theme literal.
+
 4.1.4
 2026-11-10
 - Fixed (web): http://<host>:5000/dashboard answered "Not Found": the dashboard is at /, and a bookmark that opened /dashboard (as some older ones do) hit the bare 404 page. /dashboard now sends the browser to / (sign-in first when signed out), keeping any sort in the address.
