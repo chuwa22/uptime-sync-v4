@@ -23,6 +23,8 @@ USER_AGENT = 'UptimeSync/%s' % __version__
 # only LOW_DISK_RETENTION_DAYS, and no update is downloaded.
 MIN_FREE_BYTES = 200 * 1024 * 1024
 CORRUPT_KEEP = 3        # .corrupt-<ts> copies kept per JSON file
+# A short wait that ran this much longer than asked: the computer slept.
+SUSPEND_GAP_SECONDS = 30
 
 log = logging.getLogger('heal')
 
@@ -364,6 +366,17 @@ def sha256_file(path):
         for chunk in iter(lambda: f.read(65536), b''):
             h.update(chunk)
     return h.hexdigest()
+
+
+def slept_during(started, expected):
+    """Seconds the computer was asleep (or the VM paused) during a wait of
+    `expected` seconds that began at time.monotonic() `started`; 0.0 when
+    it was not. On Windows monotonic() keeps counting through sleep
+    (Python 3.8: GetTickCount64), so after a night with the lid shut every
+    watchdog timer looks hours old. Only a short wait is a fair probe:
+    nothing else stretches a 1 s sleep by SUSPEND_GAP_SECONDS (4.3.1)."""
+    over = time.monotonic() - started - expected
+    return over if over >= SUSPEND_GAP_SECONDS else 0.0
 
 
 def touch(path, text=''):

@@ -165,6 +165,46 @@ class SupervisorLoopTests(unittest.TestCase):
                 self.assertEqual(self.sup._loop(), 0)
         self.assertEqual(len(calls), 2)
 
+    def _healthy_engine_after_a_long_sleep(self):
+        util.atomic_write_json(paths.STATUS_FILE, {'check_interval': 30})
+        child = supervisor.Child('engine', [])
+        child.proc = FakeProc()               # alive
+        asleep_at = time.monotonic() - 2000   # what Windows' monotonic() shows after a night
+        child.started = asleep_at - 60
+        self.sup.children['engine'] = child
+        self.sup._pulse_mtime = os.path.getmtime(paths.STATUS_FILE)
+        self.sup._pulse_seen = asleep_at
+        return child
+
+    def test_long_sleep_looks_like_a_stall_without_the_guard(self):
+        child = self._healthy_engine_after_a_long_sleep()
+        with mock.patch.object(child, 'stop') as stop, self.assertLogs('supervisor', 'ERROR'):
+            self.sup._check_pulse()
+        stop.assert_called_once()
+
+    def test_time_asleep_is_not_counted_as_a_stall(self):
+        # 4.3.1: a Windows box woke after 1.5 h and its engine was restarted
+        # as "not finished a check cycle for over 150s".
+        updater.set_state(status='Applied', version='9.9.9', crashes=0)
+        child = self._healthy_engine_after_a_long_sleep()
+        with self.assertLogs('supervisor', 'INFO'):
+            self.sup._resumed(1995)
+        with mock.patch.object(child, 'stop') as stop:
+            self.sup._check_pulse()
+        stop.assert_not_called()
+        self.assertEqual(updater.state()['crashes'], 0)
+        self.sup._check_update_trial()        # asleep is not a 300 s trial passed
+        self.assertEqual(updater.state()['status'], 'Applied')
+
+    def test_loop_pauses_the_timers_after_a_sleep(self):
+        with mock.patch.object(supervisor, 'slept_during', return_value=1995.0), \
+                mock.patch.object(self.sup, '_tick', return_value=0), \
+                mock.patch.object(self.sup, '_wanted', return_value=[]), \
+                mock.patch.object(self.sup, '_resumed') as resumed, \
+                mock.patch.object(supervisor.time, 'sleep'):
+            self.assertEqual(self.sup._loop(), 0)
+        resumed.assert_called_once_with(1995.0)
+
     def test_popen_failure_is_retried_with_backoff(self):
         child = supervisor.Child('web', ['/nonexistent/python'])
         self.sup.children['web'] = child
@@ -581,6 +621,25 @@ class EngineWatchTests(unittest.TestCase):
         self.e._watch()
         t.join()
         self.assertFalse(self.e.exit_code)
+
+    def test_beat_in_flight_while_asleep_is_not_stuck(self):
+        # 4.3.1: Windows' monotonic() counts sleep; age counts from the wake.
+        self.e._hb_busy_since = time.monotonic() - engine.HEARTBEAT_STUCK_SECONDS - 5
+        t = threading.Timer(1.5, self.e.stop)
+        t.start()
+        with mock.patch.object(engine, 'slept_during', return_value=2000.0):
+            self.e._watch()
+        t.join()
+        self.assertFalse(self.e.exit_code)
+        self.assertIsNotNone(self.e._resumed_at)
+
+    def test_check_age_counts_from_the_wake(self):
+        now = time.monotonic()
+        self.assertEqual(self.e._since_wake(now - 500), now - 500)   # no sleep seen
+        self.e._resumed_at = now - 10
+        self.assertEqual(self.e._since_wake(now - 500), now - 10)
+        self.assertEqual(self.e._since_wake(now - 5), now - 5)       # started after the wake
+        self.assertIsNone(self.e._since_wake(None))
 
     def test_install_click_runs_off_the_watch_thread(self):
         util.touch(paths.INSTALL_TRIGGER)

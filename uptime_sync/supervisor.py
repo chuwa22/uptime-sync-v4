@@ -20,7 +20,7 @@ import sys
 import time
 
 from . import __version__, log as logsetup, loglevel, paths, perms, procs, settings, updater
-from .util import read_json, remove_quietly, touch
+from .util import read_json, remove_quietly, slept_during, touch
 
 log = logging.getLogger('supervisor')
 
@@ -32,6 +32,7 @@ STOP_GRACE_SECONDS = 20        # above a check's worst attempt (ping timeout + 2
 RESTART_MIN_GAP = 60          # server-requested restarts closer than this are delayed
 PULSE_CHECK_SECONDS = 30      # how often the engine's run/status.json age is checked
 LOOP_ERROR_LOG_SECONDS = 60   # a repeating loop error is logged at most this often
+LOOP_SLEEP = 0.5
 MAIN_PY = os.path.join(paths.ROOT, 'main.py')
 
 
@@ -209,17 +210,33 @@ class Supervisor:
             self._note_crash('engine', 'stalled')
             log.warning('engine restarting in %ds', engine.schedule_restart())
 
+    def _resumed(self, slept):
+        """The computer was asleep for `slept` seconds, which Windows'
+        monotonic() counted. Take that time off every child's age so a
+        healthy engine is not restarted as stalled (and counted as a crash
+        of a new version), and an update trial does not pass while asleep.
+        A restart already due (next_start) still happens at once. 4.3.1."""
+        log.info('The computer was asleep for about %ds - watchdog timers paused for that time',
+                 slept)
+        for child in self.children.values():
+            child.started += slept
+        self._pulse_seen += slept
+
     def _loop(self):
         for role in self._wanted():
             self.children[role] = Child(role, self._argv(role))   # started by _tick()
         next_pulse = time.monotonic() + PULSE_CHECK_SECONDS
         last_error = None    # monotonic() may start near 0: no "0.0 = long ago"
         while True:
-            time.sleep(0.5)
+            before = time.monotonic()
+            time.sleep(LOOP_SLEEP)
+            slept = slept_during(before, LOOP_SLEEP)
             # One bad iteration (a full disk, a file Windows has locked, a
             # Popen that fails on a box out of memory) must not end the
             # supervisor: its exit would stop every healthy child with it.
             try:
+                if slept:
+                    self._resumed(slept)
                 loglevel.refresh()
                 if time.monotonic() >= next_pulse:
                     next_pulse = time.monotonic() + PULSE_CHECK_SECONDS

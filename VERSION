@@ -1,3 +1,9 @@
+4.3.1
+2026-11-13
+- Fixed (agent): a Windows PC waking from sleep logged "Engine has not finished a check cycle for over 150s - restarting it" as an ERROR and restarted a healthy engine. Windows counts the time asleep in the clock the watchdogs use, so after a night with the lid shut the engine looked stuck for hours. The supervisor now sees the gap (a 0.5 s pause that took 30 s or more), logs "The computer was asleep for about Ns" at INFO, and takes that time off its timers. The same goes for the engine's own checks for a stuck heartbeat or a hung check.
+  - During an update trial, a sleep no longer counts as one of the three crashes that roll the new version back, and no longer counts toward the 300 s the new version must run to be kept.
+  - Linux and macOS do not count sleep in that clock and never had the false alarm. The first heartbeat right after waking can still fail with a DNS error while the network comes back; it is retried in 30 s as before.
+
 4.3.0
 2026-11-13
 - Change (Settings): *Generate* next to the API key now makes a 43-character key, `<this computer's name>-<random hex>` (e.g. `desktop-ab12cd-c62bbb7c364e954b05df7241f377`), the length of a 3.x key. uptime-monitor 3.3.0 shows a key of that length as its first 8 and last 4 characters, so every card looks alike. The name is cut to 22 characters so at least 20 random hex digits (80 bits) follow it. 4.0.12 made the name plus 12 hex digits.

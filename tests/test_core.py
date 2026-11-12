@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import os
+import time
 import unittest
 
 from uptime_sync import checks, monitors, paths, settings, signing, util
@@ -24,6 +25,12 @@ class UtilTests(unittest.TestCase):
         self.assertNotIn(token, text)
         self.assertNotIn('k1', text.split('api_key=')[1][:2])
         self.assertNotIn('=s1', text)
+
+    def test_slept_during(self):
+        now = time.monotonic()
+        self.assertEqual(util.slept_during(now, 1.0), 0.0)            # an ordinary wait
+        self.assertEqual(util.slept_during(now - 20, 1.0), 0.0)       # slow, not asleep
+        self.assertGreaterEqual(util.slept_during(now - 3600, 1.0), 3598)
 
     def test_versions(self):
         self.assertTrue(util.is_newer('4.0.10', '4.0.9'))

@@ -325,6 +325,11 @@ when set (the tests use this), else the checkout folder.
     writing it every cycle, and touches it when the write fails (full disk).
   - EXIT_STUCK (5) is the engine curing a hung check: restart in 1 s, no
     crash count, no backoff.
+  - Windows' `time.monotonic()` counts time asleep (4.3.1). A watchdog that
+    ages something by it must not fire after a wake: the supervisor loop and
+    the engine's `_watch` probe a short wait with `util.slept_during()`, then
+    `Supervisor._resumed()` shifts the children's ages and
+    `Engine._since_wake()` measures from the wake.
   - The supervisor loop body is `_tick()`, wrapped so one exception is logged
     (at most once a minute) and the loop goes on: the supervisor exiting
     stops every healthy child. Children are started by `_tick()`, and a
