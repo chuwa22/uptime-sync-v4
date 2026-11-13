@@ -475,7 +475,7 @@ def build_parser():
     sp.add_argument('--json', action='store_true', help='print JSON instead of text')
     sp = add('install', cmd_install, 'build .venv, register autostart, start (run it with the system Python)',
              _epilog('py -3 main.py install            (Windows, elevated; or Launcher.bat -> I)',
-                     'sudo python3 main.py install     (Linux / macOS; or Launcher.command -> I)',
+                     'sudo python3 main.py install     (Linux / macOS; or Launcher.sh / Launcher.command -> I)',
                      'main.py install --wheels C:\\wheels   (offline)'))
     sp.add_argument('--no-autostart', action='store_true', help='do not register autostart')
     sp.add_argument('--recreate', action='store_true',

@@ -1,3 +1,11 @@
+4.5.0
+2026-11-13
+- Feature (Linux): `Launcher.sh`, the control panel Windows has in Launcher.bat and macOS in Launcher.command, with the same menu: Status, Start, Stop, Restart, Open the web UI, Check every monitor now, recent logs, warnings and errors, Reset a web UI password, Install or repair, Rebuild .venv, Uninstall autostart. Run `./Launcher.sh` in a terminal; it is plain sh, so dash (Debian and Ubuntu's /bin/sh) and bash both run it.
+  - I finds the system python3, 3.8 or newer (or a python3.8 to python3.14 beside an older python3), and runs `sudo python3 main.py install`, so autostart is a systemd system unit. A folder installed as a user unit (no sudo) is repaired as one. Start, Restart and Uninstall use sudo when data/autostart.json names a system unit. With no Python it names the packages: `apt install python3 python3-venv`, `dnf install python3`.
+  - 5 opens the web UI with xdg-open on a desktop, and prints the address over ssh or on a server console.
+  - Like the other two, it names a .venv copied from another machine and an update cut off mid-swap, and quits on end of input or three empty answers. `./Launcher.sh install [--no-autostart] [--recreate] [--wheels DIR]` works without the menu.
+  - Code: Launcher.sh ships (paths.SHIPPED), keeps its x bit (paths.EXECUTABLE, git mode 100755) and is a boot file of the update swap (updater._BOOT): it moves out last and back first.
+
 4.4.0
 2026-11-13
 - Feature (web): HTTPS for the web UI, and a plain choice of who can open it. Before, the web UI listened on every network over plain http, so a password typed at sign-in and the session cookie crossed the LAN readable. Settings > Web UI now has *Who can open it* (This PC only = 127.0.0.1, Every network = 0.0.0.0, or one address of this PC) and *Use HTTPS*. While it is open to the network over plain http, Settings says so in orange, and the sign-in page says "Not encrypted" when it is opened from another computer.

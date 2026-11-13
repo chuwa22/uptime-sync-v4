@@ -49,11 +49,12 @@ STATUS_FILE = os.path.join(RUN_DIR, 'status.json')
 # reads this tuple). Everything else under ROOT belongs to the site. tools/ is
 # developer tooling for a git clone and never ships.
 SHIPPED = ('uptime_sync', 'config', 'main.py', 'VERSION',
-           'requirements.txt', 'README.md', 'LICENSE', 'Launcher.bat', 'Launcher.command')
+           'requirements.txt', 'README.md', 'LICENSE', 'Launcher.bat', 'Launcher.command',
+           'Launcher.sh')
 # Shipped files that must keep their x bit on POSIX (git mode 100755).
 # perms.harden() puts it back at every start: a 4.0.12 updater, or an
 # unzip tool that ignores Unix modes, delivers them without it.
-EXECUTABLE = ('Launcher.command',)
+EXECUTABLE = ('Launcher.command', 'Launcher.sh')
 
 
 # The agent always runs on the interpreter inside <root>/.venv, so its

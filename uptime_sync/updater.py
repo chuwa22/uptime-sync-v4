@@ -159,8 +159,9 @@ def _safe_extract(zip_path, dest):
 
 
 def _restore_exec_bits(infos, dest):
-    """zipfile drops the Unix mode, so Launcher.command would arrive
-    without its x bit and Finder would refuse to run it (4.0.13).
+    """zipfile drops the Unix mode, so Launcher.command (4.0.13) and
+    Launcher.sh (4.5.0) would arrive without the x bit, and Finder or a
+    Linux shell would refuse to run them.
     build-release.py stores git's mode in the zip. Only the x bit is taken
     from it, and only where the file is readable: the rest of the mode
     stays what our umask made it. (A 4.0.12 updater does not do this;
@@ -375,9 +376,10 @@ def _undo(moved_out, out_dir, moved_in, in_dir):
 # What the OS autostart needs to reach recover_interrupted(): main.py, and
 # the package it imports. A kill while either is out of ROOT leaves an
 # install nothing can start, so they leave last and come back first (4.0.11).
-# Launcher.bat and Launcher.command (macOS, 4.0.13) go with them: they are
-# what tells the user, in that state, where the old code is.
-_BOOT = ('uptime_sync', 'main.py', 'Launcher.bat', 'Launcher.command')
+# Launcher.bat, Launcher.command (macOS, 4.0.13) and Launcher.sh (Linux,
+# 4.5.0) go with them: they are what tells the user, in that state, where
+# the old code is.
+_BOOT = ('uptime_sync', 'main.py', 'Launcher.bat', 'Launcher.command', 'Launcher.sh')
 
 
 def _boot_last(names):
