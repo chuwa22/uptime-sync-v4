@@ -130,13 +130,32 @@
 
   <div class="card" id="web">
     <h2>{{ icon('server') }}Web UI</h2>
+    {% set https_on = s.web.https is sameas true %}
+    {% if web_scope != 'local' and not https_on %}<p class="note warn-note">{{ icon('alert', 14) }}Open to the network over plain http: anyone on the same network can read the password typed at sign-in and take over a signed-in session. Turn on HTTPS below, or choose This PC only.</p>{% endif %}
+    <fieldset class="radio-group">
+      <legend>Who can open it <small class="muted">uptime-monitor does not use this address</small></legend>
+      <label class="check"><input type="radio" name="web_scope" value="local" id="web-local"{{ ' checked' if web_scope == 'local' }}> This PC only
+        <small class="muted">127.0.0.1: other computers cannot reach it</small></label>
+      <label class="check"><input type="radio" name="web_scope" value="all" id="web-all"{{ ' checked' if web_scope == 'all' }}> Every network
+        <small class="muted">0.0.0.0: any computer that can reach this one</small></label>
+      <label class="check"><input type="radio" name="web_scope" value="custom" id="web-custom"{{ ' checked' if web_scope == 'custom' }}> One address of this PC
+        <small class="muted">only the network that address is on</small></label>
+      <label class="server-url">Address <small class="muted">an IP address of this PC, e.g. 192.168.1.20</small>
+        <input name="web_host" class="mono" value="{{ s.web.host if web_scope == 'custom' }}" placeholder="192.168.1.20" data-selects="web-custom"></label>
+    </fieldset>
+    <label class="check"><input type="checkbox" name="web_https"{{ ' checked' if https_on }}> Use HTTPS (encrypted)</label>
+    <p class="note">Encrypts the password and the session on the network. The agent makes its own self-signed certificate, so each browser warns once: check that the SHA-256 it shows matches the one here, then continue. Your own certificate: save it as data/tls/cert.pem and its key (no passphrase) as data/tls/key.pem. Old Internet Explorer (8-10) on Windows 7: Internet Options &gt; Advanced &gt; tick Use TLS 1.2.</p>
+    {% if tls_active %}
+    <p class="note">Certificate in use: {{ 'your own (data/tls/cert.pem)' if tls_active.source == 'own' else 'self-signed by this agent' }}, valid until {{ tls_active.not_after.strftime('%Y-%m-%d') }} UTC.<br>
+      SHA-256 <span class="mono fp">{{ tls_active.fingerprint }}</span></p>
+    {% if tls_active.error %}<p class="note warn-note">{{ icon('alert', 14) }}data/tls/cert.pem and key.pem could not be used ({{ tls_active.error }}), so the self-signed certificate is served instead.</p>{% endif %}
+    {% endif %}
+    {% if request.is_secure != https_on %}<p class="note warn-note">{{ icon('alert', 14) }}{{ 'HTTPS is saved' if https_on else 'HTTPS is turned off' }}, but this page still came over {{ 'https' if request.is_secure else 'plain http' }}: the change takes effect when the service restarts (Dashboard &gt; Restart service).</p>{% endif %}
     <div class="cols">
-      <label><span class="lbl">Web listens on <small class="muted">0.0.0.0 = every network, 127.0.0.1 = this PC only</small></span>
-        <input name="web_host" class="mono" value="{{ s.web.host }}" placeholder="0.0.0.0"></label>
       <label><span class="lbl">Web port <small class="muted">{{ b['web.port'][0] }}-{{ b['web.port'][1] }}, default 5000</small></span>
         <input name="web_port" type="number" min="{{ b['web.port'][0] }}" max="{{ b['web.port'][1] }}" value="{{ s.web.port }}" placeholder="5000"></label>
     </div>
-    <p class="note">This page is plain http: with 0.0.0.0 anyone on the network reaches the sign-in page and a password crosses the network unencrypted. Use 127.0.0.1 when you only open it on this PC. A change takes effect after a restart. uptime-monitor does not use this address.</p>
+    <p class="note">A change of address, port or HTTPS takes effect after a restart. Then open {{ 'https' if https_on else 'http' }}://&lt;this PC&gt;:{{ s.web.port }}/ (an old http:// bookmark is sent on to https).</p>
   </div>
   <div class="actions save-bar"><button class="primary">{{ icon('check') }}Save settings</button></div>
 </form>
