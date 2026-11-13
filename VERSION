@@ -1,3 +1,8 @@
+4.3.2
+2026-11-13
+- Fixed (agent): a history.json or run/status.json that is valid JSON but holds the wrong shapes (a hand edit, another program, a disk that kept half a write that still parses) no longer breaks the agent. Before, the engine raised every cycle while writing its status, so it crashed and restarted in a loop on the same file, and the Dashboard answered 500. Now a check that is not [time, ok, ms] is left out of the bars and Uptime %, and a part of status.json that is not what it should be counts as empty.
+- Tests: `pyflakes uptime_sync tests main.py tools` (the lint in CLAUDE.md) passes again. Three test modules import tests._env only for what it sets up, and pyflakes ignores `# noqa`, so it reported them as unused imports.
+
 4.3.1
 2026-11-13
 - Fixed (agent): a Windows PC waking from sleep logged "Engine has not finished a check cycle for over 150s - restarting it" as an ERROR and restarted a healthy engine. Windows counts the time asleep in the clock the watchdogs use, so after a night with the lid shut the engine looked stuck for hours. The supervisor now sees the gap (a 0.5 s pause that took 30 s or more), logs "The computer was asleep for about Ns" at INFO, and takes that time off its timers. The same goes for the engine's own checks for a stuck heartbeat or a hung check.

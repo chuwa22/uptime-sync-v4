@@ -17,8 +17,8 @@ import requests
 
 from . import __version__, heartbeat, log as logsetup, loglevel, monitors, paths, procs, settings, updater
 from .checks import Checker
-from .util import (atomic_write_json, get_following, http_session, is_newer, iso_now, read_json, recent_checks,
-                   redact, remove_quietly, slept_during, uptime_pct, url_host)
+from .util import (atomic_write_json, clean_history, get_following, http_session, is_newer, iso_now, read_json,
+                   recent_checks, redact, remove_quietly, slept_during, uptime_pct, url_host)
 
 log = logging.getLogger('engine')
 
@@ -63,8 +63,7 @@ class Engine:
         self._woken_for = None               # the stamp _watch last woke the loop for
         self._settings_mtime = False         # settings.json mtime as _watch last saw it (False: not yet)
         self.results = {}
-        h = read_json(paths.HISTORY_FILE, {})
-        self.history = h if isinstance(h, dict) else {}
+        self.history = clean_history(read_json(paths.HISTORY_FILE, {}))
         self._push_codes = {}
         self._push_alerted = set()
         self._updating = threading.Lock()

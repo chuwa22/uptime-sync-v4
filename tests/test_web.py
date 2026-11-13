@@ -418,6 +418,25 @@ class WebTests(unittest.TestCase):
         self.assertEqual((rows['a']['uptime'], rows['b']['uptime']), (75.0, 50.0))
         self.assertEqual((rows['a']['uptime_tone'], rows['b']['uptime_tone']), ('down', 'down'))
 
+    def test_bad_status_file_still_shows_the_dashboard(self):
+        # 4.3.2: a malformed entry in status.json / history.json was a 500.
+        self.setup_admin()
+        a = monitors.normalize({'name': 'a', 'type': 'PING', 'target': '192.0.2.1'})
+        b = monitors.normalize({'name': 'b', 'type': 'PING', 'target': '192.0.2.2'})
+        c = monitors.normalize({'name': 'c', 'type': 'PING', 'target': '192.0.2.3'})
+        monitors.save([a, b, c])
+        util.atomic_write_json(paths.STATUS_FILE, {'updated_at': 'x', 'heartbeat': 'nope', 'monitors': {
+            a['id']: {'ok': True, 'recent': [{'t': 1, 'ok': 1}, None, 'x', [1700000000, 1, 5]]},
+            b['id']: ['not', 'a', 'dict']}})
+        util.atomic_write_json(paths.HISTORY_FILE, {b['id']: {'not': 'a list'}, c['id']: [None, [1, 0, 0]]})
+        self.assertEqual(self.c.get('/').status_code, 200)
+        rows = {r['name']: r for r in json.loads(self.c.get('/api/status').get_data(as_text=True))['monitors']}
+        self.assertEqual([rows[n]['uptime'] for n in 'abc'], [100.0, None, 0.0])
+        self.assertEqual(rows['b']['state'], 'unknown')
+        util.atomic_write_json(paths.STATUS_FILE, ['not', 'a', 'dict'])
+        self.assertEqual(self.c.get('/').status_code, 200)
+        self.assertEqual(self.c.get('/api/status').status_code, 200)
+
     def test_history_bars_and_uptime_cover_the_same_checks(self):
         # 40 checks: the 10 oldest down, the last 30 up -> 30 green bars and
         # 100%, not the 75% the whole history would give.

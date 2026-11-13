@@ -1,4 +1,5 @@
-from tests import _env  # noqa: F401  (must be first)
+from tests import _env  # must be first: it points UPTIME_SYNC_ROOT at a temp copy
+_env  # imported for that alone; naming it keeps pyflakes quiet (it ignores noqa)
 
 import contextlib
 import io

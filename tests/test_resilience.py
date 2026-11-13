@@ -730,6 +730,29 @@ class EngineWatchTests(unittest.TestCase):
         self.assertEqual(st['monitors']['new']['recent'], [])
         self.assertEqual(util.uptime_pct([]), None)
 
+    def test_bad_history_file_does_not_crash_the_engine(self):
+        # 4.3.2: history.json that parses but holds the wrong shapes made
+        # _write_status raise on every cycle (a crash loop after restart).
+        a = monitors.normalize({'name': 'a', 'type': 'PING', 'target': '192.0.2.1'})
+        util.atomic_write_json(paths.HISTORY_FILE, {
+            a['id']: [[1, 1, 5], {'t': 2}, None, 'x', [3, 0], ['y', 1, 5], [4, 1, 'z']],
+            'other': {'not': 'a list'}})
+        e = engine.Engine(supervised=True)
+        self.assertEqual(e.history, {a['id']: [[1, 1, 5], [3, 0, 0]]})
+        e.results = {a['id']: {'ok': True}, 'other': {'ok': False}}
+        e._write_status()
+        st = util.read_json(paths.STATUS_FILE)['monitors']
+        self.assertEqual((st[a['id']]['uptime'], st[a['id']]['recent']), (50.0, [[1, 1, 5], [3, 0, 0]]))
+        self.assertEqual((st['other']['uptime'], st['other']['recent']), (None, []))
+        util.atomic_write_json(paths.HISTORY_FILE, ['not', 'a', 'dict'])
+        self.assertEqual(engine.Engine(supervised=True).history, {})
+
+    def test_uptime_skips_entries_that_are_not_checks(self):
+        self.assertEqual(util.uptime_pct([{'t': 1, 'ok': 1}, 'x', None, [5, 1, 5], [6, 0]]), 50.0)
+        self.assertIsNone(util.uptime_pct({'not': 'a list'}))
+        self.assertEqual(util.history_entry([7, True, 12.9]), [7, 1, 12])
+        self.assertIsNone(util.history_entry([float('inf'), 1, 0]))
+
     def test_uptime_counts_only_the_recent_checks(self):
         # The dashboard draws the last UPTIME_BARS checks; uptime must count
         # the same ones, not the whole 120-entry history.
