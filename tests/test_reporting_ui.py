@@ -1,7 +1,8 @@
 """Settings > Reporting: you can tell whether a secret is set and whether
 the agent reaches uptime-monitor, and the server's own reason shows up."""
 
-from tests import _env  # noqa: F401  (must be first)
+from tests import _env  # must be first: it points UPTIME_SYNC_ROOT at a temp copy
+_env  # imported for that alone; naming it keeps pyflakes quiet (it ignores noqa)
 
 import time
 import unittest

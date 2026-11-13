@@ -1,10 +1,10 @@
-from tests import _env  # noqa: F401  (must be first)
+from tests import _env  # must be first
 
 import importlib.util
 import os
 import unittest
 
-_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tools', 'semver_check.py')
+_PATH = os.path.join(_env.REPO, 'tools', 'semver_check.py')
 _spec = importlib.util.spec_from_file_location('semver_check', _PATH)
 semver_check = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(semver_check)
@@ -56,7 +56,7 @@ class SemverCheckTests(unittest.TestCase):
         self.assertEqual(semver_check.check(version_file('4.0.14', '- Fixed: x', '  - Feature: sub-point')), [])
 
     def test_the_real_history_parses(self):
-        with open(os.path.join(os.path.dirname(_PATH), '..', 'VERSION'), encoding='utf-8') as f:
+        with open(os.path.join(_env.REPO, 'VERSION'), encoding='utf-8') as f:
             found = semver_check.versions(f.read())
         self.assertGreater(len(found), 10)
         self.assertEqual(found, sorted(found, reverse=True))   # newest first, no repeats

@@ -396,11 +396,39 @@ def remove_quietly(path):
 UPTIME_BARS = 30   # history bars on the dashboard; Uptime % counts these checks only
 
 
+def history_entry(e):
+    """One check as [time, ok, ms] ints (ok is 1 or 0), or None when `e` is
+    not a [time, ok] or [time, ok, ms] list."""
+    if not isinstance(e, (list, tuple)) or len(e) < 2:
+        return None
+    try:
+        return [int(e[0]), 1 if e[1] else 0, int(e[2]) if len(e) > 2 else 0]
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def clean_history(data):
+    """history.json as {monitor id: [[time, ok, ms], ...]}, keeping only
+    well-formed entries (4.3.2). A file that parses but holds something
+    else (a hand edit, another program) made the engine raise on every
+    cycle and the dashboard answer 500."""
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for k, v in data.items():
+        if isinstance(v, list):
+            out[k] = [x for x in (history_entry(e) for e in v) if x is not None]
+    return out
+
+
 def recent_checks(history):
     """The last UPTIME_BARS [time, ok, ms] entries of a monitor's history:
     what the dashboard draws as bars and the only checks Uptime % counts,
-    so the number always matches the bars beside it."""
-    return list(history or [])[-UPTIME_BARS:]
+    so the number always matches the bars beside it. Entries that are not
+    [time, ok, ms] are left out."""
+    if not isinstance(history, list):
+        return []
+    return [x for x in (history_entry(e) for e in history[-UPTIME_BARS:]) if x is not None]
 
 
 def uptime_pct(history):

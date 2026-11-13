@@ -13,8 +13,8 @@ from urllib.parse import urlparse
 from flask import abort, flash, jsonify, redirect, render_template, request, session, url_for
 
 from .. import __version__, log as logsetup, loglevel, logstore, monitors, paths, procs, settings, signing, updater
-from ..util import (UPTIME_BARS, active_server_url, deep_merge, is_local_host, is_local_server, read_json,
-                    recent_checks, touch)
+from ..util import (UPTIME_BARS, active_server_url, clean_history, deep_merge, is_local_host, is_local_server,
+                    read_json, recent_checks, touch)
 from . import auth
 
 log = logging.getLogger('web')
@@ -45,8 +45,14 @@ def log_summary(rows, window, span):
     return text
 
 
+def _dict(value):
+    """`value` when it is a dict, else {}: status.json is the engine's, but
+    a file that parses into something else must not make the page a 500."""
+    return value if isinstance(value, dict) else {}
+
+
 def _engine_state():
-    status = read_json(paths.STATUS_FILE, {}) or {}
+    status = _dict(read_json(paths.STATUS_FILE, {}))
     pid = procs.read_pid(paths.child_pid_file('engine'))
     alive = procs.pid_alive(pid)
     return status, alive
@@ -194,12 +200,12 @@ def history_bars(recent):
     {'s': 'up'|'down'|'none', 't': tooltip}. Missing checks pad the left as
     'none', so a new monitor fills in from the right like Uptime Kuma."""
     bars = []
-    for e in recent[-UPTIME_BARS:]:
+    for e in recent_checks(recent):    # only [time, ok, ms] entries (4.3.2)
         try:
-            at = datetime.datetime.fromtimestamp(int(e[0])).strftime('%Y-%m-%d %H:%M:%S')
-            ok, ms = bool(e[1]), int(e[2]) if len(e) > 2 else 0
-        except (TypeError, ValueError, IndexError, OverflowError, OSError):
+            at = datetime.datetime.fromtimestamp(e[0]).strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, OverflowError, OSError):
             continue
+        ok, ms = bool(e[1]), e[2]
         bars.append({'s': 'up' if ok else 'down', 't': '%s - %s' % (at, '%d ms' % ms if ok else 'DOWN')})
     return [{'s': 'none', 't': ''}] * (UPTIME_BARS - len(bars)) + bars
 
@@ -222,16 +228,16 @@ def _bars_label(bars):
 
 def _status_payload():
     status, alive = _engine_state()
-    results = status.get('monitors', {})
+    results = _dict(status.get('monitors'))
     history = None     # history.json only for an engine that predates status 'recent'
     rows = []
     for m in monitors.load():
-        r = results.get(m['id'], {})
+        r = _dict(results.get(m['id']))
         recent = r.get('recent')
         if not isinstance(recent, list):
             if history is None:
-                history = read_json(paths.HISTORY_FILE, {}) or {}
-            recent = recent_checks(history.get(m['id'], []))
+                history = clean_history(read_json(paths.HISTORY_FILE, {}))
+            recent = recent_checks(history.get(m['id']))
         bars = history_bars(recent)
         uptime = bars_uptime(bars)
         rows.append({
@@ -244,7 +250,7 @@ def _status_payload():
             'bars': bars, 'bars_label': _bars_label(bars),
         })
     s = settings.load()
-    hb = status.get('heartbeat', {})
+    hb = _dict(status.get('heartbeat'))
     sign_state, sign_since = signing.status(s.get('remote', {}))
     pending = updater.pending()
     enabled = [r for r in rows if r['enabled']]
