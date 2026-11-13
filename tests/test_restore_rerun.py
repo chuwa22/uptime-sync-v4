@@ -332,10 +332,10 @@ class BootOrderTests(_FakeInstall):
         self.assertIn('backups\\', bat)
         # The Launchers themselves must still be there in that state.
         names = sorted(paths.SHIPPED)
-        self.assertEqual(updater._boot_last(names)[-4:],
-                         ['uptime_sync', 'main.py', 'Launcher.bat', 'Launcher.command'])
-        self.assertEqual(updater._boot_first(names)[:4],
-                         ['Launcher.command', 'Launcher.bat', 'main.py', 'uptime_sync'])
+        self.assertEqual(updater._boot_last(names)[-5:],
+                         ['uptime_sync', 'main.py', 'Launcher.bat', 'Launcher.command', 'Launcher.sh'])
+        self.assertEqual(updater._boot_first(names)[:5],
+                         ['Launcher.sh', 'Launcher.command', 'Launcher.bat', 'main.py', 'uptime_sync'])
         self.assertEqual(sorted(updater._boot_last(names)), names)
 
 

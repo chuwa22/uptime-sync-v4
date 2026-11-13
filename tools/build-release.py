@@ -44,7 +44,7 @@ FORBIDDEN = re.compile(
     r'|(^|/)secret\.key$|\.db$|\.log$|\.pem$|\.pfx$|\.p12$'
     r'|__pycache__|\.pyc$|\.DS_Store$'
 )
-REQUIRED = ('VERSION', 'main.py', 'Launcher.bat', 'Launcher.command', 'requirements.txt',
+REQUIRED = ('VERSION', 'main.py', 'Launcher.bat', 'Launcher.command', 'Launcher.sh', 'requirements.txt',
             'uptime_sync/__init__.py',
             'uptime_sync/bootstrap.py',
             'config/defaults.json',
@@ -56,7 +56,7 @@ def git(*args):
 
 
 def git_executables(names):
-    """Tracked files whose git mode is 100755 (Launcher.command)."""
+    """Tracked files whose git mode is 100755 (Launcher.command, Launcher.sh)."""
     out = set()
     for line in git('ls-files', '-s', '--', *names).splitlines():
         meta, _, path = line.partition('\t')
@@ -68,8 +68,8 @@ def git_executables(names):
 def add_file(zf, name, executable):
     """Store the mode from git, not from the disk: a checkout on Windows
     (or with core.fileMode off) has no x bit, and the zip must still carry
-    0755 for Launcher.command. updater._safe_extract() and Finder's
-    Archive Utility both apply it."""
+    0755 for Launcher.command and Launcher.sh. updater._safe_extract(),
+    Finder's Archive Utility and Info-ZIP unzip all apply it."""
     info = zipfile.ZipInfo.from_file(os.path.join(PROJECT_ROOT, name), arcname=name)
     info.external_attr = ((0o100755 if executable else 0o100644) & 0xFFFF) << 16
     with open(os.path.join(PROJECT_ROOT, name), 'rb') as f:

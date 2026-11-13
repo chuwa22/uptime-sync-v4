@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Uptime Sync 4 is a pure-Python rewrite of Uptime Sync 3.x. It has no PowerShell,
 and its only batch file is `Launcher.bat` (a menu that runs `main.py` commands).
-`Launcher.command` (4.0.13) is the same menu for macOS.
+`Launcher.command` (4.0.13) is the same menu for macOS, `Launcher.sh` (4.4.0)
+for Linux.
 It runs on Windows 7 to 11 (32- and 64-bit), Linux and macOS. It
 talks to the same uptime-monitor server using the same heartbeat protocol (v1).
 README.md covers usage. This file covers the rules for changing the code.
@@ -47,13 +48,21 @@ when set (the tests use this), else the checkout folder.
   - `main.py install` on the system Python: `bootstrap.py` builds `.venv`
     (standard library only), then main.py re-launches into `.venv` for
     `cli.cmd_install`. Windows wraps it in `Launcher.bat` (I / R / `install`),
-    macOS in `Launcher.command` (the same menu, sudo for a LaunchDaemon).
+    macOS in `Launcher.command` (the same menu, sudo for a LaunchDaemon),
+    Linux in `Launcher.sh` (the same menu, sudo for a systemd system unit).
   - `Launcher.command` runs on the macOS bash 3.2 and on zsh (no arrays,
     `[[ ]]`, `local`, `read -p`), LF, ASCII, git mode 100755. It is in
     `paths.EXECUTABLE`: build-release stores git's mode in the zip,
     `updater._safe_extract()` applies the x bit and `perms.harden()` puts it
-    back at every start. A change to the Launcher.bat menu goes into both
-    (`tests/test_launcher_command.py` compares them).
+    back at every start. A change to the Launcher.bat menu goes into all
+    three (`tests/test_launcher_command.py` and `tests/test_launcher_sh.py`
+    compare them).
+  - `Launcher.sh` (4.4.0) is POSIX sh for dash and bash (also no `source`,
+    `==`, `echo -e`, `&>`), LF, ASCII, mode 100755, in `paths.EXECUTABLE`
+    and `updater._BOOT` like Launcher.command. The service kind comes from
+    `data/autostart.json` (`"scope": []` = system unit, sudo; `["--user"]` =
+    user unit). It opens the web UI with xdg-open only when DISPLAY or
+    WAYLAND_DISPLAY is set, else prints the address.
 - **Process roles:**
   - `supervisor.py`: the process the OS starts.
   - `engine.py`: checks, pushes and heartbeat.

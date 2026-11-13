@@ -5,7 +5,7 @@ is not .venv's (the system Python, 3.8 or newer):
 
     Windows (elevated):  py -3 main.py install      (or Launcher.bat -> I)
     macOS:               sudo python3 main.py install   (or Launcher.command -> I)
-    Linux:               sudo python3 main.py install
+    Linux:               sudo python3 main.py install   (or Launcher.sh -> I)
 
 prepare() creates .venv/ (or rebuilds it when it is broken or --recreate is
 given) and installs requirements.txt into it. main.py then re-launches

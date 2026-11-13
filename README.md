@@ -16,7 +16,7 @@ system Python:
 | OS | Command | Autostart |
 |---|---|---|
 | Windows | Double-click `Launcher.bat` and choose **I** (it asks for administrator rights), or `py -3 main.py install` from an **elevated** prompt | Task Scheduler task `UptimeSync4` (at boot, plus every minute as a watchdog), runs as SYSTEM |
-| Linux | `sudo python3 main.py install` | systemd unit `uptime-sync.service`. Without sudo it creates a user unit instead |
+| Linux | `./Launcher.sh` in a terminal and choose **I** (it asks for your password), or `sudo python3 main.py install` | systemd unit `uptime-sync.service`. Without sudo it creates a user unit instead |
 | macOS | Double-click `Launcher.command` and choose **I** (it asks for your Mac password), or `sudo python3 main.py install` in Terminal | LaunchDaemon `com.uptimesync.agent`. Without sudo it creates a LaunchAgent that runs only while you are logged in |
 
 Run with the system Python, `main.py install` first creates `.venv/` in the folder and
@@ -29,11 +29,11 @@ main.py restarts itself inside `.venv`. The system Python is used only to create
 
 `.venv` belongs to the machine that made it: do not copy it to another box (exclude it
 when you sync or copy the folder). A copied `.venv` fails with "No Python at ...";
-run `Launcher.bat` / `Launcher.command` -> I (or `python main.py install`) on that box and it is rebuilt.
+run `Launcher.bat` / `Launcher.command` / `Launcher.sh` -> I (or `python main.py install`) on that box and it is rebuilt.
 
 `.venv` still uses the system Python's standard library. If you uninstall or
 upgrade that Python, run `python main.py install --recreate` with the new system Python
-(Windows: Launcher.bat -> R, macOS: Launcher.command -> R). It stops the agent, rebuilds `.venv` and starts it again.
+(Windows: Launcher.bat -> R, macOS: Launcher.command -> R, Linux: Launcher.sh -> R). It stops the agent, rebuilds `.venv` and starts it again.
 It then registers autostart and starts the agent. Open `http://<box>:5000/` and
 create the admin account.
 
@@ -69,6 +69,20 @@ The first time, macOS may refuse to open it:
   executable bit): `chmod +x Launcher.command`, or run it as
   `bash Launcher.command`. The agent puts the bit back itself at every start, so
   this is needed once at most, before the first install.
+
+On Linux, `Launcher.sh` is the same control panel: run `./Launcher.sh` in a
+terminal (it is plain `sh`, so dash and bash both run it). **I** finds the
+system `python3` (3.8 or newer, or a `python3.8` to `python3.14` beside an older
+one; if there is none: `sudo apt install python3 python3-venv` on Debian / Ubuntu,
+`sudo dnf install python3` on Fedora / RHEL) and runs `sudo python3 main.py install`,
+so autostart is a systemd system unit that starts at boot. A folder installed
+without sudo (a user unit) is repaired as one, without sudo. Start, Restart and
+Uninstall use sudo when the service is a system unit (`data/autostart.json`
+says which). **5** opens the web UI with `xdg-open` on a desktop; over ssh or on
+a server console it prints the address instead. Without the menu:
+`./Launcher.sh install`, with the same options as `Launcher.bat install`. If it
+says "Permission denied" (the unzip tool dropped the executable bit):
+`chmod +x Launcher.sh`, or run it as `sh Launcher.sh`.
 
 For an offline install, run `main.py install --wheels <folder of .whl files>`. On Windows 7,
 use Python 3.8.10, the last release that supports it.
