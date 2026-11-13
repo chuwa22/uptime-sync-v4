@@ -35,7 +35,8 @@ run `Launcher.bat` / `Launcher.command` -> I (or `python main.py install`) on th
 upgrade that Python, run `python main.py install --recreate` with the new system Python
 (Windows: Launcher.bat -> R, macOS: Launcher.command -> R). It stops the agent, rebuilds `.venv` and starts it again.
 It then registers autostart and starts the agent. Open `http://<box>:5000/` and
-create the admin account.
+create the admin account. To encrypt the web UI, see *Web UI: who can open it,
+and HTTPS* under Settings.
 
 On Windows, `Launcher.bat` finds the system Python (`py -3`, then `python`), checks
 it is 3.8 or newer, runs `main.py install` with it and keeps the window open so you can
@@ -199,6 +200,37 @@ uptime-monitor 3.3.0 shows every card's key as the first 8 and the last 4); the
 random part nobody can guess. Press Save to use it. A new key gives the agent a
 new card, so paste the HMAC secret on that card too (the agent still expects
 signed replies), and delete the old card.
+
+**Web UI: who can open it, and HTTPS** (Settings > Web UI, 4.4.0). *Who can
+open it* is *This PC only* (`web.host` 127.0.0.1), *Every network* (0.0.0.0,
+the default) or one address of this PC. With the default the web UI is plain
+http, so a password typed at sign-in, and the session cookie after it, cross
+the network readable; Settings says so in orange, and so does the sign-in page
+when it is opened from another computer. Two fixes, either or both:
+
+- *This PC only*, when the web UI is only opened on the box itself (Remote
+  Desktop, or `Launcher.bat` / `Launcher.command` -> 5).
+- *Use HTTPS* (`web.https`). The web UI then speaks only https on its port (an
+  old `http://` bookmark gets sent on to `https://`), and the session cookie
+  is `Secure` (`__Host-uptime_sync_v4`). `main.py status`, `main.py help` and
+  the Launcher's *Open the web UI* use `https://`.
+  - **Certificate:** the agent makes its own self-signed one on first start
+    (`data/tls/self-signed.pem` + `.key`, RSA 2048, SHA-256, 825 days, made
+    again 30 days before it ends). Each browser warns about it once: compare
+    the SHA-256 the browser shows with the one under Settings > Web UI, then
+    continue. To use your own certificate (for example from your company's
+    CA), save it as `data/tls/cert.pem` (the certificate, then any
+    intermediates) and its key as `data/tls/key.pem` (PEM, no passphrase),
+    then restart. If those files cannot be used, the agent logs an ERROR,
+    serves the self-signed one and says why on Settings; it never falls back
+    to plain http.
+  - **TLS 1.2 and 1.3 only.** Windows 7: IE11 works as it is. IE8, IE9 and
+    IE10 have TLS 1.2 turned off: Internet Options > Advanced > tick *Use TLS
+    1.2*, or the page does not open.
+  - No HSTS is sent, so turning HTTPS off again just works (after a restart).
+
+A change of address, port or HTTPS takes effect when the service restarts
+(Dashboard > Restart service, or `main.py restart`).
 
 ## Updates
 

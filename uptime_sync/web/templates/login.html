@@ -13,6 +13,7 @@
     <label>Password <input type="password" name="password" required{{ ' autofocus' if username }} autocomplete="current-password"></label>
     <button class="primary">Sign in</button>
   </form>
+  {% if plain_from_network %}<p class="note warn-note">{{ icon('alert', 14) }}Not encrypted: this page came over plain http from another computer, so the password crosses the network readable. An admin can turn on HTTPS in Settings &gt; Web UI.</p>{% endif %}
 </div>
 {% include "_auth_foot.html" %}
 {% endblock %}

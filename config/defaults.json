@@ -9,7 +9,8 @@
   "web": {
     "enabled": true,
     "host": "0.0.0.0",
-    "port": 5000
+    "port": 5000,
+    "https": false
   },
   "remote": {
     "enabled": false,

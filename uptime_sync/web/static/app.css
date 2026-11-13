@@ -356,6 +356,7 @@ fieldset.radio-group label.server-url { margin-left: 21px; }
 .note { color: #64748b; color: var(--muted); font-size: 12.75px; margin: -4.5px 0 13.5px; }
 .note.warn-note { color: #d97706; color: var(--warn); margin-top: 0; }
 .note.warn-note .ic { vertical-align: -2.25px; margin-right: 4.5px; }
+.note .fp { word-break: break-all; }
 .lock { color: #d97706; color: var(--warn); font-weight: 500; margin-left: 4.5px; }
 .actions { margin: 7.5px 0 15px; }
 .actions > * { margin-right: 9px; vertical-align: middle; }

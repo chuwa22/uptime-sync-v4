@@ -28,11 +28,16 @@ def _running():
 
 
 def _web_url(s=None):
+    """Where this PC opens the web UI: https when web.https is on (4.4.0),
+    127.0.0.1 for a server that listens on every address."""
     s = s or settings.load()
-    host = s.get('web', {}).get('host', '0.0.0.0')
+    web = s.get('web', {})
+    host = web.get('host', '0.0.0.0')
     if host in ('0.0.0.0', '::', ''):
         host = '127.0.0.1'
-    return 'http://%s:%s/' % (host, s.get('web', {}).get('port', 5000))
+    if ':' in host:
+        host = '[%s]' % host
+    return '%s://%s:%s/' % ('https' if web.get('https') else 'http', host, web.get('port', 5000))
 
 
 # -- process roles (started by the OS / the supervisor) ------------------------

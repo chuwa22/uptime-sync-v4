@@ -8,6 +8,7 @@ static/app.css. That keeps the CSP at script-src 'self'.
 """
 
 import datetime
+import ipaddress
 import logging
 import os
 import threading
@@ -22,15 +23,26 @@ from . import auth, hardening, icons
 log = logging.getLogger('web')
 
 
-def create_app():
+def cookie_name(https):
+    # Browsers keep cookies per host, not per port: a 3.x web UI on
+    # localhost:5000 and this one on localhost:5088 shared Flask's default
+    # 'session' cookie, so signing in to one replaced the other's session
+    # and CSRF token ("Invalid or missing CSRF token").
+    # With https (4.4.0) the cookie is Secure and named __Host-: browsers
+    # then refuse it from any plain-http page on the same host (another
+    # port included), and an https cookie left behind never blocks the
+    # http one when HTTPS is turned off again.
+    return '__Host-uptime_sync_v4' if https else 'uptime_sync_v4'
+
+
+def create_app(https=None):
+    if https is None:
+        https = bool(settings.load().get('web', {}).get('https'))
     app = Flask(__name__, static_folder='static', template_folder='templates')
     app.config.update(
         SECRET_KEY=auth.app_secret_key(),
-        # Browsers keep cookies per host, not per port: a 3.x web UI on
-        # localhost:5000 and this one on localhost:5088 shared Flask's default
-        # 'session' cookie, so signing in to one replaced the other's session
-        # and CSRF token ("Invalid or missing CSRF token").
-        SESSION_COOKIE_NAME='uptime_sync_v4',
+        SESSION_COOKIE_NAME=cookie_name(https),
+        SESSION_COOKIE_SECURE=bool(https),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='Lax',
         PERMANENT_SESSION_LIFETIME=datetime.timedelta(hours=12),
@@ -52,6 +64,7 @@ def create_app():
             'is_admin': bool(user) and user.get('role', 'admin') == 'admin',
             'current_role': (user.get('role') or 'admin') if user else '',
             'csrf_token': auth.csrf_token,
+            'plain_from_network': plain_from_network(),
         }
 
     @app.before_request
@@ -86,6 +99,17 @@ def create_app():
     return app
 
 
+def plain_from_network():
+    """True when this request came over plain http from another computer:
+    what is typed on the page crosses the network readable."""
+    if request.is_secure:
+        return False
+    try:
+        return not ipaddress.ip_address((request.remote_addr or '').split('%')[0]).is_loopback
+    except ValueError:
+        return True
+
+
 def _watch(parent_pid):
     flag = paths.child_stop_flag('web')
     while True:
@@ -104,12 +128,28 @@ def main(parent_pid=0):
     logsetup.setup('web', s)
     host = s.get('web', {}).get('host', '0.0.0.0')
     port = int(s.get('web', {}).get('port', 5000))
+    https = bool(s.get('web', {}).get('https'))
     procs.write_pid(paths.child_pid_file('web'))
     remove_quietly(paths.child_stop_flag('web'))
     threading.Thread(target=_watch, args=(parent_pid,), daemon=True).start()
-    app = create_app()
-    log.info('Web UI %s listening on http://%s:%d', __version__, host, port)
-    from waitress import serve
     hardening.patch_waitress()
-    serve(app, host=host, port=port, **hardening.SERVE_OPTIONS)
+    if https:
+        from . import tls
+        try:
+            context, tls.ACTIVE = tls.server_context(host)
+        except Exception:
+            # Never fall back to plain http: that is what https was turned
+            # on to stop. The supervisor restarts this child with backoff.
+            log.critical('HTTPS is on but no certificate could be loaded or made', exc_info=True)
+            raise
+    app = create_app(https=https)
+    log.info('Web UI %s listening on %s://%s:%d', __version__, 'https' if https else 'http',
+             host, port)
+    if https:
+        log.info('Web UI certificate: %s, SHA-256 %s, valid until %s UTC', tls.ACTIVE['source'],
+                 tls.ACTIVE['fingerprint'], tls.ACTIVE['not_after'].strftime('%Y-%m-%d'))
+        tls.create_server(app, context, host=host, port=port, **hardening.SERVE_OPTIONS).run()
+    else:
+        from waitress import serve
+        serve(app, host=host, port=port, **hardening.SERVE_OPTIONS)
     return 0

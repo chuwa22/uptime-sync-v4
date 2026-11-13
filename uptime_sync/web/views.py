@@ -15,7 +15,7 @@ from flask import abort, flash, jsonify, redirect, render_template, request, ses
 from .. import __version__, log as logsetup, loglevel, logstore, monitors, paths, procs, settings, signing, updater
 from ..util import (UPTIME_BARS, active_server_url, clean_history, deep_merge, is_local_host, is_local_server,
                     read_json, recent_checks, touch)
-from . import auth
+from . import auth, tls
 
 log = logging.getLogger('web')
 LOG_LEVELS = loglevel.VALUES
@@ -23,6 +23,22 @@ LOG_PAGE_SIZES = (50, 100, 200, 500)   # rows per Logs page, offered on the page
 LOG_PAGE = 50                           # the default
 LOG_CLAMP_LINES = 3                     # longer messages fold (app.js)
 LOG_LIVE_MS = 3000                      # the newest Logs page polls /api/logs this often (app.js)
+
+
+# "Who can open it" on Settings (4.4.0) -> web.host. 'custom' takes the
+# address typed beside it.
+WEB_SCOPES = {'local': '127.0.0.1', 'all': '0.0.0.0'}
+_LOCAL_HOSTS = ('127.0.0.1', 'localhost', '::1')
+_ALL_HOSTS = ('0.0.0.0', '::', '')
+
+
+def web_scope(host):
+    """'local' (this PC only), 'all' (every network) or 'custom'."""
+    if host in _LOCAL_HOSTS:
+        return 'local'
+    if host in _ALL_HOSTS:
+        return 'all'
+    return 'custom'
 
 
 def log_row_class(level):
@@ -576,6 +592,15 @@ def register(app):  # noqa: C901 -- one place for the whole route table
 
     # -- settings --------------------------------------------------------------
 
+    def _posted_web_host(f):
+        """web.host from the form: the "Who can open it" radio (4.4.0), or
+        the address typed for "One address of this PC" (and for a form
+        without the radio, as before 4.4.0)."""
+        scope = f.get('web_scope', '')
+        if scope in WEB_SCOPES:
+            return WEB_SCOPES[scope]
+        return f.get('web_host', '').strip()
+
     @app.route('/settings', methods=['GET', 'POST'])
     @auth.admin_required
     def settings_page():
@@ -588,7 +613,8 @@ def register(app):  # noqa: C901 -- one place for the whole route table
             new = {
                 'site_name': f.get('site_name', '').strip()[:100],
                 'log_level': f.get('log_level', 'INFO'),
-                'web': {'port': f.get('web_port', ''), 'host': f.get('web_host', '').strip()},
+                'web': {'port': f.get('web_port', ''), 'host': _posted_web_host(f),
+                        'https': f.get('web_https') == 'on'},
                 'remote': {'enabled': f.get('remote_enabled') == 'on',
                            'require_signed_response': f.get('require_signed', 'auto'),
                            'server_type': f.get('server_type', 'public')},
@@ -613,6 +639,8 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                     node = node.setdefault(key, {})
                 node[name.split('.')[-1]] = int(value)
             host = new['web']['host']
+            if f.get('web_scope') == 'custom' and not host:
+                errors.append('One address of this PC needs the address, e.g. 192.168.1.20.')
             if host and host != 'localhost':
                 try:
                     ipaddress.ip_address(host)
@@ -665,7 +693,8 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                                              else 'Public'))
             if not errors:
                 restart_web = (new['web']['port'] != s['web'].get('port') or
-                               (new['web']['host'] or s['web'].get('host')) != s['web'].get('host'))
+                               (new['web']['host'] or s['web'].get('host')) != s['web'].get('host') or
+                               new['web']['https'] != bool(s['web'].get('https')))
                 if not new['web']['host']:
                     del new['web']['host']
                 try:
@@ -680,8 +709,8 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                 merged = deep_merge(current, new)
                 merged['log_levels'] = levels   # replaced, not merged: '' removes an override
                 settings.save(merged)
-                flash('Settings saved.' + (' Restart the service for the new web address to take '
-                                           'effect.' if restart_web else ''), 'ok')
+                flash('Settings saved.' + (' The web address changes when the service restarts '
+                                           '(Dashboard > Restart service).' if restart_web else ''), 'ok')
                 return redirect(url_for('settings_page'))
             s = deep_merge(s, new)
             s['log_levels'] = levels
@@ -703,7 +732,9 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                                sign_state=sign_state, sign_since=sign_since,
                                log_levels=loglevel.LEVELS, log_parts=loglevel.COMPONENTS,
                                level_choices=loglevel.choices, bounds=settings.BOUNDS,
-                               library_default=loglevel.LIBRARY_DEFAULT)
+                               library_default=loglevel.LIBRARY_DEFAULT,
+                               web_scope=web_scope(s.get('web', {}).get('host', '')),
+                               tls_active=tls.ACTIVE, tls_own=tls.OWN_CERT)
 
     @app.route('/settings/new-secret', methods=['GET', 'POST'])
     @auth.admin_required

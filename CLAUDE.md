@@ -247,6 +247,15 @@ when set (the tests use this), else the checkout folder.
     `<div class="flash">` for a notice; `.flash` is left for text that is part
     of the page (setup's "only on this PC"). app.js fades ok/info out after
     6 s; warnings stay until closed (`ToastTests`).
+  - **HTTPS (4.4.0).** `web.https` serves TLS through `web/tls.py`: waitress
+    has no TLS, so its `channel_class` becomes `TLSChannel` (ssl per
+    connection, non-blocking; plain http on that port gets a 302 to https).
+    The certificate is `data/tls/cert.pem` + `key.pem` (the admin's own) or
+    the agent's `self-signed.pem` + `.key`, made by `web/certgen.py` with the
+    standard library only (no crypto package in requirements.txt). Never
+    fall back to plain http when https is on, never send HSTS (a
+    self-signed certificate could then not be clicked through), and keep
+    TLS 1.2 as the floor: Windows 7's IE11 has it, IE8-10 can tick it.
   - Every POST carries the `csrf` form field.
   - Admin-only routes use `@auth.admin_required`.
   - Any form that checks a password calls `auth.begin_attempt(key)` before
