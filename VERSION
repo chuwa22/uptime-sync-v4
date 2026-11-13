@@ -1,3 +1,9 @@
+4.3.3
+2026-11-13
+- Security (Linux / macOS): `main.py install` run as root (not with sudo from another account) makes a service that runs the agent as root. If another user could change what it runs, that user could run code as root. Install now lists each such path, with the fix, and `main.py status` reports them while the service runs as root. Checked: the install folder and the folders above it, the shipped code, .venv, data/ and run/ (writable by group or others, or owned by someone other than root), and the base Python .venv was made from (e.g. a Homebrew Python under /opt/homebrew, owned by the user who installed it). Windows has had its own check since 4.0.6.
+  - Advice only: nothing is chmod-ed or chown-ed, and it never stops the install. Root's own group, and on macOS `admin` (its members can sudo already), may write. A folder above with the sticky bit (/tmp) is fine.
+  - Installed with sudo from an ordinary account, the service runs as that user (User= / UserName=) and nothing is checked, as before.
+
 4.3.2
 2026-11-13
 - Fixed (agent): a history.json or run/status.json that is valid JSON but holds the wrong shapes (a hand edit, another program, a disk that kept half a write that still parses) no longer breaks the agent. Before, the engine raised every cycle while writing its status, so it crashed and restarted in a loop on the same file, and the Dashboard answered 500. Now a check that is not [time, ok, ms] is left out of the bars and Uptime %, and a part of status.json that is not what it should be counts as empty.
