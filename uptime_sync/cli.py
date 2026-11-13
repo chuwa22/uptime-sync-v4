@@ -156,7 +156,10 @@ def cmd_status(a):
         'heartbeat': st.get('heartbeat'),
         'update': updater.state() or None,
         'readable_by_others': perms.check(),
+        'runs_as_root': autostart.service_runs_as_root(),
     }
+    info['root_unsafe'] = ['%s (%s)' % (p, why) for p, why, _ in perms.root_service_unsafe()] \
+        if info['runs_as_root'] else []
     if a.json:
         info['monitors'] = st.get('monitors', {})
         _say(json.dumps(info, indent=2))
@@ -197,6 +200,11 @@ def cmd_status(a):
         _say('  [SECURITY] readable by other local users: %s' % ', '.join(exposed[:5]) +
              (' (+%d more)' % (len(exposed) - 5) if len(exposed) > 5 else ''))
         _say('             fixed on the next start, or now with `main.py install --no-autostart`')
+    unsafe = info['root_unsafe']
+    if unsafe:
+        _say('  [SECURITY] the service runs as root, but other users can change: %s' % ', '.join(unsafe[:5]) +
+             (' (+%d more)' % (len(unsafe) - 5) if len(unsafe) > 5 else ''))
+        _say('             `main.py install --no-autostart` prints how to fix it')
     u = info['update']
     if u:
         _say('  update      %s v%s %s' % (u.get('status'), u.get('version', '?'), u.get('time', '')))
@@ -237,6 +245,8 @@ def cmd_install(a):
         else:
             _say('       icacls "%s" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F '
                  '*S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX /Q' % home)
+    if autostart.will_run_as_root() or (a.no_autostart and autostart.service_runs_as_root()):
+        _warn_root_unsafe()
     if a.no_autostart:
         _say('[INFO] Autostart skipped (--no-autostart). Start with `main.py run`.')
         return 0
@@ -253,6 +263,23 @@ def cmd_install(a):
     if not auth.has_users():
         _say('[INFO] Open %s to create the admin account.' % _web_url())
     return code
+
+
+def _warn_root_unsafe():
+    """POSIX: the agent runs as root, so anything another user may change
+    in its code, .venv or base Python is a way to root. Advice only."""
+    found = perms.root_service_unsafe()
+    if not found:
+        return
+    _say('[WARN] The agent will run as root, but a user other than root can change what it runs, '
+         'so that user could run code as root:')
+    for path, why, _ in found[:10]:
+        _say('         %s (%s)' % (path, why))
+    if len(found) > 10:
+        _say('         (+%d more)' % (len(found) - 10))
+    for line in perms.root_fix_lines(found, paths.ROOT):
+        _say('       %s' % line)
+    _say('       Nothing was changed.')
 
 
 def cmd_uninstall(a):

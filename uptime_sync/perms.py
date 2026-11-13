@@ -24,6 +24,8 @@ not be the reason a monitoring box stays down.
 
 import hashlib
 import os
+import stat
+import sys
 
 from . import paths, procs
 
@@ -323,6 +325,135 @@ def base_python_writable():
     if under_user_profile(home) and not found:
         found = ['the user whose profile it is in (a per-user Python install)']
     return home, found
+
+
+# -- a service that runs as root (POSIX, 4.3.3) ------------------------------------
+
+# Groups whose write access is no way up to root: root's own group, and on
+# macOS `admin` (gid 80), whose members may sudo already (the python.org
+# installer leaves its framework writable by admin).
+ROOT_GIDS = (0, 80) if sys.platform == 'darwin' else (0,)
+ROOT_SCAN_LIMIT = 200
+_lstat = os.lstat       # the tests swap it to play root
+
+
+def _account(uid):
+    try:
+        import pwd
+        return pwd.getpwuid(uid).pw_name
+    except (ImportError, KeyError):
+        return 'uid %d' % uid
+
+
+def _group(gid):
+    try:
+        import grp
+        return grp.getgrgid(gid).gr_name
+    except (ImportError, KeyError):
+        return 'gid %d' % gid
+
+
+def root_unsafe_reason(mode, uid, gid, ancestor=False):
+    """Why a user other than root could change this path, '' when none can
+    (pure: unit-tested). ancestor: a folder above the ones the agent runs
+    from, where a sticky bit (as on /tmp) stops others renaming what root
+    owns inside. A symlink's own mode means nothing: its folder decides."""
+    if stat.S_ISLNK(mode):
+        return ''
+    if uid != 0:
+        return 'owned by %s' % _account(uid)
+    sticky = ancestor and stat.S_ISDIR(mode) and mode & stat.S_ISVTX
+    if mode & 0o002 and not sticky:
+        return 'writable by everyone'
+    if mode & 0o020 and gid not in ROOT_GIDS and not sticky:
+        return 'writable by group %s' % _group(gid)
+    return ''
+
+
+def _ancestors(path):
+    """The folders above `path` up to /, for both the path as given and
+    the one its symlinks resolve to."""
+    out = []
+    for p in (os.path.abspath(path), os.path.realpath(path)):
+        while os.path.dirname(p) != p:
+            p = os.path.dirname(p)
+            if p not in out:
+                out.append(p)
+    return out
+
+
+def root_service_unsafe():
+    """What a user other than root could change, for an agent that runs as
+    root: [(path, reason, where)], where is 'folder' (the install folder or
+    inside it), 'above' (a folder above it) or 'python' (the base Python
+    .venv runs on). Only the topmost path of a subtree is listed. Reads
+    only, never changes a mode. POSIX; [] on Windows.
+
+    Any of these lets that user run code as root: edit a .py file, swap
+    .venv's packages or the base Python's standard library, rename the
+    install folder and put another in its place, or edit data/settings.json
+    (the update source)."""
+    if IS_WINDOWS:
+        return []
+    found = []
+    seen = set()
+
+    def ok(path, where, ancestor=False):
+        if path in seen:
+            return True
+        seen.add(path)
+        try:
+            st = _lstat(path)
+        except OSError:
+            return True
+        why = root_unsafe_reason(st.st_mode, st.st_uid, st.st_gid, ancestor)
+        if why and len(found) < ROOT_SCAN_LIMIT:
+            found.append((path, why, where))
+        return not why
+
+    def tree(top, where):
+        if not ok(top, where) or os.path.islink(top) or not os.path.isdir(top):
+            return
+        for base, dirs, files in os.walk(top):
+            for name in files:
+                ok(os.path.join(base, name), where)
+            dirs[:] = [d for d in dirs if ok(os.path.join(base, d), where)]
+
+    root = paths.ROOT
+    for d in _ancestors(root):
+        ok(d, 'above', ancestor=True)
+    if ok(root, 'folder'):
+        for name in paths.SHIPPED:
+            tree(os.path.join(root, name), 'folder')
+        for d in (paths.VENV_DIR, paths.DATA_DIR, paths.RUN_DIR):
+            tree(d, 'folder')
+    home = venv_base_home()
+    if home and os.path.isdir(home):
+        stdlib = os.path.dirname(os.__file__)     # the base Python's, even in .venv
+        for p in (os.path.realpath(home), os.path.realpath(paths.venv_python()), stdlib):
+            ok(p, 'python')
+        for p in (home, stdlib):
+            for d in _ancestors(p):
+                ok(d, 'python', ancestor=True)
+    return found
+
+
+def root_fix_lines(found, root):
+    """How to fix what root_service_unsafe() found, as text lines (pure:
+    unit-tested). Only advice: nothing here changes a file."""
+    where = set(w for _, _, w in found)
+    lines = ['Either run the agent as an ordinary user: give the folder to that user, then '
+             'from that account run `sudo python3 main.py install` (the service then runs '
+             'as that user), or keep root and let only root change them:']
+    if 'folder' in where:
+        lines.append('  sudo chown -R root "%s" && sudo chmod -R go-w "%s"' % (root, root))
+    if 'above' in where:
+        lines.append('  move the install folder to one only root can change (e.g. /opt/uptime-sync), '
+                     'or fix the folders above it: sudo chown root DIR && sudo chmod go-w DIR')
+    if 'python' in where:
+        lines.append('  rebuild .venv on a Python only root can change (e.g. /usr/bin/python3): '
+                     'sudo /usr/bin/python3 main.py install --recreate')
+    return lines
 
 
 # -- public --------------------------------------------------------------------

@@ -160,6 +160,17 @@ It repairs itself where it can:
 
 `main.py status` lists anything that other users can still read.
 
+**A service that runs as root (Linux / macOS).** Run as root itself (not with
+sudo from your account), `main.py install` makes a service that runs the agent
+as root. Then anyone else who can change its code, `.venv`, the base Python
+(a Homebrew Python is owned by the user who installed Homebrew) or a folder
+above the install folder can run code as root. `install` lists those paths
+with the commands that fix them, and `main.py status` reports them. Nothing is
+changed for you. The simplest fix is to install with sudo from the account
+that owns the folder, so the service runs as that user. Otherwise put the
+folder somewhere like `/opt/uptime-sync`, owned by root, on a Python that only
+root can change.
+
 On Windows, put the folder somewhere like `C:\UptimeSync4`, not under a user profile.
 
 ## Settings

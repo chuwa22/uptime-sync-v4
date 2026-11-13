@@ -23,6 +23,7 @@ data/autostart.json and reused by every later install / uninstall.
 
 import hashlib
 import os
+import re
 import sys
 import tempfile
 from xml.sax.saxutils import escape
@@ -64,6 +65,39 @@ def is_admin():
         except Exception:
             return False
     return os.geteuid() == 0
+
+
+def will_run_as_root():
+    """True when `main.py install` run now makes a service that starts the
+    agent as root (POSIX): real root, not sudo from another account."""
+    if procs.IS_WINDOWS or not is_admin():
+        return False
+    return (os.environ.get('SUDO_USER') or 'root') == 'root'
+
+
+_PLIST_USER = re.compile(r'<key>UserName</key>\s*<string>([^<]*)</string>')
+
+
+def service_runs_as_root(state=None):
+    """True when the installed service starts the agent as root (POSIX): a
+    system unit with no User= (or User=root), a LaunchDaemon with no
+    UserName (or root). False when none is installed or it cannot be read."""
+    if procs.IS_WINDOWS:
+        return False
+    state = installed() if state is None else state
+    text = _read_text(state['path']) if state.get('path') else None
+    if text is None:
+        return False
+    if state.get('kind') == 'systemd' and not state.get('scope'):
+        users = [line.split('=', 1)[1].strip() for line in text.splitlines()
+                 if line.strip().startswith('User=')]
+        user = users[-1] if users else ''
+    elif state.get('kind') == 'launchd' and state.get('domain') == 'system':
+        m = _PLIST_USER.search(text)
+        user = m.group(1).strip() if m else ''
+    else:
+        return False
+    return user in ('', 'root', '0')
 
 
 def _state():
