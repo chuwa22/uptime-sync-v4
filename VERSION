@@ -1,3 +1,12 @@
+4.5.1
+2026-11-15
+- Security (updates): a download from the reporting server (`update.allow_server_download`, off unless set by hand) is taken only from a heartbeat reply signed with this agent's secret. Before the signing latch an unsigned reply is still acted on, and on plain http anyone on the path could write one, with their own URL on the server's host and their own SHA-256: their code ran as the service. A pending offer (manual or scheduled) remembers whether it came signed. GitHub downloads are unchanged: the URL is pinned to the repo's release.
+- Security (signing): a damaged `data/response_signing.json` healed to "never latched", so unsigned replies were accepted again until the next signed one. It now stays latched (the latch is written back for the current secret).
+- Security (sign-in): a successful sign-in cleared the failed tries of the whole address, so anyone with an account of their own could guess at another account for ever (9 guesses, one real sign-in, 9 more). A success now un-counts only itself. Tries are also counted per account name across all addresses (30 in 5 minutes), since an IPv6 network gives every guess an address of its own.
+- Security (HTTP checks): a redirect to another host, port or scheme dropped only `Authorization`; a monitor's other headers (an API key, a Cookie) went on to whatever host the redirect named. Only `User-Agent`, `Accept` and `Accept-Language` follow it now.
+- Security (Launcher.bat): Open the web UI echoed the address unquoted, and Python 3.9+ accepts any text after `%` in an IPv6 address (`fe80::1%&calc`), so a crafted Web listens on address ran a command when an admin opened the web UI from the Launcher. The Settings page refuses a `%` scope, `main.py help` prints 127.0.0.1 for any host that is not a plain address, and the Launcher expands the address late.
+- Security (web): `/api/status`, open to viewers, carried the whole update state (backup and trash paths, restore and pip records, error text); it now gives status, version and time. `/dashboard` passes on only `sort` and `dir` when it redirects to `/`.
+
 4.5.0
 2026-11-13
 - Feature (Linux): `Launcher.sh`, the control panel Windows has in Launcher.bat and macOS in Launcher.command, with the same menu: Status, Start, Stop, Restart, Open the web UI, Check every monitor now, recent logs, warnings and errors, Reset a web UI password, Install or repair, Rebuild .venv, Uninstall autostart. Run `./Launcher.sh` in a terminal; it is plain sh, so dash (Debian and Ubuntu's /bin/sh) and bash both run it.

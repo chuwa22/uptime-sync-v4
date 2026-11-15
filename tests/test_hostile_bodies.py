@@ -136,22 +136,37 @@ class RedirectBodyTests(unittest.TestCase):
     def test_redirect_loop_is_down(self):
         self.assertEqual(self.c.check_http(self.srv.base + '/loop', timeout=5), (False, 0))
 
-    def test_authorization_dropped_on_another_host(self):
+    def _follow(self, start, location, headers):
         sent = []
 
         def fake_get(url, **kw):
             sent.append((url, dict(kw['headers'])))
             r = requests.Response()
             r.status_code = 302 if len(sent) == 1 else 200
-            r.headers['Location'] = 'https://other.example/x'
+            r.headers['Location'] = location
             r.url = url
             r.raw = mock.Mock()
             return r
         with mock.patch.object(self.c.session, 'get', side_effect=fake_get):
-            self.assertTrue(self.c.check_http('https://site.example/', headers={'Authorization': 'Bearer t',
-                                                                               'X-Site': 'a'})[0])
-        self.assertEqual(sent[0][1], {'Authorization': 'Bearer t', 'X-Site': 'a'})
-        self.assertEqual(sent[1], ('https://other.example/x', {'X-Site': 'a'}))
+            self.assertTrue(self.c.check_http(start, headers=headers)[0])
+        self.assertEqual(sent[0][1], headers)
+        self.assertEqual(sent[1][0], location)
+        return sent[1][1]
+
+    def test_custom_headers_dropped_on_another_site(self):
+        # 4.5.1: only Authorization was dropped; an X-Api-Key or Cookie
+        # went on to whatever host the redirect named.
+        headers = {'Authorization': 'Bearer t', 'X-Api-Key': 'k', 'Cookie': 's=1',
+                   'User-Agent': 'probe', 'Accept': 'text/html'}
+        safe = {'User-Agent': 'probe', 'Accept': 'text/html'}
+        self.assertEqual(self._follow('https://site.example/', 'https://other.example/x', headers), safe)
+        self.assertEqual(self._follow('https://site.example/', 'http://site.example/x', headers), safe)
+        self.assertEqual(self._follow('https://site.example/', 'https://site.example:8443/x', headers),
+                         safe)
+        # Same site: everything stays, and so does http -> https.
+        self.assertEqual(self._follow('https://site.example/', 'https://site.example/login', headers),
+                         headers)
+        self.assertEqual(self._follow('http://site.example/', 'https://site.example/', headers), headers)
 
     def test_push_does_not_read_the_body(self):
         e = engine.Engine(supervised=True)

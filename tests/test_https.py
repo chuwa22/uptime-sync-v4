@@ -286,6 +286,10 @@ class WebUrlTests(unittest.TestCase):
         self.assertEqual(url({'web': {'host': '::1', 'port': 5000}}), 'http://[::1]:5000/')
         self.assertEqual(url({'web': {'host': '192.168.1.20', 'port': 5000, 'https': True}}),
                          'https://192.168.1.20:5000/')
+        # A hand-edited host the Launchers must not echo (4.5.1).
+        for host in ('fe80::1%&calc', 'x" & calc', 'localhost'):
+            self.assertEqual(url({'web': {'host': host, 'port': 5000}}),
+                             'http://%s:5000/' % ('localhost' if host == 'localhost' else '127.0.0.1'))
 
     def test_help_prints_it_for_the_launchers(self):
         _env.reset()

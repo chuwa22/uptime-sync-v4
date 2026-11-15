@@ -61,6 +61,15 @@ class LauncherBatTest(unittest.TestCase):
         for line in self.lines[start + 1:end]:
             self.assertTrue(line.split(' ', 1)[0].split('.', 1)[0].lower() in builtins, line)
 
+    def test_web_address_is_expanded_late(self):
+        # %URL% is parsed after expansion: a & in it would run a command.
+        i = self.lines.index(':do_open')
+        block = self.lines[i:self.lines.index('goto wait', i)]
+        self.assertFalse([l for l in block if '%URL%' in l and not l.startswith('set ')
+                          and not l.startswith('if not defined')], block)
+        self.assertIn('setlocal EnableDelayedExpansion', block)
+        self.assertIn('start "" "!URL!"', block)
+
     def test_every_menu_target_exists(self):
         labels = set(l[1:] for l in self.lines if l.startswith(':') and not l.startswith('::'))
         for l in self.lines:

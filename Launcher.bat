@@ -205,8 +205,13 @@ for /f "usebackq tokens=3" %%u in ("%TMPURL%") do set "URL=%%u"
 del "%TMPURL%" >nul 2>&1
 if not defined URL set "URL=http://127.0.0.1:5000/"
 echo.
-echo [INFO] Opening %URL%
-start "" "%URL%"
+rem Delayed expansion: a value with & | < > in it is not parsed as a
+rem command (4.5.1). main.py prints only a plain address; this guards
+rem against anything else.
+setlocal EnableDelayedExpansion
+echo [INFO] Opening !URL!
+start "" "!URL!"
+endlocal
 goto wait
 
 :do_password

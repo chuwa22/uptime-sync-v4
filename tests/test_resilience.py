@@ -645,10 +645,10 @@ class EngineWatchTests(unittest.TestCase):
         util.touch(paths.INSTALL_TRIGGER)
         p = {'version': '99.0.0', 'url': 'https://mon.example.com/u.zip', 'sha256': 'ab' * 32}
         with mock.patch.object(updater, 'pending', return_value=p), \
-                mock.patch.object(self.e, '_start_install', side_effect=lambda *a: self.e.stop()) as start, \
+                mock.patch.object(self.e, '_start_install', side_effect=lambda *a, **k: self.e.stop()) as start, \
                 mock.patch.object(self.e, '_install') as install:
             self.e._watch()
-        start.assert_called_once_with(p['url'], '99.0.0', p['sha256'])
+        start.assert_called_once_with(p['url'], '99.0.0', p['sha256'], signed=False)
         install.assert_not_called()            # not inline: _watch must keep watching
         self.assertFalse(os.path.exists(paths.INSTALL_TRIGGER))
 

@@ -188,6 +188,10 @@ when set (the tests use this), else the checkout folder.
     (4.0.8). That flag is set by hand only: never add it to the web form or to
     anything the heartbeat reply can change. With it on, the URL must be on the
     `remote.url` host, and an https server cannot hand out an http URL.
+    And only from a signed reply (4.5.1): `Heartbeat.last_verdict` goes
+    with the offer as `signed` (`write_pending`, `_start_install`,
+    `download_and_stage(..., signed=)`). Before the latch an unsigned reply
+    is still acted on, and its URL and SHA-256 are whatever the path wrote.
   - Redirects are followed by hand.
   - SHA-256 is mandatory and never bypassed, even by force_install.
   - The release must be newer than the installed version.
@@ -268,8 +272,17 @@ when set (the tests use this), else the checkout folder.
   - Every POST carries the `csrf` form field.
   - Admin-only routes use `@auth.admin_required`.
   - Any form that checks a password calls `auth.begin_attempt(key)` before
-    hashing (sign-in: the IP; Account: `account:<name>`), and
-    `clear_failures(key)` on success.
+    hashing (Account: `account:<name>`, `clear_failures(key)` on success).
+    Sign-in counts the IP and `login:<lower-case name>`
+    (`MAX_ACCOUNT_ATTEMPTS`, across addresses), and a success calls
+    `forgive_attempt(ip)` + `clear_failures(account)`: never clear the
+    whole IP, or one's own account resets the count for guesses at
+    another (4.5.1).
+  - `/api/status` is open to viewers: it carries the update state as
+    status, version and time only, never the whole `updater.state()`.
+  - `web.host` must pass `util.is_listen_host()` (no `%` scope ID): it
+    reaches Launcher.bat through `main.py help`, which echoes it with
+    delayed expansion (4.5.1).
   - Dashboard tile words come from `views.tile_text()` (colours from
     `tones()`), for the template and app.js alike. Never word them in JS.
   - A viewer never sees a push token. Use `mask_push_url`.
@@ -371,7 +384,9 @@ when set (the tests use this), else the checkout folder.
     there turns a held file into defaults written over the real one.
     `set_state()` falls back to the state this process last read or wrote
     (`_known_state`) rather than raise mid-update. An unreadable signing
-    latch counts as latched.
+    latch counts as latched, and so does a corrupt one (4.5.1:
+    `latched_since()` writes this secret's latch back, since healing it to
+    "missing" would accept unsigned replies again).
   - The engine writes the `check_interval` it runs on into run/status.json;
     the supervisor's stall limit uses the larger of that and the setting.
 - **Reporting server URL (4.0.9).** `remote.url` is the Public URL and
@@ -407,6 +422,8 @@ when set (the tests use this), else the checkout folder.
   - Every outbound request uses `util.http_session()`. requests reads a
     redirect's body even with allow_redirects=False; this Session never does.
     Follow redirects with `util.get_following()`. Never call `requests.get`.
+    A redirect to another host, port or scheme keeps only
+    `REDIRECT_SAFE_HEADERS` (4.5.1): a monitor's headers are often a key.
   - Read a body only through `util.iter_body(r, limit)` (raw bytes, our own
     bounded inflate). Never `iter_content()`, `.content`, `.text` or
     `.json()` on a response from the network.

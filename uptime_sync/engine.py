@@ -167,7 +167,8 @@ class Engine:
                 p = updater.pending()
                 if p:
                     log.info('[UPDATE] Install of v%s requested from the web UI', p['version'])
-                    self._start_install(p['url'], p['version'], p['sha256'])
+                    self._start_install(p['url'], p['version'], p['sha256'],
+                                        signed=p.get('signed') is True)
 
     # -- monitors ------------------------------------------------------------
 
@@ -609,6 +610,11 @@ class Engine:
         force = bool(reply.get('force_install'))
         mode = str(reply.get('update_mode') or 'auto').lower()
         window = reply.get('update_window') or {}
+        # Only a reply signed with our secret may hand out a download from
+        # the reporting server (4.5.1): before the signing latch an unsigned
+        # reply is still acted on, and on plain http anyone on the path can
+        # write one, URL and SHA-256 included.
+        signed = self.heartbeat.last_verdict == 'valid'
         last = updater.state()
         if force:
             log.warning('[UPDATE] Admin forced install of v%s', version)
@@ -625,27 +631,27 @@ class Engine:
             return
         elif mode == 'manual':
             # INFO once per offer, DEBUG on the repeats (log volume rule).
-            new = updater.write_pending(version, url, sha, mode)
+            new = updater.write_pending(version, url, sha, mode, signed)
             (log.info if new else log.debug)(
                 '[UPDATE] v%s available - waiting for Install in the web UI', version)
             return
         elif mode == 'scheduled' and not updater.in_window(window.get('start'), window.get('end')):
-            new = updater.write_pending(version, url, sha, mode)
+            new = updater.write_pending(version, url, sha, mode, signed)
             (log.info if new else log.debug)(
                 '[UPDATE] v%s available - deferred to the %s-%s window', version,
                 window.get('start', '?'), window.get('end', '?'))
             return
-        self._start_install(url, version, sha)
+        self._start_install(url, version, sha, signed=signed)
 
-    def _start_install(self, url, version, sha):
+    def _start_install(self, url, version, sha, signed=False):
         """The download runs in its own thread: in the heartbeat thread a
         slow 30 MB download held up every beat (and the stuck-beat check
         would restart the engine in the middle of it)."""
-        t = threading.Thread(target=self._install, args=(url, version, sha), name='update', daemon=True)
+        t = threading.Thread(target=self._install, args=(url, version, sha, signed), name='update', daemon=True)
         t.start()
         return t
 
-    def _install(self, url, version, sha):
+    def _install(self, url, version, sha, signed=False):
         if not self.supervised:
             log.warning('[UPDATE] v%s offered, but this engine is not running under the '
                         'supervisor (main.py run) - not installing', version)
@@ -654,7 +660,7 @@ class Engine:
             return
         staged = False
         try:
-            updater.download_and_stage(url, version, sha, settings.load())
+            updater.download_and_stage(url, version, sha, settings.load(), signed=signed)
             staged = True
         except updater.UpdateRefused as e:
             log.error('[UPDATE] [SECURITY] Refusing v%s: %s', version, e)
