@@ -2,7 +2,6 @@
 __init__.csrf_guard) and admin-only."""
 
 import datetime
-import ipaddress
 import logging
 import re
 import secrets
@@ -13,8 +12,8 @@ from urllib.parse import urlparse
 from flask import abort, flash, jsonify, redirect, render_template, request, session, url_for
 
 from .. import __version__, log as logsetup, loglevel, logstore, monitors, paths, procs, settings, signing, updater
-from ..util import (UPTIME_BARS, active_server_url, clean_history, deep_merge, is_local_host, is_local_server,
-                    read_json, recent_checks, touch)
+from ..util import (UPTIME_BARS, active_server_url, clean_history, deep_merge, is_listen_host, is_local_host,
+                    is_local_server, read_json, recent_checks, touch)
 from . import auth, tls
 
 log = logging.getLogger('web')
@@ -269,6 +268,7 @@ def _status_payload():
     hb = _dict(status.get('heartbeat'))
     sign_state, sign_since = signing.status(s.get('remote', {}))
     pending = updater.pending()
+    last = _dict(updater.state())
     enabled = [r for r in rows if r['enabled']]
     p = {
         'version': __version__,
@@ -280,8 +280,11 @@ def _status_payload():
             'last_try': hb.get('last_try'),
         },
         'signing': {'state': sign_state, 'since': sign_since},
+        # Status, version and time only (4.5.1): the whole state carries the
+        # backup and trash paths, pip and restore records and the error
+        # text, and every signed-in viewer can read /api/status.
         'update': {'pending': pending['version'] if pending else '',
-                   'last': updater.state()},
+                   'last': {k: last.get(k, '') for k in ('status', 'version', 'time')}},
         'monitors': rows,
         'now': int(time.time()),
     }
@@ -387,13 +390,22 @@ def register(app):  # noqa: C901 -- one place for the whole route table
                      'On the agent computer run: main.py reset-password')
         elif request.method == 'POST':
             ip = auth.client_ip()
+            name = auth.canonical_name(request.form.get('username', '').strip())
+            # Counted per address and per account name (4.5.1); the account
+            # key is the lower-cased name, so 'Admin' and 'admin' share it.
+            account = 'login:' + name[:100].lower()
             if not auth.begin_attempt(ip):
                 error = 'Too many failed attempts. Wait a few minutes and try again.'
+            elif not auth.begin_attempt(account, auth.MAX_ACCOUNT_ATTEMPTS):
+                auth.forgive_attempt(ip)
+                log.warning('Sign-in to %r refused from %s: too many failed attempts for this '
+                            'account', name[:40], ip)
+                error = 'Too many failed attempts. Wait a few minutes and try again.'
             else:
-                name = auth.canonical_name(request.form.get('username', '').strip())
                 user = auth.authenticate(name, request.form.get('password', ''))
                 if user:
-                    auth.clear_failures(ip)
+                    auth.forgive_attempt(ip)
+                    auth.clear_failures(account)
                     auth.login(name, user)
                     return redirect(safe_next(request.args.get('next', '')) or url_for('dashboard'))
                 log.warning('Failed login for %r from %s', name[:40], ip)
@@ -436,8 +448,11 @@ def register(app):  # noqa: C901 -- one place for the whole route table
     @app.route('/dashboard')
     def dashboard_alias():
         # Older bookmarks open /dashboard; the dashboard is /. A plain 302
-        # (never 301: browsers keep a 301 for good), query string kept.
-        return redirect(url_for('dashboard', **request.args.to_dict()))
+        # (never 301: browsers keep a 301 for good). Only the sort survives
+        # (4.5.1): anything else in the query string went into the URL
+        # unread, as an open door for whatever / may read from it later.
+        keep = dict((k, v) for k, v in request.args.items() if k in ('sort', 'dir'))
+        return redirect(url_for('dashboard', **keep))
 
     @app.route('/api/status')
     @auth.login_required
@@ -641,12 +656,10 @@ def register(app):  # noqa: C901 -- one place for the whole route table
             host = new['web']['host']
             if f.get('web_scope') == 'custom' and not host:
                 errors.append('One address of this PC needs the address, e.g. 192.168.1.20.')
-            if host and host != 'localhost':
-                try:
-                    ipaddress.ip_address(host)
-                except ValueError:
-                    errors.append('Web listens on must be an IP address: 0.0.0.0 (every network), '
-                                  '127.0.0.1 (this PC only) or one of this PC\'s addresses.')
+            if host and not is_listen_host(host):
+                errors.append('Web listens on must be an IP address: 0.0.0.0 (every network), '
+                              '127.0.0.1 (this PC only) or one of this PC\'s addresses '
+                              '(no %scope).')
             new['log_level'] = loglevel.normalize(new['log_level']) or loglevel.DEFAULT
             # '' = same as log_level; anything else must be a level
             levels = {}

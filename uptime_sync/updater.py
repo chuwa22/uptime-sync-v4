@@ -13,7 +13,8 @@ SHA-256, in a signed heartbeat reply); the bytes come from either
     a server of their own that offers its own zip with its own SHA-256:
     code execution as the agent's service account. With it on: same host
     as remote.url, an https server cannot hand out http, and the api_key +
-    time + signature are appended only after the URL passed that check.
+    time + signature are appended only after the URL passed that check,
+    and only an offer from a signed reply is taken (4.5.1).
 Any other URL is refused. The SHA-256 is never optional: no hash, no install.
 
 Staging: the zip is extracted into update_staging/ (outside everything the
@@ -195,9 +196,14 @@ def validate_staging(version):
             raise UpdateRefused('staged build is missing %s' % required)
 
 
-def download_and_stage(url, version, sha256, settings):
+def download_and_stage(url, version, sha256, settings, signed=False):
     """Fetch, verify and extract v<version>. Returns True when staged.
-    Raises UpdateRefused on a policy refusal; other errors propagate."""
+    Raises UpdateRefused on a policy refusal; other errors propagate.
+    signed: the offer came in a heartbeat reply signed with our secret.
+    A download from the reporting server needs it (4.5.1): the server
+    names both the URL and the SHA-256, so an unsigned offer of one is
+    whatever anyone on the path wrote. A GitHub URL is pinned to the
+    repo's release asset, which the hash then has to match."""
     sha256 = (sha256 or '').strip().lower()
     if len(sha256) != 64 or any(c not in '0123456789abcdef' for c in sha256):
         raise UpdateRefused('the server sent no valid update_sha256 -- refusing to install '
@@ -215,6 +221,9 @@ def download_and_stage(url, version, sha256, settings):
     if kind == 'server':
         if not (remote.get('api_key') and remote.get('secret_key')):
             raise UpdateRefused('downloading from the server needs api_key and secret_key')
+        if not signed:
+            raise UpdateRefused('a download from the reporting server is taken only from a '
+                                'signed heartbeat reply, and this offer was not signed')
         url = signed_server_url(url, remote['api_key'], remote['secret_key'])
 
     os.makedirs(paths.DOWNLOAD_DIR, exist_ok=True)
@@ -744,16 +753,18 @@ def heartbeat_fields():
     return (status or 'No update history', s.get('time', ''), s.get('version', ''))
 
 
-def write_pending(version, url, sha256, mode):
+def write_pending(version, url, sha256, mode, signed=False):
     """Record an offered update; no write when it is the same offer again
     (the heartbeat repeats it every minute). True when it wrote, so the
     caller logs a new offer once instead of on every beat."""
     old = read_json(paths.UPDATE_PENDING, None)
-    if isinstance(old, dict) and [old.get(k) for k in ('version', 'url', 'sha256', 'mode')] == \
-            [version, url, sha256, mode]:
+    signed = signed is True
+    if isinstance(old, dict) and [old.get(k) for k in ('version', 'url', 'sha256', 'mode', 'signed')] == \
+            [version, url, sha256, mode, signed]:
         return False
     atomic_write_json(paths.UPDATE_PENDING, {
-        'version': version, 'url': url, 'sha256': sha256, 'mode': mode, 'detected_at': iso_now()})
+        'version': version, 'url': url, 'sha256': sha256, 'mode': mode, 'signed': signed,
+        'detected_at': iso_now()})
     return True
 
 

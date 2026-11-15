@@ -102,6 +102,9 @@ class Heartbeat:
         self.last_ok = None           # epoch of the last 200 reply
         self.last_try = None          # epoch of the last attempt, whatever came of it
         self.last_error = ''
+        # 'valid' | 'unsigned' | 'invalid' for the reply send() returned
+        # last: a download from the server is taken only from a signed one.
+        self.last_verdict = ''
         # One keep-alive connection to the server instead of a new TCP + TLS
         # handshake every beat.
         self.session = http_session()   # never reads a redirect's body
@@ -161,6 +164,7 @@ class Heartbeat:
         self.last_ok = time.time()
         self.last_error = ''
         verdict = signing.verify_reply(r.headers.get('X-Response-Signature'), sig, raw, secret)
+        self.last_verdict = verdict
         log.debug('Heartbeat OK (reply %s)', verdict)
         if not self.may_act(verdict, remote):
             # Nothing from a reply we may not trust: not even the next beat

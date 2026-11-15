@@ -12,7 +12,7 @@ import sys
 import time
 
 from . import __version__, log as logsetup, paths, perms, procs, settings
-from .util import read_json, remove_quietly, touch
+from .util import is_listen_host, read_json, remove_quietly, touch
 
 STOP_WAIT_SECONDS = 60
 
@@ -33,7 +33,9 @@ def _web_url(s=None):
     s = s or settings.load()
     web = s.get('web', {})
     host = web.get('host', '0.0.0.0')
-    if host in ('0.0.0.0', '::', ''):
+    # A hand-edited host that is no plain address never reaches the
+    # Launchers, which open (and echo) this URL (4.5.1).
+    if host in ('0.0.0.0', '::', '') or not is_listen_host(host):
         host = '127.0.0.1'
     if ':' in host:
         host = '[%s]' % host

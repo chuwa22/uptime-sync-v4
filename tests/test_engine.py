@@ -41,6 +41,20 @@ class ConsiderUpdateTests(unittest.TestCase):
             self.e._consider_update(dict(REPLY), self.s)
             inst.assert_not_called()
 
+    def test_install_carries_the_reply_verdict(self):
+        # Only a signed reply may hand out a server download (4.5.1).
+        for verdict, signed in (('valid', True), ('unsigned', False), ('', False)):
+            self.e.heartbeat.last_verdict = verdict
+            with mock.patch.object(self.e, '_start_install') as inst:
+                self.e._consider_update(dict(REPLY), self.s)
+            self.assertIs(inst.call_args[1]['signed'], signed)
+        self.e.heartbeat.last_verdict = 'unsigned'
+        self.e._consider_update(dict(REPLY, update_mode='manual'), self.s)
+        self.assertIs(updater.pending()['signed'], False)
+        self.e.heartbeat.last_verdict = 'valid'
+        self.e._consider_update(dict(REPLY, update_mode='manual'), self.s)
+        self.assertIs(updater.pending()['signed'], True)
+
     def test_deferred_offer_logged_once(self):
         # The heartbeat repeats the offer every minute: INFO once, then DEBUG.
         reply = dict(REPLY, update_mode='scheduled', update_window={'start': '02:00', 'end': '04:00'})

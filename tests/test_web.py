@@ -37,7 +37,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('/setup', self.c.get('/login').headers['Location'])
 
     def test_dashboard_path_goes_to_the_dashboard(self):
-        r = self.c.get('/dashboard?sort=name&dir=desc')
+        r = self.c.get('/dashboard?sort=name&dir=desc&next=//evil.example&x=1')
         self.assertEqual(r.status_code, 302)
         self.assertEqual(r.headers['Location'].split('://', 1)[-1].split('/', 1)[-1],
                          '?sort=name&dir=desc')
@@ -227,6 +227,60 @@ class WebTests(unittest.TestCase):
         r = self.c.post('/login', data={'csrf': token, 'username': 'admin', 'password': PW})
         self.assertIn('Too many', r.get_data(as_text=True))
 
+    def login_as(self, name, password):
+        token = self.csrf('/login')
+        return self.c.post('/login', data={'csrf': token, 'username': name, 'password': password})
+
+    def test_own_sign_in_does_not_reset_the_address(self):
+        # 4.5.1: a success cleared the whole address, so 9 guesses at admin,
+        # then one real sign-in as viewer, then 9 more ... never hit the limit.
+        self.setup_admin()
+        auth.create_user('viewer1', PW, role='viewer')
+        self.c = self.app.test_client()
+        with mock.patch.object(auth, 'check_password', wraps=auth.check_password) as check:
+            for _ in range(3):
+                for _ in range(auth.MAX_ATTEMPTS - 1):
+                    self.login_as('admin', 'wrong')
+                self.c = self.app.test_client()
+                self.login_as('viewer1', PW)
+                self.c = self.app.test_client()
+        self.assertLessEqual(check.call_count, auth.MAX_ATTEMPTS + 1)
+        self.assertIn('Too many', self.login_as('admin', PW).get_data(as_text=True))
+
+    def test_sign_in_is_limited_per_account_across_addresses(self):
+        self.setup_admin()
+        self.c = self.app.test_client()
+        n = 0
+        with mock.patch.object(auth, 'client_ip', side_effect=lambda: '2001:db8::%d' % n):
+            for n in range(auth.MAX_ACCOUNT_ATTEMPTS):
+                self.assertIn('Wrong username', self.login_as('Admin', 'wrong').get_data(as_text=True))
+            n += 1
+            with self.assertLogs('web', 'WARNING'):
+                html = self.login_as('admin', PW).get_data(as_text=True)
+        self.assertIn('Too many', html)
+        # The refused try did not count against that new address.
+        self.assertEqual(len(auth._attempts.get('2001:db8::%d' % n, [])), 0)
+
+    def test_success_clears_the_account_and_one_address_try(self):
+        self.setup_admin()
+        self.c = self.app.test_client()
+        self.login_as('admin', 'wrong')
+        self.login_as('admin', PW)
+        self.assertNotIn('login:admin', auth._attempts)
+        self.assertEqual(sum(len(v) for k, v in auth._attempts.items() if not k.startswith('login:')), 1)
+
+    def test_status_api_update_state_is_trimmed(self):
+        # 4.5.1: a viewer read the whole update state (backup paths, records).
+        from uptime_sync import updater
+        updater.set_state(status='Failed', version='99.0.0', time='t', detail='C:\\secret\\path',
+                          backup='C:\\backup', rolling_back={'backup': 'x'})
+        self.setup_admin()
+        auth.create_user('viewer1', PW, role='viewer')
+        self.c = self.app.test_client()
+        self.login_as('viewer1', PW)
+        last = json.loads(self.c.get('/api/status').get_data(as_text=True))['update']['last']
+        self.assertEqual(last, {'status': 'Failed', 'version': '99.0.0', 'time': 't'})
+
     def test_status_api_masks_push_tokens(self):
         self.setup_admin()
         with open(paths.STATUS_FILE, 'w') as f:
@@ -341,6 +395,19 @@ class WebTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn('must be an IP address', r.get_data(as_text=True))
         self.assertNotEqual(settings.load()['web'].get('host'), 'not a host!')
+
+    def test_web_host_scope_id_refused(self):
+        # Python 3.9+ takes any text after '%' as an IPv6 scope ID, and the
+        # host ends up in Launcher.bat's echo (4.5.1).
+        self.setup_admin()
+        for host in ('fe80::1%&calc', 'fe80::1%eth0'):
+            token = self.csrf('/settings')
+            r = self.c.post('/settings', data={'csrf': token, 'web_scope': 'custom', 'web_host': host,
+                                               'web_port': '5000', 'check_interval': '60',
+                                               'max_workers': '10', 'log_retention_days': '14',
+                                               'heartbeat_interval': '60'})
+            self.assertIn('must be an IP address', r.get_data(as_text=True))
+            self.assertNotEqual(settings.load()['web'].get('host'), host)
 
     def test_logs_huge_before_is_not_a_500(self):
         self.setup_admin()

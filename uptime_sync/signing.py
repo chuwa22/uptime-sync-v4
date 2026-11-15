@@ -19,10 +19,14 @@ The latch format is the same as Uptime Sync 3.6.22+, so `import` keeps it.
 
 import hashlib
 import hmac
+import logging
+import os
 from urllib.parse import urlparse
 
 from . import paths
 from .util import active_server_url, atomic_write_json, read_json_for_update
+
+log = logging.getLogger('heartbeat')
 
 _LATCH_CONTEXT = b'uptime-sync response-signing latch|'
 
@@ -73,15 +77,27 @@ def latched_since(remote):
     fp = fingerprint(remote)
     if not fp:
         return ''
+    existed = os.path.exists(paths.LATCH_FILE)
     try:
-        latch = read_json_for_update(paths.LATCH_FILE, {}) or {}
+        latch = read_json_for_update(paths.LATCH_FILE, None)
     except OSError:
         # Held by another program right now: an unreadable latch must not
         # read as "never latched" and let an unsigned reply through for
         # that beat (4.0.11). Treated as latched until it can be read.
         return '?'
-    if isinstance(latch, dict) and hmac.compare_digest(str(latch.get('fingerprint', '')), fp):
-        return str(latch.get('since') or '?')
+    if isinstance(latch, dict):
+        if hmac.compare_digest(str(latch.get('fingerprint', '')), fp):
+            return str(latch.get('since') or '?')
+        return ''
+    if existed:
+        # The file was there but did not parse (read_json moved it to
+        # .corrupt-<ts>; there is no .bak), or held no object. Healing it
+        # to "never latched" would let unsigned replies through again
+        # (4.5.1): it most likely held this secret's latch, so write that.
+        if save_latch(remote, '?'):
+            log.warning('[SECURITY] data/response_signing.json was damaged - kept as latched: '
+                        'unsigned heartbeat replies stay refused')
+        return '?'
     return ''
 
 

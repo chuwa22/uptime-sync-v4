@@ -31,6 +31,11 @@ ROLES = ('admin', 'viewer')
 _lock = threading.Lock()
 _attempts = {}            # key (ip, or 'account:<user>') -> [timestamps]
 MAX_ATTEMPTS = 10
+# Sign-in tries per account name, from all addresses together (4.5.1): an
+# IPv6 /64 gives every guess an address of its own. Higher than the
+# per-address limit, so someone who only wants the admin locked out has to
+# keep up 30 tries every 5 minutes.
+MAX_ACCOUNT_ATTEMPTS = 30
 ATTEMPT_WINDOW = 300
 MAX_TRACKED = 2000        # keys kept; IPv6 makes new source addresses cheap
 # 600k PBKDF2 rounds cost about 0.5 s of CPU each (more on a Win7 Atom):
@@ -194,7 +199,7 @@ def note_failure(ip):
         _trim()
 
 
-def begin_attempt(key):
+def begin_attempt(key, limit=MAX_ATTEMPTS):
     """Count a password attempt BEFORE the hash is checked; False when
     `key` is over the limit. Counting afterwards (rate_limited, then
     note_failure) let parallel requests that all passed the check through
@@ -202,7 +207,7 @@ def begin_attempt(key):
     now = time.time()
     with _lock:
         recent = [t for t in _attempts.get(key, []) if now - t < ATTEMPT_WINDOW]
-        if len(recent) >= MAX_ATTEMPTS:
+        if len(recent) >= limit:
             _attempts[key] = recent
             return False
         recent.append(now)
@@ -224,9 +229,22 @@ def _trim():
             del _attempts[key]
 
 
-def clear_failures(ip):
+def clear_failures(key):
     with _lock:
-        _attempts.pop(ip, None)
+        _attempts.pop(key, None)
+
+
+def forgive_attempt(key):
+    """Un-count the attempt begin_attempt(key) just counted, and only that
+    one. A sign-in that succeeds must not clear the whole address
+    (4.5.1): with an account of their own, anyone could sign in after
+    every 9 guesses at another account and never reach the limit."""
+    with _lock:
+        recent = _attempts.get(key)
+        if recent:
+            recent.pop()
+            if not recent:
+                del _attempts[key]
 
 
 def login(username, user):

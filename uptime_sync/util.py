@@ -462,12 +462,39 @@ def http_session():
     return s
 
 
+def is_listen_host(host):
+    """An address the web UI may listen on and be opened at: 'localhost' or
+    a plain IP address. Python 3.9+ accepts an IPv6 scope ID after '%'
+    ('fe80::1%eth0') with any text in it, and the address goes into
+    Launcher.bat's echo and start (4.5.1): no '%' at all."""
+    import ipaddress
+    host = str(host or '')
+    if host == 'localhost':
+        return True
+    if '%' in host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
+# Caller headers that may follow a redirect to another site: they say
+# nothing about who is asking.
+REDIRECT_SAFE_HEADERS = frozenset(('accept', 'accept-language', 'user-agent'))
+
+
 def get_following(session, url, max_redirects=5, headers=None, params=None, **kw):
     """GET through http_session(), following up to max_redirects redirects
-    here without reading any hop's body. Like requests, Authorization is
-    dropped when a redirect changes host or leaves https. `params` go on the
-    first request only (a Location URL is used as given). Returns the
-    final response, unread (stream=True): close it."""
+    here without reading any hop's body. When a redirect changes host or
+    port or leaves https (requests' should_strip_auth), every caller header
+    except REDIRECT_SAFE_HEADERS is dropped, not only Authorization (4.5.1):
+    a monitor's headers are often an API key or a Cookie, and the site
+    being checked, or anyone who can answer for it, could send the check to
+    a host of their own to collect them. `params` go on the first request
+    only (a Location URL is used as given). Returns the final response,
+    unread (stream=True): close it."""
     import requests
     headers = dict(headers or {})
     for _ in range(max_redirects + 1):
@@ -479,7 +506,7 @@ def get_following(session, url, max_redirects=5, headers=None, params=None, **kw
         r.close()
         nxt = urljoin(r.url or url, location)
         if session.should_strip_auth(r.url or url, nxt):
-            headers = {k: v for k, v in headers.items() if k.lower() != 'authorization'}
+            headers = {k: v for k, v in headers.items() if k.lower() in REDIRECT_SAFE_HEADERS}
         url = nxt
     raise requests.TooManyRedirects('more than %d redirects' % max_redirects)
 

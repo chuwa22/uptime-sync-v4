@@ -141,6 +141,20 @@ class ReadForUpdateTests(unittest.TestCase):
         with held(paths.LATCH_FILE):
             self.assertEqual(signing.latched_since(remote), '?')
 
+    def test_corrupt_latch_stays_latched(self):
+        # read_json heals a corrupt file to the default, and "no latch"
+        # would let unsigned replies through again (4.5.1).
+        remote = {'url': 'https://mon.example.com/api/heartbeat.php', 'secret_key': 's' * 32}
+        for junk in (b'{"fingerprint": "', b'\xff\xfe\x00garbage', b'[]', b'null'):
+            with open(paths.LATCH_FILE, 'wb') as f:
+                f.write(junk)
+            with self.assertLogs('heartbeat', 'WARNING'):
+                self.assertEqual(signing.latched_since(remote), '?')
+            self.assertEqual(signing.latched_since(remote), '?')   # written back, stays
+            self.assertEqual(signing.status(remote), ('enforced', '?'))
+            os.remove(paths.LATCH_FILE)
+        self.assertEqual(signing.latched_since(remote), '')        # missing: never latched
+
 
 class WebUnreadableTests(unittest.TestCase):
     def setUp(self):

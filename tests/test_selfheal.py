@@ -323,10 +323,24 @@ class ServerDownloadGateTests(_FakeInstall):
             updater.download_and_stage('/dist/download.php', NEXT, 'a' * 64, self.settings)
         self.assertIn('allow_server_download', str(cm.exception))
         self.settings['update']['allow_server_download'] = True
-        with mock.patch.object(updater, '_open', return_value=FakeResponse(b'not a zip')):
-            with self.assertRaises(updater.UpdateRefused) as cm:   # past the gate: hash check
+        with mock.patch.object(updater, '_open', return_value=FakeResponse(b'not a zip')) as op:
+            # Allowed, but the offer came in an unsigned reply (4.5.1).
+            with self.assertRaises(updater.UpdateRefused) as cm:
                 updater.download_and_stage('/dist/download.php', NEXT, 'a' * 64, self.settings)
+            self.assertIn('signed', str(cm.exception))
+            op.assert_not_called()
+            with self.assertRaises(updater.UpdateRefused) as cm:   # past the gate: hash check
+                updater.download_and_stage('/dist/download.php', NEXT, 'a' * 64, self.settings,
+                                           signed=True)
         self.assertIn('SHA-256', str(cm.exception))
+
+    def test_pending_offer_keeps_whether_it_was_signed(self):
+        self.assertTrue(updater.write_pending(NEXT, 'u', 'a' * 64, 'manual', True))
+        self.assertIs(updater.pending()['signed'], True)
+        # The same offer again, now unsigned, is a new offer: it must not
+        # inherit the earlier signature.
+        self.assertTrue(updater.write_pending(NEXT, 'u', 'a' * 64, 'manual', False))
+        self.assertIs(updater.pending()['signed'], False)
 
 
 class InterruptedApplyTests(_FakeInstall):
